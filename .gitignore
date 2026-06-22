@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+# Logs / temp
+*.log
+tmp/
+
+# OS
+Thumbs.db
+desktop.ini
+
+# NOTE: native/x64/bass.dll and native/x64/bass_aac.dll are intentionally tracked —
+# they are required native dependencies copied to the output at build time.

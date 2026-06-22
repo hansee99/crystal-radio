@@ -1,0 +1,53 @@
+<Window x:Class="RadioPlayer.StationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Add station" Width="430" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        ShowInTaskbar="False" Icon="Assets/app.ico"
+        FontFamily="Segoe UI" Background="#FF161B24">
+
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFC9D2DE"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="0,12,0,4"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#FF232A36"/>
+            <Setter Property="Foreground" Value="#FFFFFFFF"/>
+            <Setter Property="CaretBrush" Value="#FFFFFFFF"/>
+            <Setter Property="BorderBrush" Value="#FF3A4456"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="MinWidth" Value="84"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="20,8,20,20">
+        <TextBlock Text="Name"/>
+        <TextBox x:Name="NameBox"/>
+
+        <TextBlock Text="Stream URL"/>
+        <TextBox x:Name="UrlBox"/>
+
+        <TextBlock Text="Format"/>
+        <ComboBox x:Name="FormatBox"/>
+
+        <TextBlock x:Name="ErrorText" Foreground="#FFFF6B6B" FontSize="12"
+                   TextWrapping="Wrap" Visibility="Collapsed"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="Cancel" IsCancel="True"/>
+            <Button Content="OK" IsDefault="True" Click="Ok_Click"/>
+        </StackPanel>
+    </StackPanel>
+</Window>
