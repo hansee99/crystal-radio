@@ -78,15 +78,7 @@ public sealed class RadioEngine : IDisposable
     public void Play(Station station)
     {
         ArgumentNullException.ThrowIfNull(station);
-        FreeStream();
-        _currentStation = station;
-        SetState(PlaybackState.Buffering);
-
-        if (!CreateAndStart(station))
-        {
-            SetState(PlaybackState.Error);
-            ErrorOccurred?.Invoke(this, $"Could not open stream: {Bass.LastError}");
-        }
+        StartStream(station, PlaybackState.Buffering);
     }
 
     /// <summary>Pause if playing, resume if paused.</summary>
@@ -123,42 +115,90 @@ public sealed class RadioEngine : IDisposable
         SetState(PlaybackState.Stopped);
     }
 
-    private bool CreateAndStart(Station station)
+    /// <summary>
+    /// (Re)starts a stream. The blocking network connect (<c>Bass*.CreateStream</c>) runs
+    /// on a background thread so the UI thread stays responsive while connecting, then
+    /// completion is marshalled back. The generation counter lets a newer Play/Stop
+    /// discard a stale connect that finishes late (e.g. the user mashing "Next").
+    /// </summary>
+    private void StartStream(Station station, PlaybackState pendingState)
     {
-        // AAC core is NOT in BASS core — the add-on path is required for aac streams.
-        _stream = station.Format == StreamFormat.Aac
-            ? BassAac.CreateStream(station.Url, 0, BassFlags.Default, null)
-            : Bass.CreateStream(station.Url, 0, BassFlags.Default, null);
+        FreeStream();                 // frees any current stream and bumps the generation
+        _currentStation = station;
+        SetState(pendingState);
 
-        if (_stream == 0)
-            return false;
+        var generation = _generation;
+        var url = station.Url;
+        var isAac = station.Format == StreamFormat.Aac;
 
-        _generation++;
+        Task.Run(() =>
+        {
+            // AAC core is NOT in BASS core — the add-on path is required for aac streams.
+            var handle = isAac
+                ? BassAac.CreateStream(url, 0, BassFlags.Default, null)
+                : Bass.CreateStream(url, 0, BassFlags.Default, null);
+            var error = Bass.LastError; // BASS error state is per-thread
+            _dispatcher.BeginInvoke(() => OnStreamCreated(generation, station, pendingState, handle, error));
+        });
+    }
+
+    private void OnStreamCreated(int generation, Station station, PlaybackState pendingState, int handle, Errors error)
+    {
+        // A newer Play/Stop/reconnect superseded us while we were connecting.
+        if (generation != _generation)
+        {
+            if (handle != 0) Bass.StreamFree(handle);
+            return;
+        }
+
+        if (handle == 0)
+        {
+            FailOrRetry(station, pendingState, $"Could not open stream: {error}");
+            return;
+        }
+
+        _stream = handle;
         Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, _volume);
 
         // Read the station info that arrives with the headers.
         PublishIcyStationInfo(_stream, station);
 
         // Live track changes.
-        _metaSync = (handle, channel, data, user) =>
+        _metaSync = (h, channel, data, user) =>
             _dispatcher.BeginInvoke(() => OnMetadataReceived(channel));
         Bass.ChannelSetSync(_stream, SyncFlags.MetadataReceived, 0, _metaSync);
 
         // Stalls (network hiccups): data == 0 stalled, data == 1 resumed.
-        _stallSync = (handle, channel, data, user) =>
+        _stallSync = (h, channel, data, user) =>
             _dispatcher.BeginInvoke(() => OnStall(channel, data));
         Bass.ChannelSetSync(_stream, SyncFlags.Stalled, 0, _stallSync);
 
         // End of stream (the server dropped us): try to reconnect.
-        _endSync = (handle, channel, data, user) =>
+        _endSync = (h, channel, data, user) =>
             _dispatcher.BeginInvoke(() => OnStreamEnded(channel));
         Bass.ChannelSetSync(_stream, SyncFlags.End, 0, _endSync);
 
         if (!Bass.ChannelPlay(_stream))
-            return false;
+        {
+            FailOrRetry(station, pendingState, $"Could not start playback: {Bass.LastError}");
+            return;
+        }
 
         SetState(PlaybackState.Playing);
-        return true;
+    }
+
+    private void FailOrRetry(Station station, PlaybackState pendingState, string message)
+    {
+        // A failed reconnect keeps retrying; a failed initial play surfaces an error.
+        if (pendingState == PlaybackState.Reconnecting)
+        {
+            ScheduleReconnect(station);
+        }
+        else
+        {
+            SetState(PlaybackState.Error);
+            ErrorOccurred?.Invoke(this, message);
+        }
     }
 
     private void OnStall(int channel, int data)
@@ -190,10 +230,7 @@ public sealed class RadioEngine : IDisposable
                 if (generation != _generation || !ReferenceEquals(station, _currentStation))
                     return;
 
-                FreeStream();
-                _currentStation = station;
-                if (!CreateAndStart(station))
-                    ScheduleReconnect(station); // keep retrying
+                StartStream(station, PlaybackState.Reconnecting);
             });
         });
     }
@@ -247,10 +284,14 @@ public sealed class RadioEngine : IDisposable
 
     private void FreeStream()
     {
-        if (_stream == 0) return;
+        // Always bump: this invalidates any in-flight async connect, even when no stream
+        // exists yet (e.g. the user skips again while still buffering).
         _generation++;
-        Bass.StreamFree(_stream);
-        _stream = 0;
+        if (_stream != 0)
+        {
+            Bass.StreamFree(_stream);
+            _stream = 0;
+        }
         _metaSync = null;
         _stallSync = null;
         _endSync = null;

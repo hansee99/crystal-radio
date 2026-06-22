@@ -9,6 +9,7 @@ public sealed class MainViewModel : ObservableObject
 {
     private readonly RadioEngine _engine;
     private readonly StationStore _store;
+    private readonly SettingsStore _settingsStore;
     private readonly IStationDialog _stationDialog;
 
     private Station? _selectedStation;
@@ -16,18 +17,24 @@ public sealed class MainViewModel : ObservableObject
     private string _nowPlayingArtist = string.Empty;
     private string _statusText = "Stopped";
     private bool _isPlaying;
+    private bool _hasTrackInfo;
     private double _volume;
 
     // When set, changing SelectedStation won't auto-start playback. Used by the
     // add/edit/delete commands so managing the list doesn't yank what's playing.
     private bool _suppressAutoPlay;
 
-    public MainViewModel(RadioEngine engine, StationStore store, IStationDialog stationDialog)
+    public MainViewModel(RadioEngine engine, StationStore store, SettingsStore settingsStore,
+        IStationDialog stationDialog)
     {
         _engine = engine;
         _store = store;
+        _settingsStore = settingsStore;
         _stationDialog = stationDialog;
-        _volume = engine.Volume;
+
+        // Restore the persisted volume.
+        _volume = settingsStore.Load().Volume;
+        _engine.Volume = _volume;
 
         _engine.StateChanged += (_, state) => OnStateChanged(state);
         _engine.MetadataChanged += (_, meta) => OnMetadataChanged(meta);
@@ -78,14 +85,42 @@ public sealed class MainViewModel : ObservableObject
     public string NowPlayingTitle
     {
         get => _nowPlayingTitle;
-        private set => SetProperty(ref _nowPlayingTitle, value);
+        private set
+        {
+            if (SetProperty(ref _nowPlayingTitle, value))
+                OnPropertyChanged(nameof(NowPlayingClipboardText));
+        }
     }
 
     public string NowPlayingArtist
     {
         get => _nowPlayingArtist;
-        private set => SetProperty(ref _nowPlayingArtist, value);
+        private set
+        {
+            if (SetProperty(ref _nowPlayingArtist, value))
+                OnPropertyChanged(nameof(NowPlayingClipboardText));
+        }
     }
+
+    /// <summary>True while a stream is connecting/reconnecting (drives the loading spinner).</summary>
+    public bool IsBusy => _engine.State is PlaybackState.Buffering or PlaybackState.Reconnecting;
+
+    /// <summary>True when there's real now-playing info worth copying.</summary>
+    public bool HasTrackInfo
+    {
+        get => _hasTrackInfo;
+        private set
+        {
+            if (SetProperty(ref _hasTrackInfo, value))
+                OnPropertyChanged(nameof(NowPlayingClipboardText));
+        }
+    }
+
+    /// <summary>"Artist - Title" (or just the title) for the clipboard, or null if nothing to copy.</summary>
+    public string? NowPlayingClipboardText =>
+        !HasTrackInfo ? null
+        : string.IsNullOrWhiteSpace(NowPlayingArtist) ? NowPlayingTitle
+        : $"{NowPlayingArtist} - {NowPlayingTitle}";
 
     public string StatusText
     {
@@ -179,6 +214,9 @@ public sealed class MainViewModel : ObservableObject
             : Stations[Math.Min(index, Stations.Count - 1)]);
     }
 
+    /// <summary>Persist user settings (volume). Called when the app is closing.</summary>
+    public void SaveSettings() => _settingsStore.Save(new AppSettings { Volume = _volume });
+
     private void SelectWithoutAutoPlay(Station? station)
     {
         _suppressAutoPlay = true;
@@ -202,6 +240,8 @@ public sealed class MainViewModel : ObservableObject
     private void OnStateChanged(PlaybackState state)
     {
         IsPlaying = state == PlaybackState.Playing;
+        OnPropertyChanged(nameof(IsBusy));
+
         StatusText = state switch
         {
             PlaybackState.Stopped => "Stopped",
@@ -213,10 +253,20 @@ public sealed class MainViewModel : ObservableObject
             _ => StatusText
         };
 
-        if (state == PlaybackState.Stopped)
+        switch (state)
         {
-            NowPlayingTitle = "Not playing";
-            NowPlayingArtist = string.Empty;
+            case PlaybackState.Stopped:
+                NowPlayingTitle = "Not playing";
+                NowPlayingArtist = string.Empty;
+                HasTrackInfo = false;
+                break;
+            case PlaybackState.Buffering:
+            case PlaybackState.Reconnecting:
+                // No track to copy yet; show which station we're connecting to.
+                NowPlayingTitle = state == PlaybackState.Reconnecting ? "Reconnecting..." : "Connecting...";
+                NowPlayingArtist = _engine.CurrentStation?.Name ?? string.Empty;
+                HasTrackInfo = false;
+                break;
         }
 
         StopCommand.RaiseCanExecuteChanged();
@@ -228,5 +278,6 @@ public sealed class MainViewModel : ObservableObject
             ? (meta.StationName ?? "Live stream")
             : meta.Title;
         NowPlayingArtist = meta.Artist ?? meta.StationName ?? string.Empty;
+        HasTrackInfo = !string.IsNullOrWhiteSpace(NowPlayingTitle);
     }
 }
