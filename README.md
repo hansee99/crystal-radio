@@ -70,9 +70,16 @@ Swap in your own ~16:9 image (≈1920×1080) to retheme the player.
 | `MainWindow.xaml(.cs)` | UI, taskbar thumb buttons, custom window chrome, HWND/SMTC bootstrap. |
 | `Models/Station.cs` | `{ Name, Url, Format }` station record. |
 
-## Licensing note
+## License
 
+This project is licensed under the **PolyForm Noncommercial License 1.0.0** — you may
+use, modify, and share it for any **non-commercial** purpose. See [LICENSE](LICENSE.md).
+
+**Commercial use is not permitted**, which also aligns with the bundled audio engine:
 BASS (un4seen) is **free for non-commercial use only**. Shipping this app commercially
-requires a paid BASS license, or switching the engine to an alternative such as
-[LibVLCSharp](https://github.com/videolan/libvlcsharp) (LGPL). The engine is kept behind
-the `RadioEngine` abstraction to make that swap feasible.
+would require a paid BASS license (or switching the engine to an alternative such as
+[LibVLCSharp](https://github.com/videolan/libvlcsharp), LGPL — the engine is kept behind
+the `RadioEngine` abstraction to make that swap feasible).
+
+The bundled BASS DLLs and other third-party components are **not** covered by this
+project's license and keep their own terms — see [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES.md).
