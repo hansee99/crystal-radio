@@ -7,9 +7,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- The seed tool lives under tools/ (a separate project). Keep its sources/artifacts
+         out of this project's default **/*.cs and Content/Page globs. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);tools\**</DefaultItemExcludes>
     <!-- App identity / versioning. Bump Version (SemVer MAJOR.MINOR.PATCH) per release;
          the SDK flows it into the assembly's File/Informational version automatically. -->
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Product>Radio Player</Product>
     <Authors>Hans Seebacher</Authors>
     <Description>A lightweight internet radio player for Windows.</Description>
@@ -26,6 +29,9 @@
   <ItemGroup>
     <PackageReference Include="ManagedBass" Version="4.0.2" />
     <PackageReference Include="ManagedBass.Aac" Version="4.0.2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.22.1" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="1.0.3" />
   </ItemGroup>
 
   <!-- Window background artwork + app icon, compiled into the assembly as WPF resources. -->
@@ -33,6 +39,17 @@
     <Resource Include="Assets\player-bg.png" />
     <Resource Include="Assets\app.ico" />
     <Resource Include="Assets\app-256.png" />
+  </ItemGroup>
+
+  <!-- Local embedding model (all-MiniLM-L6-v2) + BERT vocab, copied to the output dir.
+       The .onnx is large (~90 MB) and git-ignored; see MlAssets/README for how to fetch it. -->
+  <ItemGroup>
+    <Content Include="MlAssets\all-MiniLM-L6-v2.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="MlAssets\vocab.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <!-- Native BASS DLLs (x64) copied next to the executable -->

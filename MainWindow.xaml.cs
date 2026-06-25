@@ -1,3 +1,5 @@
+using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -14,6 +16,8 @@ public partial class MainWindow : Window
 {
     private readonly RadioEngine _engine;
     private readonly MainViewModel _viewModel;
+    private readonly EnrichmentStore _enrichmentStore;
+    private readonly MiniLmEmbeddingProvider _embeddingProvider;
     private SmtcController? _smtc;
 
     public MainWindow()
@@ -21,9 +25,30 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _engine = new RadioEngine();
+
+        // AI-assisted search services (raw HttpClient; key from the environment, never committed).
+        var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        var searchService = new StationSearchService(new HttpClient());
+        var interpreter = new PromptInterpreter(new HttpClient(), apiKey);              // Pattern A
+
+        // Phase 1 enrichment (SQLite cache) + Phase 2 local embeddings (offline ONNX).
+        _enrichmentStore = new EnrichmentStore();
+        var mlDir = Path.Combine(AppContext.BaseDirectory, "MlAssets");
+        _embeddingProvider = new MiniLmEmbeddingProvider(
+            Path.Combine(mlDir, "all-MiniLM-L6-v2.onnx"), Path.Combine(mlDir, "vocab.txt"));
+
+        var enrichment = new EnrichmentService(
+            new HttpClient(), new HttpClient(), _enrichmentStore, _embeddingProvider, apiKey);
+        var semanticSearch = new SemanticSearchService(_embeddingProvider, _enrichmentStore, searchService);
+        var agenticSearch = new AgenticSearchService(            // Pattern B
+            new HttpClient(), searchService, enrichment, apiKey);
+
         _viewModel = new MainViewModel(_engine, new StationStore(), new SettingsStore(),
-            new StationDialogService(this));
+            new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment, semanticSearch);
         DataContext = _viewModel;
+
+        // One-time/background: embed any enriched rows lacking a current-model vector.
+        enrichment.BackfillEmbeddingsInBackground();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -42,6 +67,8 @@ public partial class MainWindow : Window
         _viewModel.SaveSettings();
         _smtc?.Dispose();
         _engine.Dispose();
+        _embeddingProvider.Dispose();
+        _enrichmentStore.Dispose();
         base.OnClosed(e);
     }
 
@@ -60,6 +87,9 @@ public partial class MainWindow : Window
 
     private void About_Click(object sender, RoutedEventArgs e)
         => new AboutDialog { Owner = this }.ShowDialog();
+
+    private void AiSearch_Click(object sender, RoutedEventArgs e)
+        => new AiSearchDialog { Owner = this, DataContext = _viewModel }.ShowDialog();
 
     private void CopyNowPlaying_Click(object sender, RoutedEventArgs e)
     {

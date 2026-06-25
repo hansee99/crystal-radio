@@ -1,0 +1,97 @@
+<Window x:Class="RadioPlayer.AiSearchDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:RadioPlayer.ViewModels"
+        d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="AI station search" Width="460" Height="500"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize" MinWidth="380" MinHeight="360"
+        ShowInTaskbar="False" Icon="Assets/app.ico"
+        FontFamily="Segoe UI" Background="#FF161B24">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <FontFamily x:Key="FluentIcons">Segoe Fluent Icons</FontFamily>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Foreground="#FFC9D2DE" FontSize="12" TextWrapping="Wrap"
+                   Text="Describe what you'd like to hear — e.g. &quot;mellow jazz for late-night coding&quot; or &quot;BBC&quot;. Real, playable stations come from the Radio Browser directory."/>
+
+        <!-- Prompt + search -->
+        <Grid Grid.Row="1" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" x:Name="PromptBox" FontSize="13" Padding="8,6"
+                     Background="#FF232A36" Foreground="#FFFFFFFF" CaretBrush="#FFFFFFFF"
+                     BorderBrush="#FF3A4456" BorderThickness="1"
+                     Text="{Binding SearchPrompt, UpdateSourceTrigger=PropertyChanged}"/>
+            <Button Grid.Column="1" Content="Search" IsDefault="True"
+                    Command="{Binding SearchCommand}"
+                    MinWidth="84" Height="30" Margin="8,0,0,0"/>
+        </Grid>
+
+        <!-- Status -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,8" VerticalAlignment="Center">
+            <TextBlock Text="⟳" FontSize="14" Foreground="#FF5A9B94" Margin="0,0,8,0"
+                       VerticalAlignment="Center"
+                       Visibility="{Binding IsSearching, Converter={StaticResource BoolToVis}}"/>
+            <TextBlock Text="{Binding SearchStatus}" Foreground="#FF9FB0C4" FontSize="12"
+                       VerticalAlignment="Center" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- Results -->
+        <ListBox Grid.Row="3" Background="#FF1B2330" BorderBrush="#FF2A3340" BorderThickness="1"
+                 Foreground="#FFEDEDED" HorizontalContentAlignment="Stretch"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ItemsSource="{Binding SearchResults}"
+                 SelectedItem="{Binding SelectedSearchResult, Mode=TwoWay}"
+                 MouseDoubleClick="Results_DoubleClick">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <DockPanel Margin="2,4">
+                        <Border DockPanel.Dock="Right" Background="#33FFFFFF" CornerRadius="4"
+                                Padding="6,1" VerticalAlignment="Center" Margin="8,0,0,0">
+                            <TextBlock Text="{Binding Station.Format}" FontSize="10" Foreground="#FFCBD5E1"/>
+                        </Border>
+                        <StackPanel>
+                            <TextBlock Text="{Binding Station.Name}" TextTrimming="CharacterEllipsis"/>
+                            <!-- Pattern B rationale; collapses when null (Pattern A) -->
+                            <TextBlock Text="{Binding Reason}" FontSize="11" Foreground="#FF93A2B8"
+                                       TextWrapping="Wrap" Margin="0,2,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Reason}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </DockPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Actions -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Close" IsCancel="True" MinWidth="84" Height="30" Margin="8,0,0,0"/>
+            <Button Content="Play" Click="Play_Click" Command="{Binding PlaySearchResultCommand}"
+                    MinWidth="84" Height="30" Margin="8,0,0,0"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -259,6 +259,9 @@
                                 Command="{Binding EditStationCommand}" ToolTip="Edit station"/>
                         <Button Style="{StaticResource ListToolButton}" Content="&#xE74D;"
                                 Command="{Binding DeleteStationCommand}" ToolTip="Delete station"/>
+                        <Button Style="{StaticResource ListToolButton}" Content="&#xE721;"
+                                Click="AiSearch_Click" ToolTip="AI station search"
+                                Margin="8,0,4,0"/>
                     </StackPanel>
                     <ListBox Style="{StaticResource StationList}"
                              ItemsSource="{Binding Stations}"

@@ -11,8 +11,20 @@ public sealed class MainViewModel : ObservableObject
     private readonly StationStore _store;
     private readonly SettingsStore _settingsStore;
     private readonly IStationDialog _stationDialog;
+    private readonly IPromptInterpreter _interpreter;
+    private readonly IStationSearchService _searchService;
+    private readonly IAgenticSearchService _agenticSearch;
+    private readonly IEnrichmentService _enrichment;
+    private readonly ISemanticSearchService _semanticSearch;
+
+    // Below this cosine score the local index is considered too weak; fall back to Pattern B.
+    private const double SemanticThreshold = 0.30;
 
     private Station? _selectedStation;
+    private SearchResultItem? _selectedSearchResult;
+    private string _searchPrompt = string.Empty;
+    private string _searchStatus = string.Empty;
+    private bool _isSearching;
     private string _nowPlayingTitle = "Not playing";
     private string _nowPlayingArtist = string.Empty;
     private string _statusText = "Stopped";
@@ -25,12 +37,19 @@ public sealed class MainViewModel : ObservableObject
     private bool _suppressAutoPlay;
 
     public MainViewModel(RadioEngine engine, StationStore store, SettingsStore settingsStore,
-        IStationDialog stationDialog)
+        IStationDialog stationDialog, IPromptInterpreter interpreter, IStationSearchService searchService,
+        IAgenticSearchService agenticSearch, IEnrichmentService enrichment,
+        ISemanticSearchService semanticSearch)
     {
         _engine = engine;
         _store = store;
         _settingsStore = settingsStore;
         _stationDialog = stationDialog;
+        _interpreter = interpreter;
+        _searchService = searchService;
+        _agenticSearch = agenticSearch;
+        _enrichment = enrichment;
+        _semanticSearch = semanticSearch;
 
         // Restore the persisted volume.
         _volume = settingsStore.Load().Volume;
@@ -49,6 +68,226 @@ public sealed class MainViewModel : ObservableObject
         AddStationCommand = new RelayCommand(AddStation);
         EditStationCommand = new RelayCommand(EditStation, () => SelectedStation is not null);
         DeleteStationCommand = new RelayCommand(DeleteStation, () => SelectedStation is not null);
+        SearchCommand = new RelayCommand(() => _ = RunSearchAsync(), () => !IsSearching);
+        PlaySearchResultCommand = new RelayCommand(PlaySelectedSearchResult, () => SelectedSearchResult is not null);
+    }
+
+    // ===== AI-assisted station search =====
+
+    public ObservableCollection<SearchResultItem> SearchResults { get; } = new();
+
+    public RelayCommand SearchCommand { get; }
+    public RelayCommand PlaySearchResultCommand { get; }
+
+    public string SearchPrompt
+    {
+        get => _searchPrompt;
+        set => SetProperty(ref _searchPrompt, value);
+    }
+
+    public string SearchStatus
+    {
+        get => _searchStatus;
+        private set => SetProperty(ref _searchStatus, value);
+    }
+
+    public bool IsSearching
+    {
+        get => _isSearching;
+        private set
+        {
+            if (SetProperty(ref _isSearching, value))
+                SearchCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    public SearchResultItem? SelectedSearchResult
+    {
+        get => _selectedSearchResult;
+        set
+        {
+            if (SetProperty(ref _selectedSearchResult, value))
+                PlaySearchResultCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    private async Task RunSearchAsync()
+    {
+        if (IsSearching || string.IsNullOrWhiteSpace(SearchPrompt))
+            return;
+
+        IsSearching = true;
+        SearchResults.Clear();
+        SelectedSearchResult = null;
+
+        try
+        {
+            // Three paths now:
+            //   literal  -> Pattern A (structured translation; needs API key)
+            //   fuzzy    -> local semantic search; if weak/cold -> Pattern B (web discovery)
+            if (IsFuzzy(SearchPrompt))
+                await RunFuzzySearchAsync(SearchPrompt);
+            else
+                await RunLiteralSearchAsync(SearchPrompt);
+        }
+        catch (Exception ex)
+        {
+            SearchStatus = $"Search failed: {ex.Message}";
+        }
+        finally
+        {
+            IsSearching = false;
+        }
+    }
+
+    private async Task RunLiteralSearchAsync(string prompt)
+    {
+        if (!_interpreter.IsConfigured)
+        {
+            SearchStatus = "Set the ANTHROPIC_API_KEY environment variable to use AI search.";
+            return;
+        }
+        await RunStructuredSearchAsync(prompt);
+    }
+
+    /// <summary>
+    /// Fuzzy path: run BOTH local semantic search and web discovery (Pattern B) concurrently,
+    /// then merge and de-duplicate. Local hits carry their similarity score; web finds carry
+    /// their one-line reason. The enrichment DB augments — it never replaces — web discovery,
+    /// and Pattern B's finds get enriched + embedded so the local side keeps improving.
+    /// </summary>
+    private async Task RunFuzzySearchAsync(string prompt)
+    {
+        SearchStatus = "Searching locally and on the web…";
+
+        // Kick off whichever paths are available, together.
+        var semanticTask = _semanticSearch.IsAvailable
+            ? _semanticSearch.SearchAsync(prompt, 10)
+            : Task.FromResult<IReadOnlyList<SemanticResult>>([]);
+        var webTask = _agenticSearch.IsConfigured
+            ? _agenticSearch.SearchAsync(prompt)
+            : Task.FromResult<IReadOnlyList<RankedStation>>([]);
+
+        // Await each independently so one path failing doesn't sink the other.
+        IReadOnlyList<SemanticResult> semantic = [];
+        IReadOnlyList<RankedStation> web = [];
+        try { semantic = await semanticTask; }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Search] semantic failed: {ex.Message}"); }
+        try { web = await webTask; }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Search] web failed: {ex.Message}"); }
+
+        // Merge: relevant local hits first (by score), then web finds not already shown.
+        // De-dupe on the resolved stream URL, which both paths populate.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var localShown = 0;
+        foreach (var r in semantic)
+        {
+            if (r.Score < SemanticThreshold) continue;     // keep only relevant local hits
+            if (!seen.Add(r.Station.Url)) continue;
+            SearchResults.Add(new SearchResultItem(r.Station, $"Local match · {r.Score:0.00}"));
+            localShown++;
+        }
+        var webShown = 0;
+        foreach (var r in web)
+        {
+            if (!seen.Add(r.Station.Url)) continue;        // dedupe vs local + earlier web finds
+            SearchResults.Add(new SearchResultItem(r.Station, r.Reason));
+            webShown++;
+        }
+
+        if (SearchResults.Count > 0)
+            SearchStatus = $"Found {SearchResults.Count} station{(SearchResults.Count == 1 ? "" : "s")} "
+                + $"({localShown} local + {webShown} web).";
+        else if (!_semanticSearch.IsAvailable && !_agenticSearch.IsConfigured)
+            SearchStatus = "Set ANTHROPIC_API_KEY (and add the embedding model) to use AI search.";
+        else
+            SearchStatus = "No matching stations found. Try a different prompt.";
+    }
+
+    /// <summary>Pattern A: structured-output translation, then a Radio Browser query.</summary>
+    private async Task RunStructuredSearchAsync(string prompt)
+    {
+        SearchStatus = "Interpreting your request…";
+        var query = await _interpreter.InterpretAsync(prompt);
+        if (query is null)
+        {
+            SearchStatus = "Couldn't interpret that. Try rephrasing.";
+            return;
+        }
+
+        SearchStatus = "Searching stations…";
+        var results = await _searchService.SearchCandidatesAsync(query);
+
+        // Unhappy path: nothing matched — broaden once before giving up.
+        if (results.Count == 0 && Broaden(query) is { } broadened)
+        {
+            SearchStatus = "No exact matches — broadening the search…";
+            results = await _searchService.SearchCandidatesAsync(broadened);
+        }
+
+        // Lazily enrich what the user explored (fire-and-forget; never blocks).
+        _enrichment.EnrichInBackground(results);
+
+        foreach (var candidate in results)
+            SearchResults.Add(new SearchResultItem(candidate.Station, null));
+
+        SearchStatus = results.Count == 0
+            ? "No playable stations found. Try a different prompt."
+            : $"Found {results.Count} station{(results.Count == 1 ? "" : "s")}.";
+    }
+
+    /// <summary>
+    /// Cheap heuristic to pick the path: short, plain names ("BBC") go to Pattern A;
+    /// descriptive/semantic prompts ("dreamy synthwave people recommend") go to Pattern B.
+    /// </summary>
+    private static bool IsFuzzy(string prompt)
+    {
+        var lower = prompt.ToLowerInvariant();
+        string[] softMarkers =
+        [
+            "recommend", "vibe", "like ", "similar", "dreamy", "mood", "feel", "people",
+            "best ", "for ", "late", "night", "study", "studying", "coding", "workout",
+            "relax", "chill", "background", "something", "kind of", "sounds like", "era",
+            "scene", "drive", "drives"
+        ];
+        if (softMarkers.Any(lower.Contains))
+            return true;
+        // Long prompts are almost always descriptive, not a literal station name.
+        return prompt.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length > 5;
+    }
+
+    /// <summary>Loosen a query that returned nothing: drop country/language, then narrow tags.</summary>
+    private static StationSearchQuery? Broaden(StationSearchQuery q)
+    {
+        if (!string.IsNullOrWhiteSpace(q.Country) || !string.IsNullOrWhiteSpace(q.Language))
+            return new StationSearchQuery { Tags = q.Tags, BitrateMin = q.BitrateMin, Order = q.Order };
+        if (q.Tags.Length > 1)
+            return new StationSearchQuery { Tags = [q.Tags[0]], Order = q.Order };
+        return null;
+    }
+
+    /// <summary>Add the chosen result to the library (persisted) and play it.</summary>
+    public void PlaySelectedSearchResult()
+    {
+        var station = SelectedSearchResult?.Station;
+        if (station is null)
+            return;
+
+        var existing = Stations.FirstOrDefault(s =>
+            string.Equals(s.Url, station.Url, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+        {
+            Stations.Add(station);
+            _store.Save(Stations);
+            NextStationCommand.RaiseCanExecuteChanged();
+        }
+        else
+        {
+            station = existing;
+        }
+
+        SelectWithoutAutoPlay(station);
+        _engine.Play(station);
     }
 
     public ObservableCollection<Station> Stations { get; }

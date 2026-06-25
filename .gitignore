@@ -19,3 +19,7 @@ desktop.ini
 
 # NOTE: native/x64/bass.dll and native/x64/bass_aac.dll are intentionally tracked —
 # they are required native dependencies copied to the output at build time.
+
+# Local embedding model is large (~90 MB) — fetched on setup, not committed.
+# vocab.txt is small and IS tracked.
+MlAssets/*.onnx
