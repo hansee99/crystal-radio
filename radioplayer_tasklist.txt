@@ -32,10 +32,10 @@ Batch 2 - Small behavior & UX fixes  (DONE)
         manually (optional, multiline; prefilled when editing). Finishes T3 - manually
         added stations then get the same description sub-line in the fixed list.
 
-Batch 3 - Small isolated additions
+Batch 3 - Small isolated additions  (DONE)
 ----------------------------------
-[ ] T7  Single instance: only one instance of the player should run at a time.
-[ ] T8  Update the About box info text to mention the AI search.
+[x] T7  Single instance: only one instance of the player should run at a time.
+[x] T8  Update the About box info text to mention the AI search.
 
 Batch 2.5 - Search routing (found while testing Batch 1)
 --------------------------------------------------------
@@ -59,6 +59,8 @@ Done
 - T10 - LLM query classifier for literal-vs-fuzzy search routing (heuristic fallback).
 - Batch 2 (T4, T6, T11, T12) - double-click-to-play, near-duplicate search result
   dedupe, add-to-library check-mark confirmation, manual Description in the station dialog.
+- Batch 3 (T7, T8) - single-instance guard (named mutex; 2nd launch surfaces the running
+  window), About box mentions AI search.
 
 
 Backlog:

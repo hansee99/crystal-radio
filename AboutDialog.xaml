@@ -21,6 +21,9 @@
         <TextBlock Margin="0,16,0,0" FontSize="13" Foreground="#FFD2D8E0" TextWrapping="Wrap"
                    Text="A lightweight player for internet radio streams (Icecast/Shoutcast), with now-playing info, Windows media-control integration, and taskbar controls."/>
 
+        <TextBlock Margin="0,10,0,0" FontSize="13" Foreground="#FFD2D8E0" TextWrapping="Wrap"
+                   Text="AI-assisted search finds real, playable stations from a plain-language prompt — translating it into a directory search and ranking the results. Optional and online-only; the player works fully without it."/>
+
         <TextBlock Margin="0,14,0,0" FontSize="11" Foreground="#FF8C97A6" TextWrapping="Wrap"
                    Text="Audio engine: BASS (un4seen) — free for non-commercial use. Licensed under the PolyForm Noncommercial License 1.0.0."/>
 

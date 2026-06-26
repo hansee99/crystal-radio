@@ -1,9 +1,9 @@
 ﻿<Application x:Class="RadioPlayer.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:RadioPlayer"
-             StartupUri="MainWindow.xaml">
+             xmlns:local="clr-namespace:RadioPlayer">
+    <!-- No StartupUri: App.OnStartup creates the window, after the single-instance check. -->
     <Application.Resources>
-         
+
     </Application.Resources>
 </Application>
