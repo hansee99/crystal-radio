@@ -42,9 +42,12 @@ public partial class MainWindow : Window
         var semanticSearch = new SemanticSearchService(_embeddingProvider, _enrichmentStore, searchService);
         var agenticSearch = new AgenticSearchService(            // Pattern B
             new HttpClient(), searchService, enrichment, apiKey);
+        var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
+        var classifier = new LlmQueryClassifier(new HttpClient(), apiKey); // literal vs fuzzy routing
 
         _viewModel = new MainViewModel(_engine, new StationStore(), new SettingsStore(),
-            new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment, semanticSearch);
+            new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
+            semanticSearch, ranker, classifier);
         DataContext = _viewModel;
 
         // One-time/background: embed any enriched rows lacking a current-model vector.
@@ -88,8 +91,12 @@ public partial class MainWindow : Window
     private void About_Click(object sender, RoutedEventArgs e)
         => new AboutDialog { Owner = this }.ShowDialog();
 
-    private void AiSearch_Click(object sender, RoutedEventArgs e)
-        => new AiSearchDialog { Owner = this, DataContext = _viewModel }.ShowDialog();
+    private void SearchResults_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        // Double-click a search result plays it (without adding it to the fixed list).
+        if (_viewModel.SelectedSearchResult is not null)
+            _viewModel.PlaySelectedSearchResult();
+    }
 
     private void CopyNowPlaying_Click(object sender, RoutedEventArgs e)
     {

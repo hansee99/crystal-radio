@@ -1,0 +1,57 @@
+Radio Player Task List
+======================
+
+Working rhythm: tackle one batch per session -> build -> verify -> commit ->
+check the items off here. Commit per batch so context stays small between sessions.
+
+Status legend: [ ] todo   [~] in progress   [x] done
+
+
+Batch 1 - Dialog & list visuals  (DONE)
+-------------------------------
+[x] T1  Format dropdown in the add-stream dialog uses a very light text color with low
+        visibility, and the text size is quite small compared to the field size
+        (see screenshot_add_station.png). Improve readability.
+[x] T2  The station list panel should be wider so the station name is more readable.
+        Also add the station description to the tooltip - it's not fully visible for
+        most stations.
+[x] T3  Add the station description to the rows in the fixed stations list too, so they
+        look the same as in the search panel.
+[x] T5  Change the station icon in the station lists to code point E704 (InternetSharing).
+
+Batch 2 - Small behavior fixes
+------------------------------
+[ ] T4  Double-clicking a station in the stations list should start playback if the
+        player is stopped.
+[ ] T6  Duplicate search results: the same station showed up twice in the result list,
+        one with a "[2]" suffix. This should be avoided.
+
+Batch 3 - Small isolated additions
+----------------------------------
+[ ] T7  Single instance: only one instance of the player should run at a time.
+[ ] T8  Update the About box info text to mention the AI search.
+
+Batch 2.5 - Search routing (found while testing Batch 1)
+--------------------------------------------------------
+[x] T10 "roadtrip music" was routed to the literal/Pattern-A path (no descriptions, crude
+        tag matches) because the keyword/length heuristic missed it. Replaced routing with a
+        cheap Haiku LLM classifier (literal vs fuzzy); the old heuristic stays as fallback
+        when no API key / on error.
+
+Batch 4 - Options dialog + API-key storage
+------------------------------------------
+[ ] T9  Add a modal options dialog opened from a cogwheel button. For now it only stores
+        the Anthropic API key, but build it so it's easily extended with future settings.
+        (Decision when we get here: store the key encrypted at rest via Windows DPAPI,
+        env var as fallback.)
+
+
+Done
+----
+- Batch 1 (T1, T2, T3, T5) - dialog dropdown restyle, wider list panel + description
+  tooltips, description sub-line on fixed-list rows, E704 station glyph.
+
+
+Backlog:
+- a visual confirmation for adding a station from the search results to the stations list, e.g. changing the '+' icon to a check mark after button click, or something similar.
+- the description field should be added to the Add station dialog so it can be set or changed manually.

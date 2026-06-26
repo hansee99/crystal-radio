@@ -16,9 +16,20 @@ public sealed class MainViewModel : ObservableObject
     private readonly IAgenticSearchService _agenticSearch;
     private readonly IEnrichmentService _enrichment;
     private readonly ISemanticSearchService _semanticSearch;
+    private readonly ISearchRanker _ranker;
+    private readonly IQueryClassifier _classifier;
 
-    // Below this cosine score the local index is considered too weak; fall back to Pattern B.
+    // Below this cosine score the local index is considered too weak (heuristic fallback only).
     private const double SemanticThreshold = 0.30;
+
+    // Max search results shown (top matches).
+    private const int MaxResults = 6;
+
+    // Validate a few extra so dropping dead streams still tends to leave MaxResults working.
+    private const int ResultsToValidate = MaxResults + 3;
+
+    // How many local candidates to gather for the re-ranker to choose from.
+    private const int CandidatePoolSize = 12;
 
     private Station? _selectedStation;
     private SearchResultItem? _selectedSearchResult;
@@ -39,7 +50,7 @@ public sealed class MainViewModel : ObservableObject
     public MainViewModel(RadioEngine engine, StationStore store, SettingsStore settingsStore,
         IStationDialog stationDialog, IPromptInterpreter interpreter, IStationSearchService searchService,
         IAgenticSearchService agenticSearch, IEnrichmentService enrichment,
-        ISemanticSearchService semanticSearch)
+        ISemanticSearchService semanticSearch, ISearchRanker ranker, IQueryClassifier classifier)
     {
         _engine = engine;
         _store = store;
@@ -50,6 +61,8 @@ public sealed class MainViewModel : ObservableObject
         _agenticSearch = agenticSearch;
         _enrichment = enrichment;
         _semanticSearch = semanticSearch;
+        _ranker = ranker;
+        _classifier = classifier;
 
         // Restore the persisted volume.
         _volume = settingsStore.Load().Volume;
@@ -69,7 +82,7 @@ public sealed class MainViewModel : ObservableObject
         EditStationCommand = new RelayCommand(EditStation, () => SelectedStation is not null);
         DeleteStationCommand = new RelayCommand(DeleteStation, () => SelectedStation is not null);
         SearchCommand = new RelayCommand(() => _ = RunSearchAsync(), () => !IsSearching);
-        PlaySearchResultCommand = new RelayCommand(PlaySelectedSearchResult, () => SelectedSearchResult is not null);
+        AddSearchResultCommand = new RelayCommand<SearchResultItem>(AddSearchResultToLibrary);
     }
 
     // ===== AI-assisted station search =====
@@ -77,7 +90,7 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<SearchResultItem> SearchResults { get; } = new();
 
     public RelayCommand SearchCommand { get; }
-    public RelayCommand PlaySearchResultCommand { get; }
+    public RelayCommand<SearchResultItem> AddSearchResultCommand { get; }
 
     public string SearchPrompt
     {
@@ -104,11 +117,7 @@ public sealed class MainViewModel : ObservableObject
     public SearchResultItem? SelectedSearchResult
     {
         get => _selectedSearchResult;
-        set
-        {
-            if (SetProperty(ref _selectedSearchResult, value))
-                PlaySearchResultCommand.RaiseCanExecuteChanged();
-        }
+        set => SetProperty(ref _selectedSearchResult, value);
     }
 
     private async Task RunSearchAsync()
@@ -125,7 +134,11 @@ public sealed class MainViewModel : ObservableObject
             // Three paths now:
             //   literal  -> Pattern A (structured translation; needs API key)
             //   fuzzy    -> local semantic search; if weak/cold -> Pattern B (web discovery)
-            if (IsFuzzy(SearchPrompt))
+            // An LLM classifies which path the prompt wants; if it can't run (no key/error)
+            // we fall back to the cheap keyword/length heuristic.
+            SearchStatus = "Understanding your request…";
+            var fuzzy = await _classifier.IsFuzzyAsync(SearchPrompt) ?? IsFuzzy(SearchPrompt);
+            if (fuzzy)
                 await RunFuzzySearchAsync(SearchPrompt);
             else
                 await RunLiteralSearchAsync(SearchPrompt);
@@ -160,9 +173,10 @@ public sealed class MainViewModel : ObservableObject
     {
         SearchStatus = "Searching locally and on the web…";
 
-        // Kick off whichever paths are available, together.
+        // Kick off whichever paths are available, together. Gather a larger local pool so the
+        // re-ranker has real choice (cosine alone over-favours thin/generic descriptions).
         var semanticTask = _semanticSearch.IsAvailable
-            ? _semanticSearch.SearchAsync(prompt, 10)
+            ? _semanticSearch.SearchAsync(prompt, CandidatePoolSize)
             : Task.FromResult<IReadOnlyList<SemanticResult>>([]);
         var webTask = _agenticSearch.IsConfigured
             ? _agenticSearch.SearchAsync(prompt)
@@ -176,33 +190,101 @@ public sealed class MainViewModel : ObservableObject
         try { web = await webTask; }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Search] web failed: {ex.Message}"); }
 
-        // Merge: relevant local hits first (by score), then web finds not already shown.
-        // De-dupe on the resolved stream URL, which both paths populate.
+        // Build one de-duplicated candidate pool (local + web). Each carries the text the
+        // ranker will judge: the stored description (local) or the model's reason (web).
+        var pool = new List<SearchResultItem>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var localShown = 0;
         foreach (var r in semantic)
-        {
-            if (r.Score < SemanticThreshold) continue;     // keep only relevant local hits
-            if (!seen.Add(r.Station.Url)) continue;
-            SearchResults.Add(new SearchResultItem(r.Station, $"Local match · {r.Score:0.00}"));
-            localShown++;
-        }
-        var webShown = 0;
+            if (seen.Add(r.Station.Url))
+                pool.Add(new SearchResultItem(r.Station, r.Description));
         foreach (var r in web)
+            if (seen.Add(r.Station.Url))
+                pool.Add(new SearchResultItem(r.Station, r.Reason));
+
+        if (pool.Count == 0)
         {
-            if (!seen.Add(r.Station.Url)) continue;        // dedupe vs local + earlier web finds
-            SearchResults.Add(new SearchResultItem(r.Station, r.Reason));
-            webShown++;
+            SearchStatus = !_semanticSearch.IsAvailable && !_agenticSearch.IsConfigured
+                ? "Set ANTHROPIC_API_KEY (and add the embedding model) to use AI search."
+                : "No matching stations found. Try a different prompt.";
+            return;
         }
 
-        if (SearchResults.Count > 0)
-            SearchStatus = $"Found {SearchResults.Count} station{(SearchResults.Count == 1 ? "" : "s")} "
-                + $"({localShown} local + {webShown} web).";
-        else if (!_semanticSearch.IsAvailable && !_agenticSearch.IsConfigured)
-            SearchStatus = "Set ANTHROPIC_API_KEY (and add the embedding model) to use AI search.";
+        // LLM relevance re-rank: judge each candidate's text against the prompt so local and
+        // web compete on one signal and weak matches are dropped.
+        // LLM relevance re-rank produces an ordered shortlist; otherwise fall back to the
+        // cosine-threshold heuristic. Either way we then validate streams before showing them.
+        List<SearchResultItem> shortlist;
+        if (_ranker.IsConfigured)
+        {
+            SearchStatus = "Ranking matches…";
+            var candidates = pool.Select((p, i) => new RankCandidate(i, p.Station.Name, p.Reason ?? "")).ToList();
+            var verdicts = await _ranker.RankAsync(prompt, candidates, ResultsToValidate);
+            if (verdicts is not null) // null = ranker couldn't run → fall back to heuristic
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Rank] pool={pool.Count} (local {semantic.Count}, web {web.Count}) -> kept {verdicts.Count}");
+                shortlist = verdicts.Select(v => pool[v.Id]).ToList();
+            }
+            else
+            {
+                shortlist = BuildHeuristicMerge(semantic, web);
+            }
+        }
         else
-            SearchStatus = "No matching stations found. Try a different prompt.";
+        {
+            shortlist = BuildHeuristicMerge(semantic, web);
+        }
+
+        SearchStatus = "Checking streams…";
+        await AddValidatedAsync(shortlist);
+        SetResultStatus();
     }
+
+    /// <summary>Fallback ordering when the LLM re-ranker isn't available: relevant local hits by score, then web.</summary>
+    private List<SearchResultItem> BuildHeuristicMerge(IReadOnlyList<SemanticResult> semantic, IReadOnlyList<RankedStation> web)
+    {
+        var list = new List<SearchResultItem>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in semantic)
+        {
+            if (list.Count >= ResultsToValidate) break;
+            if (r.Score < SemanticThreshold) continue;
+            if (!seen.Add(r.Station.Url)) continue;
+            list.Add(new SearchResultItem(r.Station, $"Local match · {r.Score:0.00}"));
+        }
+        foreach (var r in web)
+        {
+            if (list.Count >= ResultsToValidate) break;
+            if (!seen.Add(r.Station.Url)) continue;
+            list.Add(new SearchResultItem(r.Station, r.Reason));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Probe each candidate's stream (off the UI thread) and add only the ones that actually
+    /// open, in order, up to MaxResults. Dead/undecodable streams are silently dropped.
+    /// </summary>
+    private async Task AddValidatedAsync(IReadOnlyList<SearchResultItem> items)
+    {
+        if (items.Count == 0)
+            return;
+
+        // Probe concurrently; Task.WhenAll preserves order so ranking is kept.
+        var checks = await Task.WhenAll(
+            items.Select(async it => (item: it, ok: await _engine.TestStreamAsync(it.Station))));
+
+        foreach (var (item, ok) in checks)
+        {
+            if (SearchResults.Count >= MaxResults) break;
+            if (ok) SearchResults.Add(item);
+        }
+    }
+
+    private void SetResultStatus() =>
+        SearchStatus = SearchResults.Count == 0
+            ? "No working stations found. Try a different prompt."
+            : $"Found {SearchResults.Count} station{(SearchResults.Count == 1 ? "" : "s")}.";
 
     /// <summary>Pattern A: structured-output translation, then a Radio Browser query.</summary>
     private async Task RunStructuredSearchAsync(string prompt)
@@ -225,20 +307,29 @@ public sealed class MainViewModel : ObservableObject
             results = await _searchService.SearchCandidatesAsync(broadened);
         }
 
-        // Lazily enrich what the user explored (fire-and-forget; never blocks).
+        // Lazily enrich what the user explored (fire-and-forget; never blocks). Enrich all
+        // fetched rows even though we only show the top few.
         _enrichment.EnrichInBackground(results);
 
-        foreach (var candidate in results)
-            SearchResults.Add(new SearchResultItem(candidate.Station, null));
+        if (results.Count == 0)
+        {
+            SearchStatus = "No playable stations found. Try a different prompt.";
+            return;
+        }
 
-        SearchStatus = results.Count == 0
-            ? "No playable stations found. Try a different prompt."
-            : $"Found {results.Count} station{(results.Count == 1 ? "" : "s")}.";
+        // Validate streams before showing (over-fetch so dead ones still leave ~MaxResults).
+        var shortlist = results.Take(ResultsToValidate)
+            .Select(c => new SearchResultItem(c.Station, null)).ToList();
+        SearchStatus = "Checking streams…";
+        await AddValidatedAsync(shortlist);
+        SetResultStatus();
     }
 
     /// <summary>
-    /// Cheap heuristic to pick the path: short, plain names ("BBC") go to Pattern A;
-    /// descriptive/semantic prompts ("dreamy synthwave people recommend") go to Pattern B.
+    /// Fallback path picker used only when the LLM classifier can't run (no key / error).
+    /// Cheap heuristic: short, plain names ("BBC") go to Pattern A; descriptive/semantic
+    /// prompts ("dreamy synthwave people recommend") go to Pattern B. It misses vibe queries
+    /// with no marker word (e.g. "roadtrip music") — which is exactly why the classifier leads.
     /// </summary>
     private static bool IsFuzzy(string prompt)
     {
@@ -266,7 +357,11 @@ public sealed class MainViewModel : ObservableObject
         return null;
     }
 
-    /// <summary>Add the chosen result to the library (persisted) and play it.</summary>
+    /// <summary>
+    /// Play a search result WITHOUT adding it to the fixed list (adding is explicit, via the
+    /// per-row Add button). If it's already in the library, play that instance so it stays
+    /// in sync with next-station cycling.
+    /// </summary>
     public void PlaySelectedSearchResult()
     {
         var station = SelectedSearchResult?.Station;
@@ -275,19 +370,28 @@ public sealed class MainViewModel : ObservableObject
 
         var existing = Stations.FirstOrDefault(s =>
             string.Equals(s.Url, station.Url, StringComparison.OrdinalIgnoreCase));
-        if (existing is null)
+        if (existing is not null)
         {
-            Stations.Add(station);
-            _store.Save(Stations);
-            NextStationCommand.RaiseCanExecuteChanged();
-        }
-        else
-        {
+            SelectWithoutAutoPlay(existing);
             station = existing;
         }
 
-        SelectWithoutAutoPlay(station);
         _engine.Play(station);
+    }
+
+    /// <summary>Add a search result to the fixed, persisted station list (no playback).</summary>
+    private void AddSearchResultToLibrary(SearchResultItem? item)
+    {
+        if (item?.Station is not { } station)
+            return;
+        if (Stations.Any(s => string.Equals(s.Url, station.Url, StringComparison.OrdinalIgnoreCase)))
+            return; // already in the library
+
+        // Carry the search-panel blurb onto the saved station so the fixed list shows the
+        // same secondary line (Reason = enriched description / web rationale, or null).
+        Stations.Add(station with { Description = item.Reason });
+        _store.Save(Stations);
+        NextStationCommand.RaiseCanExecuteChanged();
     }
 
     public ObservableCollection<Station> Stations { get; }

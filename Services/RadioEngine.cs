@@ -116,6 +116,31 @@ public sealed class RadioEngine : IDisposable
     }
 
     /// <summary>
+    /// Probe whether a stream can actually be opened by the engine, WITHOUT disturbing current
+    /// playback: it creates a throwaway BASS handle and frees it immediately. Used to validate
+    /// search results before showing them — Radio Browser's <c>lastcheckok</c> can be stale.
+    /// Returns false if the stream can't be opened (dead URL, undecodable, timeout).
+    /// </summary>
+    public Task<bool> TestStreamAsync(Station station, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(station);
+        var url = station.Url;
+        var isAac = station.Format == StreamFormat.Aac;
+
+        return Task.Run(() =>
+        {
+            // Separate handle from the playback stream, so this never affects what's playing.
+            var handle = isAac
+                ? BassAac.CreateStream(url, 0, BassFlags.Default, null)
+                : Bass.CreateStream(url, 0, BassFlags.Default, null);
+            if (handle == 0)
+                return false;
+            Bass.StreamFree(handle);
+            return true;
+        }, ct);
+    }
+
+    /// <summary>
     /// (Re)starts a stream. The blocking network connect (<c>Bass*.CreateStream</c>) runs
     /// on a background thread so the UI thread stays responsive while connecting, then
     /// completion is marshalled back. The generation counter lets a newer Play/Stop
