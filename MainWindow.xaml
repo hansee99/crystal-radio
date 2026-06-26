@@ -553,6 +553,8 @@
 
         <!-- Caption buttons (replace the removed native title bar). -->
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+            <Button Style="{StaticResource CaptionButton}" Click="Options_Click"
+                    Content="&#xE713;" ToolTip="Options"/>
             <Button Style="{StaticResource CaptionButton}" Click="About_Click"
                     Content="&#xE946;" ToolTip="About"/>
             <Button Style="{StaticResource CaptionButton}" Click="Minimize_Click"

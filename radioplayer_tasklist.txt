@@ -44,12 +44,14 @@ Batch 2.5 - Search routing (found while testing Batch 1)
         cheap Haiku LLM classifier (literal vs fuzzy); the old heuristic stays as fallback
         when no API key / on error.
 
-Batch 4 - Options dialog + API-key storage
+Batch 4 - Options dialog + API-key storage  (DONE)
 ------------------------------------------
-[ ] T9  Add a modal options dialog opened from a cogwheel button. For now it only stores
+[x] T9  Add a modal options dialog opened from a cogwheel button. For now it only stores
         the Anthropic API key, but build it so it's easily extended with future settings.
         (Decision when we get here: store the key encrypted at rest via Windows DPAPI,
         env var as fallback.)
+        Done: DPAPI (CurrentUser) encryption in SettingsStore; key resolved stored->env at
+        startup; OptionsDialog (cogwheel button). Changing the key applies on restart.
 
 
 Done
@@ -61,7 +63,24 @@ Done
   dedupe, add-to-library check-mark confirmation, manual Description in the station dialog.
 - Batch 3 (T7, T8) - single-instance guard (named mutex; 2nd launch surfaces the running
   window), About box mentions AI search.
+- Batch 4 (T9) - options dialog (cogwheel) storing the Anthropic API key DPAPI-encrypted;
+  key resolved stored->env at startup; applies on restart.
+
+Batches 1-4 (T1-T12) complete. New items triaged into Batch 5 below.
+
+
+Batch 5 - UX copy & polish
+--------------------------
+[ ] T13 Finish T2: show the station description in the row tooltip (hover anywhere on the
+        row, not just the thin sub-line). Name header + full wrapping description; both
+        lists. Note: only search-/manually-added stations have a description; defaults stay
+        name-only.
+[ ] T14 Put the search box's example text inside the box as placeholder/watermark text
+        (shown while empty), instead of as a tooltip. Better fit for the app's UX.
+[ ] T15 Make the search status messages less technical / more friendly for non-technical
+        users (radio-themed copy; proposed set agreed in chat).
+[ ] T16 Simplify the Options dialog copy - drop the DPAPI/env-var jargon, keep it minimal.
 
 
 Backlog:
-- (none - the two items here were triaged into Batch 2 as T11 and T12)
+- (none)

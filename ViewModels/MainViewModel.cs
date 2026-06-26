@@ -588,7 +588,13 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>Persist user settings (volume). Called when the app is closing.</summary>
-    public void SaveSettings() => _settingsStore.Save(new AppSettings { Volume = _volume });
+    /// <remarks>Load-modify-save so it preserves other persisted fields (e.g. the API key).</remarks>
+    public void SaveSettings()
+    {
+        var settings = _settingsStore.Load();
+        settings.Volume = _volume;
+        _settingsStore.Save(settings);
+    }
 
     /// <summary>
     /// Explicitly play the selected station — used by double-click in the stations list.

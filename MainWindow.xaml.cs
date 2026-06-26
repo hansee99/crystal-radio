@@ -16,6 +16,7 @@ public partial class MainWindow : Window
 {
     private readonly RadioEngine _engine;
     private readonly MainViewModel _viewModel;
+    private readonly SettingsStore _settingsStore;
     private readonly EnrichmentStore _enrichmentStore;
     private readonly MiniLmEmbeddingProvider _embeddingProvider;
     private SmtcController? _smtc;
@@ -25,9 +26,11 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _engine = new RadioEngine();
+        _settingsStore = new SettingsStore();
 
-        // AI-assisted search services (raw HttpClient; key from the environment, never committed).
-        var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        // AI-assisted search services (raw HttpClient; key never committed). Prefer the key
+        // saved in-app (DPAPI-encrypted), then fall back to the ANTHROPIC_API_KEY env var.
+        var apiKey = _settingsStore.GetApiKey() ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
         var searchService = new StationSearchService(new HttpClient());
         var interpreter = new PromptInterpreter(new HttpClient(), apiKey);              // Pattern A
 
@@ -45,7 +48,7 @@ public partial class MainWindow : Window
         var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
         var classifier = new LlmQueryClassifier(new HttpClient(), apiKey); // literal vs fuzzy routing
 
-        _viewModel = new MainViewModel(_engine, new StationStore(), new SettingsStore(),
+        _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
             semanticSearch, ranker, classifier);
         DataContext = _viewModel;
@@ -90,6 +93,9 @@ public partial class MainWindow : Window
 
     private void About_Click(object sender, RoutedEventArgs e)
         => new AboutDialog { Owner = this }.ShowDialog();
+
+    private void Options_Click(object sender, RoutedEventArgs e)
+        => new OptionsDialog(_settingsStore) { Owner = this }.ShowDialog();
 
     private void SearchResults_DoubleClick(object sender, MouseButtonEventArgs e)
     {
