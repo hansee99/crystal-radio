@@ -44,7 +44,7 @@
     <StackPanel Margin="20,16,20,20">
         <TextBlock Style="{StaticResource SectionHeader}" Text="AI-assisted search"/>
         <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,0"
-                   Text="Powers natural-language station search. Leave blank to disable AI search (the player works fully without it)."/>
+                   Text="Used for AI-assisted search. Leave blank to turn it off — the player works fine without it."/>
 
         <TextBlock Style="{StaticResource FieldLabel}" Text="Anthropic API key"/>
         <TextBox x:Name="ApiKeyBox"/>
@@ -52,9 +52,9 @@
         <TextBlock x:Name="EnvHintText" Style="{StaticResource Hint}" Visibility="Collapsed"/>
 
         <TextBlock Style="{StaticResource Hint}"
-                   Text="Stored encrypted on this PC for your Windows account (DPAPI) — never in plain text and never committed. If left blank, the ANTHROPIC_API_KEY environment variable is used instead. Get a key at console.anthropic.com."/>
+                   Text="Your key is stored securely on this PC. Get one at console.anthropic.com."/>
         <TextBlock Style="{StaticResource Hint}" Foreground="#FFB9A36A"
-                   Text="Changes take effect after restarting the app."/>
+                   Text="Restart the app to apply changes."/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
             <Button Content="Cancel" IsCancel="True"/>

@@ -26,7 +26,7 @@ public partial class OptionsDialog : Window
         var envKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
         if (!hasStored && !string.IsNullOrWhiteSpace(envKey))
         {
-            EnvHintText.Text = "Currently using ANTHROPIC_API_KEY from your environment.";
+            EnvHintText.Text = "A key from your system is currently in use.";
             EnvHintText.Visibility = Visibility.Visible;
         }
 

@@ -185,21 +185,36 @@
                     <DataTemplate>
                         <!-- DockPanel bounds the text column so name/description can ellipsize. -->
                         <DockPanel LastChildFill="True" Margin="2,3">
+                            <!-- One tooltip for the whole row (hover anywhere): full name +
+                                 full description. Description line hides when there is none. -->
+                            <DockPanel.ToolTip>
+                                <ToolTip MaxWidth="340">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                                   TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Description}" TextWrapping="Wrap"
+                                                   Margin="0,4,0,0" Foreground="#FFC9D2DE">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Description}" Value="{x:Null}">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </ToolTip>
+                            </DockPanel.ToolTip>
                             <TextBlock DockPanel.Dock="Left" Text="&#xE704;"
                                        FontFamily="{StaticResource FluentIcons}"
                                        FontSize="14" Opacity="0.85" Margin="0,0,10,0"
                                        VerticalAlignment="Center"/>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding Name}"/>
-                                <!-- Full description on hover (wraps); hidden when there is none. -->
+                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
                                 <TextBlock Text="{Binding Description}" FontSize="11"
                                            Foreground="#FF93A2B8" TextTrimming="CharacterEllipsis">
-                                    <TextBlock.ToolTip>
-                                        <ToolTip MaxWidth="340">
-                                            <TextBlock Text="{Binding Description}" TextWrapping="Wrap"/>
-                                        </ToolTip>
-                                    </TextBlock.ToolTip>
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Style.Triggers>
@@ -278,6 +293,27 @@
                 <Setter.Value>
                     <DataTemplate>
                         <DockPanel LastChildFill="True" Margin="2,3">
+                            <!-- One tooltip for the whole row (hover anywhere): name + reason. -->
+                            <DockPanel.ToolTip>
+                                <ToolTip MaxWidth="340">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Station.Name}" FontWeight="SemiBold"
+                                                   TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Reason}" TextWrapping="Wrap"
+                                                   Margin="0,4,0,0" Foreground="#FFC9D2DE">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Reason}" Value="{x:Null}">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </ToolTip>
+                            </DockPanel.ToolTip>
                             <!-- Add to the fixed station list (does not play). Turns into a
                                  disabled check mark once the station is in the library. -->
                             <Button DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"
@@ -303,16 +339,9 @@
                                        FontFamily="{StaticResource FluentIcons}" FontSize="14"
                                        Opacity="0.85" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="{Binding Station.Name}" TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding Station.Name}"/>
+                                <TextBlock Text="{Binding Station.Name}" TextTrimming="CharacterEllipsis"/>
                                 <TextBlock Text="{Binding Reason}" FontSize="11" Foreground="#FF93A2B8"
                                            TextTrimming="CharacterEllipsis">
-                                    <!-- Full description/rationale on hover (wraps). -->
-                                    <TextBlock.ToolTip>
-                                        <ToolTip MaxWidth="340">
-                                            <TextBlock Text="{Binding Reason}" TextWrapping="Wrap"/>
-                                        </ToolTip>
-                                    </TextBlock.ToolTip>
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Style.Triggers>
@@ -421,12 +450,27 @@
                                          VerticalContentAlignment="Center"
                                          Background="#FF232A36" Foreground="#FFFFFFFF" CaretBrush="#FFFFFFFF"
                                          BorderBrush="#FF3A4456" BorderThickness="1"
-                                         Text="{Binding SearchPrompt, UpdateSourceTrigger=PropertyChanged}"
-                                         ToolTip="Describe a vibe — e.g. 'dreamy synthwave for night drives'">
+                                         Text="{Binding SearchPrompt, UpdateSourceTrigger=PropertyChanged}">
                                     <TextBox.InputBindings>
                                         <KeyBinding Key="Return" Command="{Binding SearchCommand}"/>
                                     </TextBox.InputBindings>
                                 </TextBox>
+                                <!-- Placeholder shown over the empty box; clicks pass through. -->
+                                <TextBlock Grid.Column="0" IsHitTestVisible="False"
+                                           Text="Describe a vibe, mood, or activity…"
+                                           Foreground="#FF6E7A8A" FontSize="13"
+                                           Margin="10,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Text, ElementName=PromptBox}" Value="">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                                 <Button Grid.Column="1" Style="{StaticResource ListToolButton}"
                                         Content="&#xE721;" ToolTip="Search"
                                         Height="32" Width="34" Margin="6,0,0,0"

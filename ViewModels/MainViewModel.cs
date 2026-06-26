@@ -136,7 +136,7 @@ public sealed class MainViewModel : ObservableObject
             //   fuzzy    -> local semantic search; if weak/cold -> Pattern B (web discovery)
             // An LLM classifies which path the prompt wants; if it can't run (no key/error)
             // we fall back to the cheap keyword/length heuristic.
-            SearchStatus = "Understanding your request…";
+            SearchStatus = "Tuning in to your request…";
             var fuzzy = await _classifier.IsFuzzyAsync(SearchPrompt) ?? IsFuzzy(SearchPrompt);
             if (fuzzy)
                 await RunFuzzySearchAsync(SearchPrompt);
@@ -145,7 +145,8 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            SearchStatus = $"Search failed: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"[Search] failed: {ex}");
+            SearchStatus = "The search hit a snag — please try again.";
         }
         finally
         {
@@ -157,7 +158,7 @@ public sealed class MainViewModel : ObservableObject
     {
         if (!_interpreter.IsConfigured)
         {
-            SearchStatus = "Set the ANTHROPIC_API_KEY environment variable to use AI search.";
+            SearchStatus = "Add your Anthropic API key in Options to use AI search.";
             return;
         }
         await RunStructuredSearchAsync(prompt);
@@ -171,7 +172,7 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private async Task RunFuzzySearchAsync(string prompt)
     {
-        SearchStatus = "Searching locally and on the web…";
+        SearchStatus = "Scanning the airwaves…";
 
         // Kick off whichever paths are available, together. Gather a larger local pool so the
         // re-ranker has real choice (cosine alone over-favours thin/generic descriptions).
@@ -204,8 +205,8 @@ public sealed class MainViewModel : ObservableObject
         if (pool.Count == 0)
         {
             SearchStatus = !_semanticSearch.IsAvailable && !_agenticSearch.IsConfigured
-                ? "Set ANTHROPIC_API_KEY (and add the embedding model) to use AI search."
-                : "No matching stations found. Try a different prompt.";
+                ? "Add your Anthropic API key in Options to use AI search."
+                : "Nothing turned up — try describing it differently.";
             return;
         }
 
@@ -216,7 +217,7 @@ public sealed class MainViewModel : ObservableObject
         List<SearchResultItem> shortlist;
         if (_ranker.IsConfigured)
         {
-            SearchStatus = "Ranking matches…";
+            SearchStatus = "Finding the best matches…";
             var candidates = pool.Select((p, i) => new RankCandidate(i, p.Station.Name, p.Reason ?? "")).ToList();
             var verdicts = await _ranker.RankAsync(prompt, candidates, ResultsToValidate);
             if (verdicts is not null) // null = ranker couldn't run → fall back to heuristic
@@ -235,7 +236,7 @@ public sealed class MainViewModel : ObservableObject
             shortlist = BuildHeuristicMerge(semantic, web);
         }
 
-        SearchStatus = "Checking streams…";
+        SearchStatus = "Making sure they actually play…";
         await AddValidatedAsync(shortlist);
         SetResultStatus();
     }
@@ -309,27 +310,27 @@ public sealed class MainViewModel : ObservableObject
 
     private void SetResultStatus() =>
         SearchStatus = SearchResults.Count == 0
-            ? "No working stations found. Try a different prompt."
-            : $"Found {SearchResults.Count} station{(SearchResults.Count == 1 ? "" : "s")}.";
+            ? "Nothing playable came through — try describing it differently."
+            : $"Found {SearchResults.Count} station{(SearchResults.Count == 1 ? "" : "s")} you can play.";
 
     /// <summary>Pattern A: structured-output translation, then a Radio Browser query.</summary>
     private async Task RunStructuredSearchAsync(string prompt)
     {
-        SearchStatus = "Interpreting your request…";
+        SearchStatus = "Tuning in to your request…";
         var query = await _interpreter.InterpretAsync(prompt);
         if (query is null)
         {
-            SearchStatus = "Couldn't interpret that. Try rephrasing.";
+            SearchStatus = "Didn't quite catch that — try rephrasing.";
             return;
         }
 
-        SearchStatus = "Searching stations…";
+        SearchStatus = "Searching the dial…";
         var results = await _searchService.SearchCandidatesAsync(query);
 
         // Unhappy path: nothing matched — broaden once before giving up.
         if (results.Count == 0 && Broaden(query) is { } broadened)
         {
-            SearchStatus = "No exact matches — broadening the search…";
+            SearchStatus = "Casting a wider net…";
             results = await _searchService.SearchCandidatesAsync(broadened);
         }
 
@@ -339,14 +340,14 @@ public sealed class MainViewModel : ObservableObject
 
         if (results.Count == 0)
         {
-            SearchStatus = "No playable stations found. Try a different prompt.";
+            SearchStatus = "Nothing turned up — try describing it differently.";
             return;
         }
 
         // Validate streams before showing (over-fetch so dead ones still leave ~MaxResults).
         var shortlist = results.Take(ResultsToValidate)
             .Select(c => new SearchResultItem(c.Station, null)).ToList();
-        SearchStatus = "Checking streams…";
+        SearchStatus = "Making sure they actually play…";
         await AddValidatedAsync(shortlist);
         SetResultStatus();
     }

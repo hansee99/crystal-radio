@@ -12,7 +12,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);tools\**</DefaultItemExcludes>
     <!-- App identity / versioning. Bump Version (SemVer MAJOR.MINOR.PATCH) per release;
          the SDK flows it into the assembly's File/Informational version automatically. -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Product>Radio Player</Product>
     <Authors>Hans Seebacher</Authors>
     <Description>A lightweight internet radio player for Windows.</Description>

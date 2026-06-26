@@ -65,21 +65,23 @@ Done
   window), About box mentions AI search.
 - Batch 4 (T9) - options dialog (cogwheel) storing the Anthropic API key DPAPI-encrypted;
   key resolved stored->env at startup; applies on restart.
+- Batch 5 (T13-T16) - row-level description tooltip, search-box placeholder text,
+  friendlier radio-themed status messages, simplified Options dialog copy.
 
-Batches 1-4 (T1-T12) complete. New items triaged into Batch 5 below.
+All planned tasks (T1-T16) complete.
 
 
-Batch 5 - UX copy & polish
+Batch 5 - UX copy & polish  (DONE)
 --------------------------
-[ ] T13 Finish T2: show the station description in the row tooltip (hover anywhere on the
+[x] T13 Finish T2: show the station description in the row tooltip (hover anywhere on the
         row, not just the thin sub-line). Name header + full wrapping description; both
         lists. Note: only search-/manually-added stations have a description; defaults stay
         name-only.
-[ ] T14 Put the search box's example text inside the box as placeholder/watermark text
+[x] T14 Put the search box's example text inside the box as placeholder/watermark text
         (shown while empty), instead of as a tooltip. Better fit for the app's UX.
-[ ] T15 Make the search status messages less technical / more friendly for non-technical
+[x] T15 Make the search status messages less technical / more friendly for non-technical
         users (radio-themed copy; proposed set agreed in chat).
-[ ] T16 Simplify the Options dialog copy - drop the DPAPI/env-var jargon, keep it minimal.
+[x] T16 Simplify the Options dialog copy - drop the DPAPI/env-var jargon, keep it minimal.
 
 
 Backlog:
