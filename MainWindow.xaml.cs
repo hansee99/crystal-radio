@@ -98,6 +98,13 @@ public partial class MainWindow : Window
             _viewModel.PlaySelectedSearchResult();
     }
 
+    private void Stations_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        // Double-click a station plays it — notably when stopped, where selecting alone won't.
+        if (_viewModel.SelectedStation is not null)
+            _viewModel.PlaySelectedStation();
+    }
+
     private void CopyNowPlaying_Click(object sender, RoutedEventArgs e)
     {
         var text = _viewModel.NowPlayingClipboardText;

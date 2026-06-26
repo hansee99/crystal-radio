@@ -124,6 +124,11 @@
         <TextBlock Text="Format"/>
         <ComboBox x:Name="FormatBox"/>
 
+        <TextBlock Text="Description (optional)"/>
+        <TextBox x:Name="DescriptionBox" AcceptsReturn="True" TextWrapping="Wrap"
+                 MinHeight="54" MaxHeight="120" VerticalContentAlignment="Top"
+                 VerticalScrollBarVisibility="Auto"/>
+
         <TextBlock x:Name="ErrorText" Foreground="#FFFF6B6B" FontSize="12"
                    TextWrapping="Wrap" Visibility="Collapsed"/>
 

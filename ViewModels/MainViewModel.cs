@@ -274,11 +274,37 @@ public sealed class MainViewModel : ObservableObject
         var checks = await Task.WhenAll(
             items.Select(async it => (item: it, ok: await _engine.TestStreamAsync(it.Station))));
 
+        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (item, ok) in checks)
         {
             if (SearchResults.Count >= MaxResults) break;
-            if (ok) SearchResults.Add(item);
+            if (!ok) continue; // dead / undecodable stream
+
+            // Drop exact-URL dupes and near-dupes that differ only by a "[2]"-style
+            // disambiguator (the same station registered more than once in the directory).
+            if (!seenUrls.Add(item.Station.Url) || !seenNames.Add(NormalizeStationName(item.Station.Name)))
+                continue;
+
+            // Pre-check the add affordance for results already in the library.
+            item.IsAdded = Stations.Any(s =>
+                string.Equals(s.Url, item.Station.Url, StringComparison.OrdinalIgnoreCase));
+            SearchResults.Add(item);
         }
+    }
+
+    /// <summary>
+    /// Normalizes a station name for near-duplicate detection: strips a trailing duplicate
+    /// disambiguator like " [2]" or "(3)" that Radio Browser users add to re-registered
+    /// stations, collapses whitespace, and lower-cases. Deliberately conservative — it does
+    /// NOT strip trailing bare numbers (so "Radio 1"/"Radio 2" stay distinct) or codec/bitrate
+    /// suffixes (so "… | 320k AAC" and "… | 64k MP3" remain separate, playable choices).
+    /// </summary>
+    private static string NormalizeStationName(string name)
+    {
+        var s = System.Text.RegularExpressions.Regex.Replace(name.Trim(), @"\s*[\[(]\d+[\])]\s*$", "");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\s+", " ");
+        return s.ToLowerInvariant();
     }
 
     private void SetResultStatus() =>
@@ -385,13 +411,17 @@ public sealed class MainViewModel : ObservableObject
         if (item?.Station is not { } station)
             return;
         if (Stations.Any(s => string.Equals(s.Url, station.Url, StringComparison.OrdinalIgnoreCase)))
-            return; // already in the library
+        {
+            item.IsAdded = true; // already in the library — reflect it on the row
+            return;
+        }
 
         // Carry the search-panel blurb onto the saved station so the fixed list shows the
         // same secondary line (Reason = enriched description / web rationale, or null).
         Stations.Add(station with { Description = item.Reason });
         _store.Save(Stations);
         NextStationCommand.RaiseCanExecuteChanged();
+        item.IsAdded = true; // swap the row's + to a check
     }
 
     public ObservableCollection<Station> Stations { get; }
@@ -559,6 +589,16 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>Persist user settings (volume). Called when the app is closing.</summary>
     public void SaveSettings() => _settingsStore.Save(new AppSettings { Volume = _volume });
+
+    /// <summary>
+    /// Explicitly play the selected station — used by double-click in the stations list.
+    /// Starts playback even when stopped, where merely selecting a row doesn't auto-start it.
+    /// </summary>
+    public void PlaySelectedStation()
+    {
+        if (SelectedStation is { } station)
+            _engine.Play(station);
+    }
 
     private void SelectWithoutAutoPlay(Station? station)
     {

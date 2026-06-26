@@ -20,6 +20,7 @@ public partial class StationDialog : Window
             NameBox.Text = existing.Name;
             UrlBox.Text = existing.Url;
             FormatBox.SelectedItem = existing.Format;
+            DescriptionBox.Text = existing.Description ?? string.Empty;
         }
         else
         {
@@ -52,7 +53,9 @@ public partial class StationDialog : Window
             return;
         }
 
-        Result = new Station(name, url, (StreamFormat)FormatBox.SelectedItem!);
+        var description = DescriptionBox.Text.Trim();
+        Result = new Station(name, url, (StreamFormat)FormatBox.SelectedItem!,
+            string.IsNullOrWhiteSpace(description) ? null : description);
         DialogResult = true;
     }
 

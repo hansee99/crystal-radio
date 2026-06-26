@@ -278,13 +278,27 @@
                 <Setter.Value>
                     <DataTemplate>
                         <DockPanel LastChildFill="True" Margin="2,3">
-                            <!-- Add to the fixed station list (does not play). -->
-                            <Button DockPanel.Dock="Right" Style="{StaticResource AddButton}"
-                                    Content="&#xE710;" ToolTip="Add to Stations"
-                                    VerticalAlignment="Center" Margin="8,0,0,0"
+                            <!-- Add to the fixed station list (does not play). Turns into a
+                                 disabled check mark once the station is in the library. -->
+                            <Button DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"
                                     Command="{Binding DataContext.AddSearchResultCommand,
                                               RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                    CommandParameter="{Binding}"/>
+                                    CommandParameter="{Binding}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource AddButton}">
+                                        <Setter Property="Content" Value="&#xE710;"/>
+                                        <Setter Property="ToolTip" Value="Add to Stations"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsAdded}" Value="True">
+                                                <Setter Property="Content" Value="&#xE73E;"/>
+                                                <Setter Property="ToolTip" Value="In your stations"/>
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                                <Setter Property="Foreground" Value="#FF5A9B94"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
                             <TextBlock DockPanel.Dock="Left" Text="&#xE704;"
                                        FontFamily="{StaticResource FluentIcons}" FontSize="14"
                                        Opacity="0.85" Margin="0,0,10,0" VerticalAlignment="Center"/>
@@ -390,7 +404,8 @@
                             </StackPanel>
                             <ListBox Style="{StaticResource StationList}"
                                      ItemsSource="{Binding Stations}"
-                                     SelectedItem="{Binding SelectedStation, Mode=TwoWay}"/>
+                                     SelectedItem="{Binding SelectedStation, Mode=TwoWay}"
+                                     MouseDoubleClick="Stations_DoubleClick"/>
                         </DockPanel>
 
                         <!-- ===== Search tab ===== -->
