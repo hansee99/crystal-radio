@@ -78,13 +78,7 @@ public partial class MainWindow : Window
         base.OnClosed(e);
     }
 
-    // --- Custom window chrome (we set WindowStyle=None) ---------------------
-
-    private void Window_DragMove(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ButtonState == MouseButtonState.Pressed)
-            DragMove();
-    }
+    // --- Custom window chrome (WindowStyle=None + WindowChrome; caption drag is automatic) ---
 
     private void Minimize_Click(object sender, RoutedEventArgs e)
         => WindowState = WindowState.Minimized;
