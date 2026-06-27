@@ -115,6 +115,98 @@
         </Setter>
     </Style>
 
+    <!-- ===== Left panel (R4) ===== -->
+
+    <!-- Segmented pill tab (two share a rounded container). -->
+    <Style x:Key="PillTab" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="#FF7F948F"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="b" CornerRadius="8" Padding="0,7" Background="Transparent"
+                            BorderBrush="Transparent" BorderThickness="1">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{StaticResource TealTint16}"/>
+                            <Setter TargetName="b" Property="BorderBrush" Value="#4756C7BA"/>
+                            <Setter Property="Foreground" Value="{StaticResource TealText}"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsChecked" Value="False"/>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="b" Property="Background" Value="#0AFFFFFF"/>
+                        </MultiTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- List row container: rounded hover/selected, teal left bar when selected. -->
+    <Style x:Key="StationRowItem" TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Margin" Value="0,1"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Bd" CornerRadius="10" Padding="10" Background="Transparent"
+                            BorderBrush="Transparent" BorderThickness="0">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#0AFFFFFF"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource TealTint10}"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Teal}"/>
+                            <Setter TargetName="Bd" Property="BorderThickness" Value="2,0,0,0"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Ghost square (+) button on search rows. Content = a stroke Geometry. -->
+    <Style x:Key="GhostSquareButton" TargetType="Button">
+        <Setter Property="Width" Value="28"/>
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="Foreground" Value="#FF8FB6AE"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="b" CornerRadius="8" Background="Transparent"
+                            BorderBrush="#1AFFFFFF" BorderThickness="1">
+                        <Path Data="{TemplateBinding Content}" Stretch="Uniform" Width="15" Height="15"
+                              Stroke="{TemplateBinding Foreground}" StrokeThickness="1.7"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{StaticResource TealTint16}"/>
+                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Teal}"/>
+                            <Setter Property="Foreground" Value="{StaticResource TealBright}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="b" Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Close button: red hover + white stroke. -->
     <Style x:Key="TitleCloseButton" TargetType="Button" BasedOn="{StaticResource TitleIconButton}">
         <Setter Property="Foreground" Value="#FF9AACA8"/>
