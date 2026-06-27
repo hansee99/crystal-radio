@@ -38,6 +38,7 @@ public sealed class MainViewModel : ObservableObject
     private bool _isSearching;
     private string _nowPlayingTitle = "Not playing";
     private string _nowPlayingArtist = string.Empty;
+    private string _nowPlayingStation = string.Empty;
     private string _statusText = "Stopped";
     private bool _isPlaying;
     private bool _hasTrackInfo;
@@ -251,7 +252,8 @@ public sealed class MainViewModel : ObservableObject
             if (list.Count >= ResultsToValidate) break;
             if (r.Score < SemanticThreshold) continue;
             if (!seen.Add(r.Station.Url)) continue;
-            list.Add(new SearchResultItem(r.Station, $"Local match · {r.Score:0.00}"));
+            list.Add(new SearchResultItem(r.Station,
+                string.IsNullOrWhiteSpace(r.Description) ? $"Local match · {r.Score:0.00}" : r.Description));
         }
         foreach (var r in web)
         {
@@ -308,6 +310,24 @@ public sealed class MainViewModel : ObservableObject
         return s.ToLowerInvariant();
     }
 
+    /// <summary>
+    /// Best available short description for a candidate so every result row shows something:
+    /// a cached enriched description if we have one, else its Radio Browser tags, else null.
+    /// </summary>
+    private string? DescriptionFor(StationCandidate candidate)
+    {
+        var cached = _enrichment.GetCached(candidate.StationUuid)?.Description;
+        return !string.IsNullOrWhiteSpace(cached) ? cached : FormatTags(candidate.Tags);
+    }
+
+    /// <summary>Formats a comma-separated Radio Browser tag string as a short " · " list (or null).</summary>
+    private static string? FormatTags(string? tags)
+    {
+        if (string.IsNullOrWhiteSpace(tags)) return null;
+        var parts = tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 0 ? null : string.Join(" · ", parts.Take(5));
+    }
+
     private void SetResultStatus() =>
         SearchStatus = SearchResults.Count == 0
             ? "Nothing playable came through — try describing it differently."
@@ -345,8 +365,10 @@ public sealed class MainViewModel : ObservableObject
         }
 
         // Validate streams before showing (over-fetch so dead ones still leave ~MaxResults).
+        // Pattern A has no per-result rationale, so give each row a description: a cached
+        // enriched one if we have it, otherwise the station's tags.
         var shortlist = results.Take(ResultsToValidate)
-            .Select(c => new SearchResultItem(c.Station, null)).ToList();
+            .Select(c => new SearchResultItem(c.Station, DescriptionFor(c))).ToList();
         SearchStatus = "Making sure they actually play…";
         await AddValidatedAsync(shortlist);
         SetResultStatus();
@@ -475,6 +497,20 @@ public sealed class MainViewModel : ObservableObject
                 OnPropertyChanged(nameof(NowPlayingClipboardText));
         }
     }
+
+    /// <summary>Friendly name of the station currently playing — the source of truth for
+    /// "what's playing", independent of which row is selected in either list.</summary>
+    public string NowPlayingStation
+    {
+        get => _nowPlayingStation;
+        private set
+        {
+            if (SetProperty(ref _nowPlayingStation, value))
+                OnPropertyChanged(nameof(HasStation));
+        }
+    }
+
+    public bool HasStation => !string.IsNullOrWhiteSpace(NowPlayingStation);
 
     /// <summary>True while a stream is connecting/reconnecting (drives the loading spinner).</summary>
     public bool IsBusy => _engine.State is PlaybackState.Buffering or PlaybackState.Reconnecting;
@@ -631,6 +667,12 @@ public sealed class MainViewModel : ObservableObject
     {
         IsPlaying = state == PlaybackState.Playing;
         OnPropertyChanged(nameof(IsBusy));
+
+        // The playing station name is the source of truth for "what's playing" (cleared when
+        // stopped), so a selected-but-not-playing row in either list isn't mistaken for it.
+        NowPlayingStation = state == PlaybackState.Stopped
+            ? string.Empty
+            : _engine.CurrentStation?.Name ?? string.Empty;
 
         StatusText = state switch
         {

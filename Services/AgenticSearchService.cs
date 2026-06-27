@@ -283,7 +283,7 @@ public sealed class AgenticSearchService : IAgenticSearchService
         return arr.ToJsonString();
     }
 
-    private static IReadOnlyList<RankedStation> ParseFinalAnswer(string text, Dictionary<string, StationCandidate> fetched)
+    private IReadOnlyList<RankedStation> ParseFinalAnswer(string text, Dictionary<string, StationCandidate> fetched)
     {
         var json = StripToJsonObject(text);
         if (json is null)
@@ -304,7 +304,11 @@ public sealed class AgenticSearchService : IAgenticSearchService
             // Validation gate: only stations WE fetched, deduped.
             if (uuid is null || !fetched.TryGetValue(uuid, out var candidate) || !used.Add(uuid))
                 continue;
-            var reason = Str(s?["reason"]) ?? string.Empty;
+            // The model normally supplies a reason; if it didn't, fall back so the result
+            // still shows a description (cached enriched text -> tags -> generic line).
+            var reason = Str(s?["reason"]);
+            if (string.IsNullOrWhiteSpace(reason))
+                reason = _enrichment.GetCached(uuid)?.Description ?? FormatTags(candidate.Tags) ?? "Matches your search.";
             ranked.Add(new RankedStation(candidate.Station, reason));
         }
         return ranked;
@@ -345,4 +349,11 @@ public sealed class AgenticSearchService : IAgenticSearchService
         n is JsonValue v && v.TryGetValue<int>(out var i) ? i : 0;
 
     private static string Truncate(string s) => s.Length <= 300 ? s : s[..300] + "…";
+
+    private static string? FormatTags(string? tags)
+    {
+        if (string.IsNullOrWhiteSpace(tags)) return null;
+        var parts = tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 0 ? null : string.Join(" · ", parts.Take(5));
+    }
 }

@@ -514,8 +514,8 @@
                 </DockPanel>
             </Border>
 
-            <!-- Now playing + transport -->
-            <Grid Grid.Column="1">
+            <!-- Now playing + transport (extra left margin to breathe from the left panel) -->
+            <Grid Grid.Column="1" Margin="24,0,0,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
@@ -539,6 +539,17 @@
                     <TextBlock Text="{Binding NowPlayingArtist}" FontSize="16"
                                Foreground="#FFD2D8E0" Margin="0,4,0,0"
                                TextTrimming="CharacterEllipsis"/>
+
+                    <!-- Currently-playing station (source of truth for what's playing). -->
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0"
+                                Visibility="{Binding HasStation, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="&#xE704;" FontFamily="{StaticResource FluentIcons}"
+                                   FontSize="13" Foreground="#FF8FA3BF"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="{Binding NowPlayingStation}" FontSize="14"
+                                   Foreground="#FFB9C2CF" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
 
                     <!-- Status line with a loading spinner while connecting -->
                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">

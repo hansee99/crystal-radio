@@ -67,8 +67,10 @@ Done
   key resolved stored->env at startup; applies on restart.
 - Batch 5 (T13-T16) - row-level description tooltip, search-box placeholder text,
   friendlier radio-themed status messages, simplified Options dialog copy.
+- Batch 6 (T17-T21) - left margin on Now Playing, current-station name in Now Playing,
+  always-shown result descriptions (fallback chain), 1.2.0 build verified, README screenshot.
 
-All planned tasks (T1-T16) complete.
+All planned tasks (T1-T21) complete.
 
 
 Batch 5 - UX copy & polish  (DONE)
@@ -82,6 +84,25 @@ Batch 5 - UX copy & polish  (DONE)
 [x] T15 Make the search status messages less technical / more friendly for non-technical
         users (radio-themed copy; proposed set agreed in chat).
 [x] T16 Simplify the Options dialog copy - drop the DPAPI/env-var jargon, keep it minimal.
+
+
+Batch 6 - Now-playing clarity & polish  (DONE)
+--------------------------------------
+[x] T17 Add more left margin/padding to the "Now playing" section and player controls for
+        better spacing (see doc\screenshot.png).
+[x] T18 After starting playback from the search list, switching to the Stations tab shows a
+        selected (highlighted) station that isn't the one playing - it reads as "playing".
+        Fix: show the currently-playing station name in the "Now playing" section as the
+        source of truth (station name is already available from ICY metadata). Selection
+        stays as-is for play/edit/delete.
+[x] T19 Station descriptions are missing in some search results - ensure a description is
+        always shown. Cause: Pattern-A/literal results carried a null reason and a web
+        result's reason could be empty. Added a fallback chain (cached enriched description
+        -> Radio Browser tags -> generic line) for Pattern A and the agentic final answer.
+[x] T20 About box shows 1.1.0 though we tagged 1.2.0. NOT a bug - stale build (running
+        binary predated the bump and locked the exe). Verified: clean rebuild with the app
+        closed reads 1.2.0 (ProductVersion 1.2.0+fda2d6d). No code change.
+[x] T21 Add the screenshot (doc/screenshot.png) to the README, near the top.
 
 
 Backlog:
