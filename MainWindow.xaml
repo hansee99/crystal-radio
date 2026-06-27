@@ -424,38 +424,54 @@
 
             <!-- ===== Body (Row 1): existing background + content (reworked in R3-R5). ===== -->
             <Grid Grid.Row="1">
-        <!-- ===== Background graphic layer =====
-             Gradient is the fallback shown if the image fails to load. -->
-        <Grid.Background>
-            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Color="#FF1B2A40" Offset="0"/>
-                <GradientStop Color="#FF0E1320" Offset="0.55"/>
-                <GradientStop Color="#FF06070A" Offset="1"/>
-            </LinearGradientBrush>
-        </Grid.Background>
-        <Image Source="Assets/player-bg.png" Stretch="UniformToFill"/>
+        <!-- ===== 0. Ambient wave background (spans the whole body, behind everything) ===== -->
+        <Grid Panel.ZIndex="0">
+            <Rectangle Fill="{StaticResource WindowBg}"/>
+            <Image Source="Assets/player-bg.png" Stretch="UniformToFill" HorizontalAlignment="Right"/>
+            <!-- radial vignette toward the bottom-right glow -->
+            <Rectangle>
+                <Rectangle.Fill>
+                    <RadialGradientBrush Center="0.88,0.78" GradientOrigin="0.88,0.78"
+                                         RadiusX="1.3" RadiusY="1.0">
+                        <GradientStop Color="#00050D0C" Offset="0.30"/>
+                        <GradientStop Color="#80050D0C" Offset="1"/>
+                    </RadialGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+            <!-- horizontal scrim: dark on the left (list) fading out to the right -->
+            <Rectangle>
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#FF050D0C" Offset="0"/>
+                        <GradientStop Color="#DB050D0C" Offset="0.26"/>
+                        <GradientStop Color="#A8050D0C" Offset="0.46"/>
+                        <GradientStop Color="#52050D0C" Offset="0.62"/>
+                        <GradientStop Color="#00050D0C" Offset="0.82"/>
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+            <!-- top scrim -->
+            <Rectangle VerticalAlignment="Top" Height="140">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#8C050D0C" Offset="0"/>
+                        <GradientStop Color="#00050D0C" Offset="1"/>
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+        </Grid>
 
-        <!-- Scrim so light text stays legible over any background. -->
-        <Rectangle>
-            <Rectangle.Fill>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#00000000" Offset="0"/>
-                    <GradientStop Color="#B3000000" Offset="1"/>
-                </LinearGradientBrush>
-            </Rectangle.Fill>
-        </Rectangle>
-
-        <!-- ===== Content ===== -->
-        <Grid Margin="20">
+        <!-- ===== 1. Foreground columns (list + now playing) ===== -->
+        <Grid Panel.ZIndex="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340"/>
+                <ColumnDefinition Width="362"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Stations / Search tabbed panel -->
-            <Border Grid.Column="0" Margin="0,0,16,0" Padding="12"
-                    Background="#33000000" CornerRadius="10">
-                <DockPanel>
+            <!-- LEFT: Stations / Search panel (content restyled in R4) -->
+            <Border Grid.Column="0" Background="{StaticResource PanelBg}"
+                    BorderBrush="{StaticResource Hairline}" BorderThickness="0,0,1,0">
+                <DockPanel Margin="14,16,14,8">
                     <!-- Segmented tab switch -->
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
                         <RadioButton x:Name="StationsTab" GroupName="leftTab" IsChecked="True"
@@ -559,8 +575,8 @@
                 </DockPanel>
             </Border>
 
-            <!-- Now playing + transport (extra left margin to breathe from the left panel) -->
-            <Grid Grid.Column="1" Margin="24,0,0,0">
+            <!-- RIGHT: now playing + transport (content reworked in R5) -->
+            <Grid Grid.Column="1" Margin="44,34,44,30">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
