@@ -13,9 +13,9 @@
     <!-- App identity / versioning. Bump Version (SemVer MAJOR.MINOR.PATCH) per release;
          the SDK flows it into the assembly's File/Informational version automatically. -->
     <Version>1.2.0</Version>
-    <Product>Radio Player</Product>
+    <Product>Aurora Radio</Product>
     <Authors>Hans Seebacher</Authors>
-    <Description>A lightweight internet radio player for Windows.</Description>
+    <Description>Aurora Radio — a lightweight internet radio player for Windows.</Description>
 
     <!-- Must match the native BASS DLLs -->
     <Platforms>x64</Platforms>

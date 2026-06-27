@@ -105,5 +105,27 @@ Batch 6 - Now-playing clarity & polish  (DONE)
 [x] T21 Add the screenshot (doc/screenshot.png) to the README, near the top.
 
 
+Batch 7 - Aurora Radio redesign (Direction A; see XAML-IMPLEMENTATION-SPEC.md)
+-----------------------------------------------------------------------------
+Decisions: display-only rename (keep RadioPlayer namespace/exe/data folders);
+font = Segoe UI Variable; phased commits straight to main.
+Engine + all AI services + stores + single-instance + dialog logic are UNCHANGED.
+Small VM additions as noted (PrevStationCommand, NowPlayingStationLine, volume %).
+
+[ ] R1 Foundations: display rename (title, About, <Product>); new Theme.xaml (brushes +
+       icon geometries + UiFont), merged in App.xaml. No layout change yet.
+[ ] R2 Window shell: WindowChrome (resizable + min sizes + rounded border), Aurora title
+       bar + caption buttons. Keep TaskbarItemInfo, SMTC, single-instance; drop old drag.
+[ ] R3 Background + body layout: ambient image + 3 scrims; 362/* two-column grid.
+[ ] R4 Left panel: pill tabs, search field (= AI prompt), restyled station/search lists
+       (icon tile, title/subtitle, +/added affordance), "Found N" caption; keep add/edit/delete.
+[ ] R5 Now playing + transport: 44px title block, station chip, status row (equalizer +
+       LIVE + bitrate), transport row w/ teal-glow play, restyled volume slider (0-1 + %).
+       Adds PrevStationCommand, NowPlayingStationLine, (optional) runtime bitrate from BASS.
+[ ] R6 Flourishes: equalizer + LIVE animations, optional bg drift, per-row playing indicator,
+       DPI manifest, resize testing.
+[ ] R7 Dialogs: reskin Station/Options/About to the new theme; README title -> Aurora Radio.
+
+
 Backlog:
 - (none)

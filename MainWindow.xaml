@@ -7,7 +7,7 @@
         xmlns:vm="clr-namespace:RadioPlayer.ViewModels"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
-        Title="Radio Player" Height="580" Width="920"
+        Title="Aurora Radio" Height="580" Width="920"
         Icon="Assets/app.ico"
         WindowStyle="None" ResizeMode="CanMinimize"
         FontFamily="Segoe UI" Background="#FF06070A">
