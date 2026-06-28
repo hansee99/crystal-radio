@@ -9,7 +9,7 @@
 
     <StackPanel Margin="24" Width="340">
         <StackPanel Orientation="Horizontal">
-            <Image Source="Assets/app-256.png" Width="48" Height="48" VerticalAlignment="Top"
+            <Image Source="/Assets/app-256.png" Width="48" Height="48" VerticalAlignment="Top"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
             <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
                 <TextBlock Text="Aurora Radio" FontSize="20" FontWeight="SemiBold"
