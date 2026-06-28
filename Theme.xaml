@@ -8,10 +8,9 @@
          Values are taken verbatim from XAML-IMPLEMENTATION-SPEC.md.
          ============================================================ -->
 
-    <!-- Typography: Hanken Grotesk (the design font) if installed/bundled, else Segoe UI
-         Variable. To guarantee it on any machine, bundle the TTFs under /Fonts and change
-         this to "/RadioPlayer;component/Fonts/#Hanken Grotesk". -->
-    <FontFamily x:Key="UiFont">Hanken Grotesk, Segoe UI Variable Text, Segoe UI</FontFamily>
+    <!-- Typography: Hanken Grotesk (the design font), bundled from Fonts/static and embedded
+         as a Resource, so it renders on any machine without installation. -->
+    <FontFamily x:Key="UiFont">/RadioPlayer;component/Fonts/static/#Hanken Grotesk</FontFamily>
 
     <!-- Surfaces -->
     <Color x:Key="BgDeep">#FF050D0C</Color>
