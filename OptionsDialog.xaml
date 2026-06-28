@@ -4,7 +4,8 @@
         Title="Options" Width="470" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         ShowInTaskbar="False" Icon="Assets/app.ico"
-        FontFamily="Segoe UI" Background="#FF161B24">
+        FontFamily="{StaticResource UiFont}" Background="#FF0A1513"
+        TextElement.Foreground="{StaticResource TextBody}">
 
     <Window.Resources>
         <Style x:Key="SectionHeader" TargetType="TextBlock">
@@ -25,10 +26,10 @@
             <Setter Property="Margin" Value="0,6,0,0"/>
         </Style>
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="#FF232A36"/>
+            <Setter Property="Background" Value="#FF13201D"/>
             <Setter Property="Foreground" Value="#FFFFFFFF"/>
             <Setter Property="CaretBrush" Value="#FFFFFFFF"/>
-            <Setter Property="BorderBrush" Value="#FF3A4456"/>
+            <Setter Property="BorderBrush" Value="#FF26423D"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="8,6"/>
             <Setter Property="FontSize" Value="13"/>

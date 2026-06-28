@@ -816,8 +816,8 @@
                                 Content="{StaticResource StopGeometry}" ToolTip="Stop"/>
                     </StackPanel>
 
-                    <!-- Volume -->
-                    <Grid Margin="0,24,0,0" MaxWidth="440" HorizontalAlignment="Left">
+                    <!-- Volume (explicit width so the * slider column doesn't collapse) -->
+                    <Grid Margin="0,24,0,0" Width="440" HorizontalAlignment="Left">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
@@ -826,7 +826,8 @@
                         <Path Grid.Column="0" Data="{StaticResource VolumeGeometry}" Stretch="Uniform"
                               Width="18" Height="18" Fill="#FF8AA39E" VerticalAlignment="Center"/>
                         <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}" Margin="12,0"
-                                Minimum="0" Maximum="1" Value="{Binding Volume, Mode=TwoWay}"/>
+                                Minimum="0" Maximum="1" SmallChange="0.05" LargeChange="0.1"
+                                Value="{Binding Volume, Mode=TwoWay}"/>
                         <TextBlock Grid.Column="2" Text="{Binding VolumePercent}" FontSize="12"
                                    Foreground="#FF8AA39E" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>

@@ -1,4 +1,4 @@
-# Radio Player
+# Aurora Radio
 
 A lightweight Windows desktop app for playing internet radio streams
 (Icecast/Shoutcast), with playback surfaced natively in the OS:
@@ -14,7 +14,7 @@ stations — see [AI-assisted station search](#ai-assisted-station-search) below
 
 Built with WPF on .NET, using the [BASS](https://www.un4seen.com/) audio library.
 
-![Radio Player — now playing, with the AI search panel](doc/screenshot.png)
+![Aurora Radio — now playing, with the AI search panel](doc/screenshot.png)
 
 ## Features
 

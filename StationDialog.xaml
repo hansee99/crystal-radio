@@ -4,7 +4,8 @@
         Title="Add station" Width="430" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         ShowInTaskbar="False" Icon="Assets/app.ico"
-        FontFamily="Segoe UI" Background="#FF161B24">
+        FontFamily="{StaticResource UiFont}" Background="#FF0A1513"
+        TextElement.Foreground="{StaticResource TextBody}">
 
     <Window.Resources>
         <Style TargetType="TextBlock">
@@ -13,10 +14,10 @@
             <Setter Property="Margin" Value="0,12,0,4"/>
         </Style>
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="#FF232A36"/>
+            <Setter Property="Background" Value="#FF13201D"/>
             <Setter Property="Foreground" Value="#FFFFFFFF"/>
             <Setter Property="CaretBrush" Value="#FFFFFFFF"/>
-            <Setter Property="BorderBrush" Value="#FF3A4456"/>
+            <Setter Property="BorderBrush" Value="#FF26423D"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="8,6"/>
             <Setter Property="FontSize" Value="13"/>
@@ -37,7 +38,7 @@
             </Border>
             <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter TargetName="bd" Property="BorderBrush" Value="#FF5A9B94"/>
+                    <Setter TargetName="bd" Property="BorderBrush" Value="#FF56C7BA"/>
                 </Trigger>
             </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -57,7 +58,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#FF5A9B94"/>
+                                <Setter TargetName="bd" Property="Background" Value="#FF56C7BA"/>
                                 <Setter Property="Foreground" Value="#FFFFFFFF"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -68,8 +69,8 @@
 
         <Style TargetType="ComboBox">
             <Setter Property="Foreground" Value="#FFFFFFFF"/>
-            <Setter Property="Background" Value="#FF232A36"/>
-            <Setter Property="BorderBrush" Value="#FF3A4456"/>
+            <Setter Property="Background" Value="#FF13201D"/>
+            <Setter Property="BorderBrush" Value="#FF26423D"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Height" Value="34"/>
             <Setter Property="Padding" Value="10,0"/>
@@ -93,7 +94,7 @@
                             <Popup x:Name="PART_Popup" Placement="Bottom" Focusable="False"
                                    AllowsTransparency="True" PopupAnimation="Slide"
                                    IsOpen="{TemplateBinding IsDropDownOpen}">
-                                <Border Background="#FF232A36" BorderBrush="#FF3A4456" BorderThickness="1"
+                                <Border Background="#FF13201D" BorderBrush="#FF26423D" BorderThickness="1"
                                         CornerRadius="4" Margin="0,2,0,0"
                                         MinWidth="{Binding ActualWidth,
                                                    RelativeSource={RelativeSource AncestorType=ComboBox}}">
