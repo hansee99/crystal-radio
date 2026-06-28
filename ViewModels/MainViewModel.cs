@@ -502,6 +502,15 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>URL of the station actively playing, null when paused or stopped.
+    /// Used by the per-row equalizer indicator in the Stations list.</summary>
+    public string? NowPlayingUrl
+    {
+        get => _nowPlayingUrl;
+        private set => SetProperty(ref _nowPlayingUrl, value);
+    }
+    private string? _nowPlayingUrl;
+
     /// <summary>Friendly name of the station currently playing — the source of truth for
     /// "what's playing", independent of which row is selected in either list.</summary>
     public string NowPlayingStation
@@ -698,6 +707,12 @@ public sealed class MainViewModel : ObservableObject
     {
         IsPlaying = state == PlaybackState.Playing;
         OnPropertyChanged(nameof(IsBusy));
+
+        // NowPlayingUrl drives the per-row equalizer: set only while actively playing so the
+        // equalizer animation matches the main status-row equalizer (both hidden when paused).
+        NowPlayingUrl = state == PlaybackState.Playing
+            ? _engine.CurrentStation?.Url
+            : null;
 
         // The playing station name is the source of truth for "what's playing" (cleared when
         // stopped), so a selected-but-not-playing row in either list isn't mistaken for it.
