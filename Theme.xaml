@@ -10,7 +10,7 @@
 
     <!-- Typography: Hanken Grotesk (the design font), bundled from Fonts/static and embedded
          as a Resource, so it renders on any machine without installation. -->
-    <FontFamily x:Key="UiFont">/RadioPlayer;component/Fonts/static/#Hanken Grotesk</FontFamily>
+    <FontFamily x:Key="UiFont">/aurora-radio;component/Fonts/static/#Hanken Grotesk</FontFamily>
 
     <!-- Surfaces -->
     <Color x:Key="BgDeep">#FF050D0C</Color>
