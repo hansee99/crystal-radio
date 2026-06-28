@@ -42,6 +42,8 @@
     <Resource Include="Assets\player-bg.png" />
     <Resource Include="Assets\app.ico" />
     <Resource Include="Assets\app-256.png" />
+    <!-- Bundled UI font (Hanken Grotesk). Drop the .ttf files in /Fonts; see Fonts/README.md. -->
+    <Resource Include="Fonts\*.ttf" />
   </ItemGroup>
 
   <!-- Local embedding model (all-MiniLM-L6-v2) + BERT vocab, copied to the output dir.
