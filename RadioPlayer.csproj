@@ -24,6 +24,8 @@
     <SelfContained>false</SelfContained>
     <!-- EXE / Win32 icon -->
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <!-- Per-monitor v2 DPI awareness (crisp text on hi-DPI). -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

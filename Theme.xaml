@@ -277,7 +277,9 @@
                 <ControlTemplate TargetType="Slider">
                     <Grid VerticalAlignment="Center">
                         <Border Height="4" CornerRadius="3" Background="{StaticResource FillTrack}"/>
-                        <Track x:Name="PART_Track">
+                        <!-- Track must mirror the slider's range/value or the thumb can't move. -->
+                        <Track x:Name="PART_Track" Minimum="{TemplateBinding Minimum}"
+                               Maximum="{TemplateBinding Maximum}" Value="{TemplateBinding Value}">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
                                     <RepeatButton.Template>
@@ -340,5 +342,49 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- ===== Animated equalizer (R6): 4 bars with a staggered ScaleY loop ===== -->
+    <ControlTemplate x:Key="EqualizerTemplate">
+        <StackPanel Orientation="Horizontal" Height="13" VerticalAlignment="Bottom">
+            <StackPanel.Resources>
+                <Style TargetType="Rectangle">
+                    <Setter Property="Width" Value="2.6"/>
+                    <Setter Property="Height" Value="13"/>
+                    <Setter Property="Margin" Value="0,0,2.5,0"/>
+                    <Setter Property="Fill" Value="{StaticResource Teal}"/>
+                    <Setter Property="RadiusX" Value="2"/>
+                    <Setter Property="RadiusY" Value="2"/>
+                    <Setter Property="RenderTransformOrigin" Value="0.5,1"/>
+                    <Setter Property="RenderTransform">
+                        <Setter.Value><ScaleTransform/></Setter.Value>
+                    </Setter>
+                </Style>
+            </StackPanel.Resources>
+            <Rectangle x:Name="b1"/>
+            <Rectangle x:Name="b2"/>
+            <Rectangle x:Name="b3"/>
+            <Rectangle x:Name="b4"/>
+        </StackPanel>
+        <ControlTemplate.Triggers>
+            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                <BeginStoryboard>
+                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                        <DoubleAnimation Storyboard.TargetName="b1"
+                            Storyboard.TargetProperty="RenderTransform.ScaleY"
+                            From="0.25" To="1" Duration="0:0:0.45"/>
+                        <DoubleAnimation Storyboard.TargetName="b2" BeginTime="0:0:0.14"
+                            Storyboard.TargetProperty="RenderTransform.ScaleY"
+                            From="0.25" To="1" Duration="0:0:0.45"/>
+                        <DoubleAnimation Storyboard.TargetName="b3" BeginTime="0:0:0.28"
+                            Storyboard.TargetProperty="RenderTransform.ScaleY"
+                            From="0.25" To="1" Duration="0:0:0.45"/>
+                        <DoubleAnimation Storyboard.TargetName="b4" BeginTime="0:0:0.40"
+                            Storyboard.TargetProperty="RenderTransform.ScaleY"
+                            From="0.25" To="1" Duration="0:0:0.45"/>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
 
 </ResourceDictionary>

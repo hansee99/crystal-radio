@@ -427,7 +427,23 @@
         <!-- ===== 0. Ambient wave background (spans the whole body, behind everything) ===== -->
         <Grid Panel.ZIndex="0">
             <Rectangle Fill="{StaticResource WindowBg}"/>
-            <Image Source="Assets/player-bg.png" Stretch="UniformToFill" HorizontalAlignment="Right"/>
+            <Image Source="Assets/player-bg.png" Stretch="UniformToFill" HorizontalAlignment="Right"
+                   RenderTransformOrigin="0.5,0.5">
+                <Image.RenderTransform>
+                    <TranslateTransform/>
+                </Image.RenderTransform>
+                <Image.Triggers>
+                    <EventTrigger RoutedEvent="Loaded">
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation
+                                    Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                    From="0" To="-10" Duration="0:0:26" AutoReverse="True" RepeatBehavior="Forever"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Image.Triggers>
+            </Image>
             <!-- radial vignette toward the bottom-right glow -->
             <Rectangle>
                 <Rectangle.Fill>
@@ -742,13 +758,28 @@
                             <TextBlock Text="{Binding StatusText}" FontSize="12"
                                        Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"/>
                         </StackPanel>
-                        <!-- LIVE badge (R6 adds the pulse) -->
+                        <!-- Animated equalizer + LIVE badge while playing -->
+                        <ContentControl Template="{StaticResource EqualizerTemplate}" Height="13"
+                                        VerticalAlignment="Center" Margin="0,0,12,0"
+                                        Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVis}}"/>
                         <Border CornerRadius="999" Padding="9,3" Background="#1F56C7BA"
                                 BorderBrush="#4056C7BA" BorderThickness="1" VerticalAlignment="Center"
                                 Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVis}}">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="6" Height="6" Fill="{StaticResource TealBright}"
-                                         VerticalAlignment="Center"/>
+                                         VerticalAlignment="Center">
+                                    <Ellipse.Triggers>
+                                        <EventTrigger RoutedEvent="Loaded">
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                        From="1" To="0.28" Duration="0:0:0.8"
+                                                        AutoReverse="True" RepeatBehavior="Forever"/>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </EventTrigger>
+                                    </Ellipse.Triggers>
+                                </Ellipse>
                                 <TextBlock Text="LIVE" Margin="6,0,0,0" FontSize="10.5" FontWeight="SemiBold"
                                            Foreground="#FF8FE0D4"/>
                             </StackPanel>
