@@ -105,27 +105,67 @@ Batch 6 - Now-playing clarity & polish  (DONE)
 [x] T21 Add the screenshot (doc/screenshot.png) to the README, near the top.
 
 
-Batch 7 - Aurora Radio redesign (Direction A; see XAML-IMPLEMENTATION-SPEC.md)
+Batch 7 - Aurora Radio redesign (Direction A; see XAML-IMPLEMENTATION-SPEC.md)  (DONE)
 -----------------------------------------------------------------------------
 Decisions: display-only rename (keep RadioPlayer namespace/exe/data folders);
 font = Segoe UI Variable; phased commits straight to main.
 Engine + all AI services + stores + single-instance + dialog logic are UNCHANGED.
 Small VM additions as noted (PrevStationCommand, NowPlayingStationLine, volume %).
 
-[ ] R1 Foundations: display rename (title, About, <Product>); new Theme.xaml (brushes +
+[x] R1 Foundations: display rename (title, About, <Product>); new Theme.xaml (brushes +
        icon geometries + UiFont), merged in App.xaml. No layout change yet.
-[ ] R2 Window shell: WindowChrome (resizable + min sizes + rounded border), Aurora title
+[x] R2 Window shell: WindowChrome (resizable + min sizes + rounded border), Aurora title
        bar + caption buttons. Keep TaskbarItemInfo, SMTC, single-instance; drop old drag.
-[ ] R3 Background + body layout: ambient image + 3 scrims; 362/* two-column grid.
-[ ] R4 Left panel: pill tabs, search field (= AI prompt), restyled station/search lists
+[x] R3 Background + body layout: ambient image + 3 scrims; 362/* two-column grid.
+[x] R4 Left panel: pill tabs, search field (= AI prompt), restyled station/search lists
        (icon tile, title/subtitle, +/added affordance), "Found N" caption; keep add/edit/delete.
-[ ] R5 Now playing + transport: 44px title block, station chip, status row (equalizer +
+[x] R5 Now playing + transport: 44px title block, station chip, status row (equalizer +
        LIVE + bitrate), transport row w/ teal-glow play, restyled volume slider (0-1 + %).
        Adds PrevStationCommand, NowPlayingStationLine, (optional) runtime bitrate from BASS.
-[ ] R6 Flourishes: equalizer + LIVE animations, optional bg drift, per-row playing indicator,
+[x] R6 Flourishes: equalizer + LIVE animations, optional bg drift, per-row playing indicator,
        DPI manifest, resize testing.
-[ ] R7 Dialogs: reskin Station/Options/About to the new theme; README title -> Aurora Radio.
+[x] R7 Dialogs: reskin Station/Options/About to the new theme; README title -> Aurora Radio.
+       Cleanup: removed 9 dead pre-Aurora styles. Tagged v1.3.0.
+
+
+Batch 8 - Visual fixes
+----------------------
+[ ] B1  The main app window only has rounded corners at the top, not the bottom.
+        Root cause: WPF ClipToBounds clips to the rectangular layout bound, not the visual
+        rounded shape. Fix: set UIElement.Clip to a RectangleGeometry(r=13) in code-behind
+        and update it on SizeChanged / StateChanged (clear clip when maximized).
+[ ] B2  The left edge of the window has a 1-2px visual artifact (background image appears
+        to stick out). Likely a DPI sub-pixel rendering issue from the 1px shell border.
+        Fix: add UseLayoutRounding=True + SnapsToDevicePixels=True on the shell Border.
+[ ] B3  The Add/Edit/Delete station buttons sit too close to the bottom-left corner.
+        Fix: increase bottom margin on the left panel DockPanel (14,16,14,8 -> 14,16,14,14).
+
+
+Batch 9 - Per-row now-playing equalizer
+----------------------------------------
+[ ] Add NowPlayingUrl property (string?) to MainViewModel, set on play/stop.
+    Add UrlIsPlayingConverter (IValueConverter). In the Stations DataTemplate, overlay
+    the EqualizerTemplate on the icon tile via a DataTrigger on the converter result.
+    (Search result rows are unchanged — they have the +/check add button instead.)
+
+
+Batch 10 - Project rename to aurora-radio
+------------------------------------------
+Shallow rename only — keep C# namespace RadioPlayer and %LocalAppData%\RadioPlayer data
+folder (renaming the data folder would break existing installs).
+[ ] Rename RadioPlayer.csproj -> aurora-radio.csproj.
+[ ] Rename RadioPlayer.sln -> aurora-radio.sln (update project reference path inside).
+[ ] Add <AssemblyName>aurora-radio</AssemblyName> so the exe becomes aurora-radio.exe.
+
+
+Batch 11 - File structure + README split
+-----------------------------------------
+[ ] Move WPF view files into Views/ subfolder: MainWindow.xaml/.cs, Theme.xaml,
+    AboutDialog, OptionsDialog, StationDialog (.xaml/.cs), StationDialogService.cs.
+    Update App.xaml resource Source path. Delete XAML-IMPLEMENTATION-SPEC.md (done).
+[ ] Split README.md: keep a concise project overview with screenshot + quickstart.
+    Move architecture / AI search concept to doc/TECHNICAL.md.
 
 
 Backlog:
-- (none)
+(empty)

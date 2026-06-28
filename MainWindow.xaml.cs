@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using RadioPlayer.Services;
 using RadioPlayer.ViewModels;
 
@@ -24,6 +25,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Loaded       += (_, _) => UpdateShellClip();
+        SizeChanged  += (_, _) => UpdateShellClip();
+        StateChanged += (_, _) => UpdateShellClip();
 
         _engine = new RadioEngine();
         _settingsStore = new SettingsStore();
@@ -76,6 +80,19 @@ public partial class MainWindow : Window
         _embeddingProvider.Dispose();
         _enrichmentStore.Dispose();
         base.OnClosed(e);
+    }
+
+    // --- Rounded-corner clipping ---
+    // WPF ClipToBounds clips to the rectangular layout bound, not the visual rounded shape,
+    // so child content would render in the corner areas. Setting UIElement.Clip to a matching
+    // RectangleGeometry forces true rounded clipping on all four corners.
+    private void UpdateShellClip()
+    {
+        if (WindowState == WindowState.Maximized)
+            ShellBorder.Clip = null;
+        else
+            ShellBorder.Clip = new RectangleGeometry(
+                new Rect(0, 0, ShellBorder.ActualWidth, ShellBorder.ActualHeight), 13, 13);
     }
 
     // --- Custom window chrome (WindowStyle=None + WindowChrome; caption drag is automatic) ---

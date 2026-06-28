@@ -92,8 +92,10 @@
 
     <!-- Rounded window shell; WindowChrome supplies resize + the 42px caption drag area.
          AllowsTransparency makes the area outside this border transparent (true 13px corners).
-         Corners flatten when maximized. -->
-    <Border ClipToBounds="True" BorderBrush="#10FFFFFF" BorderThickness="1"
+         Corners flatten when maximized. UIElement.Clip is set in code-behind (SizeChanged)
+         to a matching RectangleGeometry so children are clipped to the rounded shape. -->
+    <Border x:Name="ShellBorder" ClipToBounds="True" BorderBrush="#10FFFFFF" BorderThickness="1"
+            UseLayoutRounding="True" SnapsToDevicePixels="True"
             Background="{StaticResource WindowBg}">
         <Border.Style>
             <Style TargetType="Border">
@@ -205,7 +207,7 @@
             <!-- LEFT: Stations / Search panel (content restyled in R4) -->
             <Border Grid.Column="0" Background="{StaticResource PanelBg}"
                     BorderBrush="{StaticResource Hairline}" BorderThickness="0,0,1,0">
-                <DockPanel Margin="14,16,14,8">
+                <DockPanel Margin="14,16,14,14">
                     <!-- Segmented pill tabs -->
                     <Border DockPanel.Dock="Top" Margin="0,0,0,12" CornerRadius="11" Padding="3"
                             Background="{StaticResource FillSubtle}"
