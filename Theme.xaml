@@ -207,6 +207,117 @@
         </Setter>
     </Style>
 
+    <!-- ===== Transport + volume (R5) ===== -->
+
+    <!-- Round ghost transport button (prev/next/stop). Content = a filled Geometry. -->
+    <Style x:Key="RoundGhostButton" TargetType="Button">
+        <Setter Property="Foreground" Value="#FFBCD0CC"/>
+        <Setter Property="Width" Value="46"/>
+        <Setter Property="Height" Value="46"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="b" CornerRadius="999" Background="Transparent"
+                            BorderBrush="#1FFFFFFF" BorderThickness="1">
+                        <Path Data="{TemplateBinding Content}" Stretch="Uniform" Width="20" Height="20"
+                              Fill="{TemplateBinding Foreground}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="#0FFFFFFF"/>
+                            <Setter TargetName="b" Property="BorderBrush" Value="#33FFFFFF"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="b" Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Primary play/pause button: teal gradient + glow. -->
+    <Style x:Key="PlayButton" TargetType="Button">
+        <Setter Property="Foreground" Value="#FF04201C"/>
+        <Setter Property="Width" Value="62"/>
+        <Setter Property="Height" Value="62"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Content" Value="{StaticResource PlayGeometry}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Ellipse Fill="{StaticResource PlayBrush}">
+                            <Ellipse.Effect>
+                                <DropShadowEffect Color="#FF56C7BA" BlurRadius="28"
+                                                  ShadowDepth="6" Direction="270" Opacity="0.6"/>
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <Path Data="{TemplateBinding Content}" Stretch="Uniform" Width="26" Height="26"
+                              Fill="{TemplateBinding Foreground}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Opacity" Value="0.94"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Volume slider: gradient-filled track (via the Track's decrease button) + glowing thumb. -->
+    <Style x:Key="VolumeSlider" TargetType="Slider">
+        <Setter Property="Height" Value="14"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid VerticalAlignment="Center">
+                        <Border Height="4" CornerRadius="3" Background="{StaticResource FillTrack}"/>
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Height="4" CornerRadius="3"
+                                                    Background="{StaticResource VolumeFill}"/>
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="Slider.IncreaseLarge" Focusable="False" Opacity="0">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Background="Transparent"/>
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Width="14" Height="14">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Ellipse Fill="#FFEAFFFB">
+                                                <Ellipse.Effect>
+                                                    <DropShadowEffect Color="Black" BlurRadius="6"
+                                                                      ShadowDepth="2" Opacity="0.45"/>
+                                                </Ellipse.Effect>
+                                            </Ellipse>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Close button: red hover + white stroke. -->
     <Style x:Key="TitleCloseButton" TargetType="Button" BasedOn="{StaticResource TitleIconButton}">
         <Setter Property="Foreground" Value="#FF9AACA8"/>

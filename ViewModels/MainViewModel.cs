@@ -39,6 +39,7 @@ public sealed class MainViewModel : ObservableObject
     private string _nowPlayingTitle = "Not playing";
     private string _nowPlayingArtist = string.Empty;
     private string _nowPlayingStation = string.Empty;
+    private string _nowPlayingFormat = string.Empty;
     private string _statusText = "Stopped";
     private bool _isPlaying;
     private bool _hasTrackInfo;
@@ -79,6 +80,7 @@ public sealed class MainViewModel : ObservableObject
         PlayPauseCommand = new RelayCommand(TogglePlayPause);
         StopCommand = new RelayCommand(_engine.Stop, () => _engine.State != PlaybackState.Stopped);
         NextStationCommand = new RelayCommand(NextStation, () => Stations.Count > 0);
+        PrevStationCommand = new RelayCommand(PrevStation, () => Stations.Count > 0);
         AddStationCommand = new RelayCommand(AddStation);
         EditStationCommand = new RelayCommand(EditStation, () => SelectedStation is not null);
         DeleteStationCommand = new RelayCommand(DeleteStation, () => SelectedStation is not null);
@@ -444,6 +446,7 @@ public sealed class MainViewModel : ObservableObject
         Stations.Add(station with { Description = item.Reason });
         _store.Save(Stations);
         NextStationCommand.RaiseCanExecuteChanged();
+        PrevStationCommand.RaiseCanExecuteChanged();
         item.IsAdded = true; // swap the row's + to a check
     }
 
@@ -452,6 +455,7 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand PlayPauseCommand { get; }
     public RelayCommand StopCommand { get; }
     public RelayCommand NextStationCommand { get; }
+    public RelayCommand PrevStationCommand { get; }
     public RelayCommand AddStationCommand { get; }
     public RelayCommand EditStationCommand { get; }
     public RelayCommand DeleteStationCommand { get; }
@@ -512,6 +516,13 @@ public sealed class MainViewModel : ObservableObject
 
     public bool HasStation => !string.IsNullOrWhiteSpace(NowPlayingStation);
 
+    /// <summary>Codec of the playing station ("AAC"/"MP3"), for the now-playing status line.</summary>
+    public string NowPlayingFormat
+    {
+        get => _nowPlayingFormat;
+        private set => SetProperty(ref _nowPlayingFormat, value);
+    }
+
     /// <summary>True while a stream is connecting/reconnecting (drives the loading spinner).</summary>
     public bool IsBusy => _engine.State is PlaybackState.Buffering or PlaybackState.Reconnecting;
 
@@ -556,9 +567,15 @@ public sealed class MainViewModel : ObservableObject
         set
         {
             if (SetProperty(ref _volume, value))
+            {
                 _engine.Volume = value;
+                OnPropertyChanged(nameof(VolumePercent));
+            }
         }
     }
+
+    /// <summary>Volume as a whole-number percent (0–100) for the readout next to the slider.</summary>
+    public int VolumePercent => (int)Math.Round(_volume * 100);
 
     private void NextStation()
     {
@@ -573,6 +590,18 @@ public sealed class MainViewModel : ObservableObject
         _engine.Play(next);
     }
 
+    private void PrevStation()
+    {
+        if (Stations.Count == 0) return;
+
+        var reference = _engine.CurrentStation ?? SelectedStation;
+        var index = reference is null ? 0 : Stations.IndexOf(reference);
+        var prev = Stations[(index - 1 + Stations.Count) % Stations.Count];
+
+        SelectWithoutAutoPlay(prev);
+        _engine.Play(prev);
+    }
+
     private void AddStation()
     {
         var created = _stationDialog.Show(null);
@@ -582,6 +611,7 @@ public sealed class MainViewModel : ObservableObject
         SelectWithoutAutoPlay(created);
         _store.Save(Stations);
         NextStationCommand.RaiseCanExecuteChanged();
+        PrevStationCommand.RaiseCanExecuteChanged();
     }
 
     private void EditStation()
@@ -617,6 +647,7 @@ public sealed class MainViewModel : ObservableObject
         Stations.Remove(target);
         _store.Save(Stations);
         NextStationCommand.RaiseCanExecuteChanged();
+        PrevStationCommand.RaiseCanExecuteChanged();
 
         // Move selection to a sensible neighbour without auto-starting it.
         SelectWithoutAutoPlay(Stations.Count == 0
@@ -673,6 +704,14 @@ public sealed class MainViewModel : ObservableObject
         NowPlayingStation = state == PlaybackState.Stopped
             ? string.Empty
             : _engine.CurrentStation?.Name ?? string.Empty;
+        NowPlayingFormat = state == PlaybackState.Stopped
+            ? string.Empty
+            : _engine.CurrentStation?.Format switch
+            {
+                StreamFormat.Aac => "AAC",
+                StreamFormat.Mp3 => "MP3",
+                _ => string.Empty
+            };
 
         StatusText = state switch
         {
