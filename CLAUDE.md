@@ -204,9 +204,12 @@ station *names and descriptions* from blogs, forums, and "best of" lists; you AL
 resolve those to a verified, playable stream via Radio Browser before playing. The
 "never play a web- or model-supplied URL" rule from Pattern A still holds.
 
-**Route by query type.** Keep Pattern A as the fast path for literal queries; send
-fuzzy/semantic queries to Pattern B. A cheap first classification call can decide which
-path to take.
+**No routing — Pattern B is a quality-gated escalation, not a separate "path".** The app
+always runs the cheap recall sources (Pattern A + local semantic) first and only escalates to
+web discovery when the re-ranked cheap pool can't fill a page. See **Routing — one unified
+pipeline** under "Semantic search (Phase 2)" for the full flow. (Historical note: an earlier
+design used an LLM classifier to route literal→A vs fuzzy→B; it was removed because borderline
+prompts misroute and a hard A/B switch is lossy.)
 
 **Two tools, two execution models (the key learning point).**
 
@@ -423,21 +426,39 @@ No new store — this is the same SQLite table from Phase 1.
 4. *(Optional)* LLM re-rank/explain the top-K (reuse the existing re-ranking step).
 5. Present; user picks; play via `RadioEngine`.
 
-### Routing
+### Routing — one unified pipeline (no literal-vs-fuzzy split)
 
-- **Literal** queries ("German news radio") → Pattern A.
-- **Fuzzy/semantic** queries → run **local semantic search AND Pattern B (web discovery)
-  concurrently, then merge & de-duplicate** (dedupe on the resolved stream URL). Local hits
-  are labeled with their cosine score; web finds carry their one-line reason. The enrichment
-  DB / vector index **augments** web discovery — it does not replace it. Pattern B's finds
-  still get enriched (Phase 1) and embedded (Phase 2), so the local side keeps improving and
-  contributing more over time, but the web is always consulted on a fuzzy query.
-  - *Design note:* an earlier draft had semantic **replace** web once the index was warm
-    (local-first, web only on weak/empty). That was changed to "always both, merged" — the
-    enrichment layer is an enhancement, not a substitute. The `SemanticThreshold` constant in
-    `MainViewModel` is now a *relevance floor* (drop weak local hits from the merge), not a
-    web on/off switch. Cost tradeoff: every fuzzy query incurs the Pattern B LLM + web-search
-    call.
+There is **no classifier and no literal-vs-fuzzy branch.** Every prompt runs one retrieval
+pipeline: several cheap recall sources feed one ranker, and web search is the only
+escalation — fired by *result quality*, not a guess about intent. Implemented in
+`MainViewModel.RunUnifiedSearchAsync`:
+
+1. **Cheap recall, in parallel** — Pattern A (structured Radio Browser lookup) **and** local
+   semantic search. Both are ~free/fast. Pool their candidates, deduped on the resolved
+   stream URL.
+2. **Re-rank** the pool with `LlmSearchRanker` (a strict Haiku call that drops loosely-related
+   stations). This *replaces* the old `Broaden` fallback — a query that matches nothing simply
+   contributes nothing.
+3. **Escalate to web** only when the re-ranked cheap pool can't fill a page
+   (`shortlist.Count < MaxResults`, see `NeedsWebEscalation`). Then run Pattern B (web
+   discovery), add its finds to the pool, and **re-rank the combined pool**. Because the ranker
+   is strict, a thin shortlist is a genuine signal the directory/local catalog don't cover the
+   prompt (niche genre, multi-country region like "Scandinavia", stylistic qualifier like
+   "contemporary") — exactly when web search earns its cost.
+4. **Validate** streams (`AddValidatedAsync`) and show.
+
+Net effect: "BBC Radio 1" is satisfied by the cheap sources and never pays for web; "contemporary
+metal from scandinavia" comes back thin from the cheap sources and escalates automatically. The
+enrichment DB / vector index still **augments** web discovery — Pattern B's finds get enriched
+(Phase 1) and embedded (Phase 2), so the cheap pool keeps improving and escalates less over time.
+
+- *Design history:* earlier drafts used (a) a cheap LLM **classifier** to route literal→Pattern A
+  vs fuzzy→semantic+web, then (b) "fuzzy = always run semantic AND web". Both were replaced: the
+  classifier kept mis-routing borderline prompts (genre+region, genre+qualifier) that are *both*
+  literal-ish and fuzzy, and a hard A/B switch is lossy by construction. The unified
+  "many retrievers → one ranker → quality-gated web escalation" design removes the routing
+  decision entirely. `SemanticThreshold` is now only the relevance floor in the ranker-unavailable
+  heuristic fallback (`BuildHeuristicMerge`), not a routing switch.
 
 ### Components
 
@@ -447,7 +468,8 @@ No new store — this is the same SQLite table from Phase 1.
 - `EnrichmentService` — extended to also embed descriptions at cache time.
 - `EnrichmentStore` — gains vector read/write and a "rows missing embeddings" query for
   backfill.
-- View model gains the routing logic above.
+- View model owns the unified pipeline above (`RunUnifiedSearchAsync`): pool the cheap
+  sources, re-rank, quality-gate the web escalation, validate, present.
 
 ### Gotchas
 

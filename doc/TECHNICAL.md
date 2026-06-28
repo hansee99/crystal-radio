@@ -30,8 +30,7 @@ Architecture, AI search design, and project structure for contributors and devel
 | `Services/StationSearchService.cs` | Radio Browser API client; maps results to playable `Station` candidates. |
 | `Services/PromptInterpreter.cs` | Pattern A — translates a prompt into Radio Browser search parameters (structured output). |
 | `Services/AgenticSearchService.cs` | Pattern B — two-tool agentic loop (web search + Radio Browser lookup). |
-| `Services/LlmQueryClassifier.cs` | Routes a prompt to the literal (Pattern A) vs fuzzy (semantic + web) path. |
-| `Services/LlmSearchRanker.cs` | LLM relevance re-rank of merged candidates. |
+| `Services/LlmSearchRanker.cs` | LLM relevance re-rank of the merged candidate pool; its strictness also drives the web-escalation decision. |
 | `Services/EnrichmentService.cs`, `EnrichmentStore.cs` | Phase 1 — distil + cache per-station descriptions in SQLite under `%LocalAppData%\RadioPlayer\`. |
 | `Services/SemanticSearchService.cs`, `MiniLmEmbeddingProvider.cs` | Phase 2 — local ONNX embeddings + brute-force cosine search. |
 | `ViewModels/MainViewModel.cs` | Playback state, commands, station list, now-playing, search orchestration. |
@@ -69,13 +68,27 @@ results can be filtered to stations that are actually reachable. Each result car
 Only stations with `codec` ∈ {MP3, AAC, AAC+}, `hls == false`, and `lastcheckok == true`
 reach the player.
 
-### Routing
+### One unified pipeline (no literal-vs-fuzzy routing)
 
-A cheap LLM **classifier** (Haiku) routes each prompt before any search runs:
+There is no classifier and no A-vs-B branch. Every prompt runs one pipeline — several cheap
+recall sources feed one ranker, and web search is the only escalation, fired by result
+quality rather than a guess about intent (`MainViewModel.RunUnifiedSearchAsync`):
 
-- **Literal** queries ("German news radio") → Pattern A.
-- **Fuzzy/vibe** queries ("dreamy music for late-night coding") → local semantic search
-  **and** Pattern B run concurrently, results merged and de-duplicated, then re-ranked.
+1. **Cheap recall, in parallel** — Pattern A (structured Radio Browser lookup) and local
+   semantic search. Pool their candidates, deduped on the resolved stream URL.
+2. **Re-rank** the pool with the strict LLM ranker (drops loosely-related stations; this
+   replaces the old `Broaden` fallback).
+3. **Escalate to web** (Pattern B) only when the re-ranked cheap pool can't fill a page
+   (`shortlist.Count < MaxResults`), then re-rank the combined pool. A thin shortlist is the
+   signal that the directory tags + local catalog genuinely don't cover the prompt — a niche
+   genre, a multi-country region ("Scandinavia"), a stylistic qualifier ("contemporary") —
+   exactly when web discovery earns its per-search cost.
+4. **Validate** streams and present.
+
+So "BBC Radio 1" is filled by the cheap sources and never pays for web, while "contemporary
+metal from scandinavia" comes back thin and escalates automatically. As the enrichment DB
+and vector index grow (Pattern B's finds get enriched + embedded), the cheap pool covers more
+and escalates less over time.
 
 ### Pattern A — structured output
 
@@ -129,10 +142,10 @@ do not skip pooling or similarity scores will be garbage.
 ### The self-improving loop
 
 Pattern B's finds flow through the enrichment pipeline automatically: homepage fetched,
-description generated, embedding stored. The next fuzzy query finds those stations via
-the local semantic index. Over time the local side contributes increasingly more, but
-Pattern B is always run for fuzzy queries — the local index augments web discovery, it
-does not replace it.
+description generated, embedding stored. The next similar query finds those stations via
+the cheap sources (Pattern A tags + the local semantic index), so the pool fills the page
+without escalating to web. Over time the local side contributes increasingly more and web
+search fires less — the enrichment layer augments web discovery rather than replacing it.
 
 ## Key gotchas
 

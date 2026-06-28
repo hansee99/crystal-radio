@@ -50,11 +50,10 @@ public partial class MainWindow : Window
         var agenticSearch = new AgenticSearchService(            // Pattern B
             new HttpClient(), searchService, enrichment, apiKey);
         var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
-        var classifier = new LlmQueryClassifier(new HttpClient(), apiKey); // literal vs fuzzy routing
 
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
-            semanticSearch, ranker, classifier);
+            semanticSearch, ranker);
         DataContext = _viewModel;
 
         // One-time/background: embed any enriched rows lacking a current-model vector.
