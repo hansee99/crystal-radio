@@ -8,8 +8,10 @@
          Values are taken verbatim from XAML-IMPLEMENTATION-SPEC.md.
          ============================================================ -->
 
-    <!-- Typography: Segoe UI Variable (Windows-native), Segoe UI fallback. -->
-    <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI</FontFamily>
+    <!-- Typography: Hanken Grotesk (the design font) if installed/bundled, else Segoe UI
+         Variable. To guarantee it on any machine, bundle the TTFs under /Fonts and change
+         this to "/RadioPlayer;component/Fonts/#Hanken Grotesk". -->
+    <FontFamily x:Key="UiFont">Hanken Grotesk, Segoe UI Variable Text, Segoe UI</FontFamily>
 
     <!-- Surfaces -->
     <Color x:Key="BgDeep">#FF050D0C</Color>
@@ -100,10 +102,14 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="b" CornerRadius="7" Background="Transparent">
-                        <Path Data="{TemplateBinding Content}" Stretch="Uniform" Width="16" Height="16"
-                              Stroke="{TemplateBinding Foreground}" StrokeThickness="1.6"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <!-- 24-unit canvas scaled to 16px (keeps the glyph's padding + thin stroke,
+                             instead of Stretch inflating the tight bounding box). -->
+                        <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="24" Height="24">
+                                <Path Data="{TemplateBinding Content}" Stroke="{TemplateBinding Foreground}"
+                                      StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                            </Canvas>
+                        </Viewbox>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -327,10 +333,14 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="b" CornerRadius="7" Background="Transparent">
-                        <Path Data="{TemplateBinding Content}" Stretch="Uniform" Width="16" Height="16"
-                              Stroke="{TemplateBinding Foreground}" StrokeThickness="1.6"
-                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <!-- 24-unit canvas scaled to 16px (keeps the glyph's padding + thin stroke,
+                             instead of Stretch inflating the tight bounding box). -->
+                        <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="24" Height="24">
+                                <Path Data="{TemplateBinding Content}" Stroke="{TemplateBinding Foreground}"
+                                      StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                            </Canvas>
+                        </Viewbox>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
