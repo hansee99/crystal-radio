@@ -542,8 +542,11 @@
                             Visibility="{Binding CanShowAbout, Converter={StaticResource BoolToVis}}"/>
                 </StackPanel>
 
-                <!-- ===== About this track reading view (swaps with Now Playing) ===== -->
-                <Grid Grid.Row="0" MaxWidth="520" HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                <!-- ===== About this track reading view (swaps with Now Playing) =====
+                     Stretches to the right column's width; bottom margin keeps the footer off
+                     the transport row below. -->
+                <Grid Grid.Row="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                      Margin="0,0,0,22"
                       Visibility="{Binding ShowAbout, Converter={StaticResource BoolToVis}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>

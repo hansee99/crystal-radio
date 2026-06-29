@@ -366,7 +366,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="b" CornerRadius="999" Padding="13,9,16,9"
+                    <Border x:Name="b" CornerRadius="10" Padding="13,9,16,9"
                             Background="#1F56C7BA" BorderBrush="#4D56C7BA" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
                             <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform"

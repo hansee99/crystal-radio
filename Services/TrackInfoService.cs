@@ -46,6 +46,9 @@ public sealed class TrackInfoService : ITrackInfoService
         Be accurate; if unsure of a fact, leave it out. If you cannot confidently identify the
         track at all, return {"song":"","artist":"","notable":[]}.
 
+        Write PLAIN TEXT only — no citation markers, footnotes, reference numbers, or HTML/XML
+        tags (e.g. no <cite> tags) anywhere in the values.
+
         Respond with ONLY this JSON object — no prose, no markdown fences:
         { "song": "string", "artist": "string", "notable": ["string"] }
         """;
@@ -173,12 +176,11 @@ public sealed class TrackInfoService : ITrackInfoService
         try { node = JsonNode.Parse(json); }
         catch (JsonException) { return null; }
 
-        var song = Str(node?["song"])?.Trim() ?? "";
-        var artist = Str(node?["artist"])?.Trim() ?? "";
+        var song = Clean(Str(node?["song"]));
+        var artist = Clean(Str(node?["artist"]));
         var notable = (node?["notable"] as JsonArray)?
-            .Select(n => Str(n)?.Trim())
-            .Where(s => !string.IsNullOrWhiteSpace(s))
-            .Select(s => s!)
+            .Select(n => Clean(Str(n)))
+            .Where(s => s.Length > 0)
             .ToList() ?? [];
 
         // The model signals "couldn't identify" with all-empty fields — treat as no result.
@@ -229,6 +231,21 @@ public sealed class TrackInfoService : ITrackInfoService
         var start = trimmed.IndexOf('{');
         var end = trimmed.LastIndexOf('}');
         return start < 0 || end <= start ? null : trimmed[start..(end + 1)];
+    }
+
+    /// <summary>
+    /// Normalize a model-produced string for display: strip any markup the web-search model
+    /// leaks in (e.g. &lt;cite index="…"&gt;…&lt;/cite&gt; citation tags), decode HTML entities,
+    /// and collapse the whitespace those removals leave behind.
+    /// </summary>
+    private static string Clean(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s))
+            return "";
+        var text = System.Text.RegularExpressions.Regex.Replace(s, "<[^>]+>", "");
+        text = System.Net.WebUtility.HtmlDecode(text);
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
+        return text.Trim();
     }
 
     private static string? Str(JsonNode? n) =>
