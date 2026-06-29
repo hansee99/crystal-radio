@@ -555,6 +555,19 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
+                    <!-- Reading scrim: dark behind the text for legibility, fading to transparent
+                         on the right so the wave art still peeks through. Behind all content. -->
+                    <Rectangle Grid.RowSpan="4" IsHitTestVisible="False" Margin="-20,-12,-44,0">
+                        <Rectangle.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                <GradientStop Color="#F2050D0C" Offset="0"/>
+                                <GradientStop Color="#EE050D0C" Offset="0.62"/>
+                                <GradientStop Color="#C2050D0C" Offset="0.84"/>
+                                <GradientStop Color="#00050D0C" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Rectangle.Fill>
+                    </Rectangle>
+
                     <!-- Header: back button + eyebrow -->
                     <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
                         <Button Style="{StaticResource AboutBackButton}" Command="{Binding BackToNowPlayingCommand}"
