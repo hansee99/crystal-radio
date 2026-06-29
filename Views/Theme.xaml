@@ -65,7 +65,8 @@
     <PathGeometry x:Key="CheckGeometry" Figures="M5 12.5 L10 17.5 L19 7.5"/>
     <PathGeometry x:Key="SearchGeometry" Figures="M11 4.4 A6.6 6.6 0 1 0 11 17.6 A6.6 6.6 0 1 0 11 4.4 M16 16 L20.5 20.5"/>
     <PathGeometry x:Key="CopyGeometry" Figures="M9 9 H18 a2 2 0 0 1 2 2 V20 H11 a2 2 0 0 1 -2 -2 Z M5 15 V6 a2 2 0 0 1 2 -2 H15"/>
-    <PathGeometry x:Key="SettingsGeometry" Figures="M4 8 H20 M4 16 H20"/>
+    <!-- Sliders: two horizontal tracks, each with a knob (track gapped around the knob). -->
+    <PathGeometry x:Key="SettingsGeometry" Figures="M4 8 H6.5 M11.5 8 H20 M6.5 8 A2.5 2.5 0 1 0 11.5 8 A2.5 2.5 0 1 0 6.5 8 M4 16 H12.5 M17.5 16 H20 M12.5 16 A2.5 2.5 0 1 0 17.5 16 A2.5 2.5 0 1 0 12.5 16"/>
     <PathGeometry x:Key="InfoGeometry" Figures="M12 3.6 A8.4 8.4 0 1 0 12 20.4 A8.4 8.4 0 1 0 12 3.6 M12 11 V16"/>
     <PathGeometry x:Key="MinGeometry" Figures="M6 12 H18"/>
     <PathGeometry x:Key="CloseGeometry" Figures="M7 7 L17 17 M17 7 L7 17"/>
