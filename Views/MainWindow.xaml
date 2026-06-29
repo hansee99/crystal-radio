@@ -392,8 +392,32 @@
                                             <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
                                                     Background="{StaticResource FillSubtle}"
                                                     BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
-                                                <Path Data="{StaticResource RadioGeometry}" Stretch="Uniform"
-                                                      Width="17" Height="17" Stroke="#FF6F928C" StrokeThickness="1.4"/>
+                                                <Grid>
+                                                    <!-- Radio icon (hidden while this station is playing) -->
+                                                    <Path Data="{StaticResource RadioGeometry}" Stretch="Uniform"
+                                                          Width="17" Height="17" Stroke="#FF6F928C" StrokeThickness="1.4">
+                                                        <Path.Visibility>
+                                                            <MultiBinding Converter="{StaticResource UrlIsPlayingConverter}"
+                                                                          ConverterParameter="Invert">
+                                                                <Binding Path="Station.Url"/>
+                                                                <Binding Path="DataContext.NowPlayingUrl"
+                                                                         RelativeSource="{RelativeSource AncestorType=ListBox}"/>
+                                                            </MultiBinding>
+                                                        </Path.Visibility>
+                                                    </Path>
+                                                    <!-- Animated equalizer (visible while this station is playing) -->
+                                                    <ContentControl Template="{StaticResource EqualizerTemplate}"
+                                                                    Width="20" Height="13"
+                                                                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <ContentControl.Visibility>
+                                                            <MultiBinding Converter="{StaticResource UrlIsPlayingConverter}">
+                                                                <Binding Path="Station.Url"/>
+                                                                <Binding Path="DataContext.NowPlayingUrl"
+                                                                         RelativeSource="{RelativeSource AncestorType=ListBox}"/>
+                                                            </MultiBinding>
+                                                        </ContentControl.Visibility>
+                                                    </ContentControl>
+                                                </Grid>
                                             </Border>
                                             <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Station.Name}" FontSize="13.5" FontWeight="Medium"
