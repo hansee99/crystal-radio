@@ -1,4 +1,4 @@
-# Aurora Radio
+# Crystal Radio
 
 A vibe-coded lightweight Windows desktop app for playing internet radio streams (Icecast/Shoutcast),
 with playback surfaced natively in the OS:
@@ -14,7 +14,7 @@ Anthropic API key).
 
 Built with WPF on .NET 10, using the [BASS](https://www.un4seen.com/) audio library.
 
-![Aurora Radio — now playing, with the AI search panel](doc/screenshot.png)
+![Crystal Radio — now playing, with the AI search panel](doc/screenshot.png)
 
 ## Features
 

@@ -8,7 +8,7 @@
         xmlns:mvvm="clr-namespace:RadioPlayer.Mvvm"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
-        Title="Aurora Radio" Height="600" Width="920"
+        Title="Crystal Radio" Height="600" Width="920"
         MinWidth="760" MinHeight="520"
         Icon="/Assets/app.ico"
         WindowStartupLocation="CenterScreen"
@@ -127,7 +127,7 @@
                     </Border>
                     <TextBlock Margin="9,0,0,0" VerticalAlignment="Center" FontSize="12"
                                FontWeight="SemiBold" Foreground="#FFCFE0DC">
-                        <Run Text="AURORA"/><Run Text=" RADIO" Foreground="#FF5C7873" FontWeight="Medium"/>
+                        <Run Text="CRYSTAL"/><Run Text=" RADIO" Foreground="#FF5C7873" FontWeight="Medium"/>
                     </TextBlock>
                 </StackPanel>
 

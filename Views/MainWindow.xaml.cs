@@ -120,7 +120,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Couldn't open the window:\n\n{ex.Message}", "Aurora Radio",
+            MessageBox.Show(this, $"Couldn't open the window:\n\n{ex.Message}", "Crystal Radio",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }

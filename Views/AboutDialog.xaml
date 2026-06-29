@@ -1,7 +1,7 @@
 <Window x:Class="RadioPlayer.AboutDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="About Aurora Radio" SizeToContent="WidthAndHeight"
+        Title="About Crystal Radio" SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         ShowInTaskbar="False" Icon="/Assets/app.ico"
         FontFamily="{StaticResource UiFont}" Background="#FF0A1513"
@@ -12,7 +12,7 @@
             <Image Source="/Assets/app-256.png" Width="48" Height="48" VerticalAlignment="Top"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
             <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="Aurora Radio" FontSize="20" FontWeight="SemiBold"
+                <TextBlock Text="Crystal Radio" FontSize="20" FontWeight="SemiBold"
                            Foreground="#FFFFFFFF"/>
                 <TextBlock x:Name="VersionText" FontSize="12" Foreground="#FF9FB0C4"
                            Margin="0,2,0,0"/>

@@ -13,7 +13,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\RadioPlayer.csproj" />
+    <ProjectReference Include="..\..\crystal-radio.csproj" />
   </ItemGroup>
 
   <!-- The embedding provider loads these from AppContext.BaseDirectory\MlAssets.

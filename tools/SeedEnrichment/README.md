@@ -37,5 +37,5 @@ dotnet run --project tools/SeedEnrichment -- --count 200 --extended
   are skipped), so you can stop (Ctrl+C) and resume, or bump `--count` later.
 - **Embeddings are local & free** (all-MiniLM-L6-v2 via ONNX); only the optional homepage
   distillation uses the Anthropic API.
-- Not part of `RadioPlayer.sln` on purpose — it's a separate, on-demand utility. The app's
+- Not part of `crystal-radio.sln` on purpose — it's a separate, on-demand utility. The app's
   own build excludes `tools/**`.

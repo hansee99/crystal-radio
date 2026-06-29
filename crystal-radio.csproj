@@ -13,12 +13,12 @@
     <!-- App identity / versioning. Bump Version (SemVer MAJOR.MINOR.PATCH) per release;
          the SDK flows it into the assembly's File/Informational version automatically. -->
     <Version>1.4.0</Version>
-    <AssemblyName>aurora-radio</AssemblyName>
+    <AssemblyName>crystal-radio</AssemblyName>
     <!-- Keep namespace RadioPlayer so no C# files need touching (shallow rename). -->
     <RootNamespace>RadioPlayer</RootNamespace>
-    <Product>Aurora Radio</Product>
+    <Product>Crystal Radio</Product>
     <Authors>Hans Seebacher</Authors>
-    <Description>Aurora Radio — a lightweight internet radio player for Windows.</Description>
+    <Description>Crystal Radio — a lightweight internet radio player for Windows.</Description>
 
     <!-- Must match the native BASS DLLs -->
     <Platforms>x64</Platforms>

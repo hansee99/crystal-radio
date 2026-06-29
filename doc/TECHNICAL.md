@@ -1,4 +1,4 @@
-# Aurora Radio — technical reference
+# Crystal Radio — technical reference
 
 Architecture, AI search design, and project structure for contributors and developers.
 
@@ -36,7 +36,7 @@ Architecture, AI search design, and project structure for contributors and devel
 | `Services/TrackInfoService.cs` | "About this track" — on-demand AI briefing about the now-playing song/artist via server-side web search (Sonnet); per-session cached. |
 | `ViewModels/MainViewModel.cs` | Playback state, commands, station list, now-playing, search orchestration. |
 | `Views/MainWindow.xaml(.cs)` | UI layout, taskbar thumb buttons, custom window chrome, HWND/SMTC bootstrap. |
-| `Views/Theme.xaml` | Aurora theme: brushes, icon geometries, all control styles. |
+| `Views/Theme.xaml` | Crystal theme: brushes, icon geometries, all control styles. |
 | `Views/StationDialog.xaml(.cs)` | Add/edit station editor. |
 | `Views/OptionsDialog.xaml(.cs)` | Settings dialog (Anthropic API key). |
 | `Views/AboutDialog.xaml(.cs)` | About dialog. |
@@ -174,7 +174,7 @@ relies on `web_search`, the same cost/enablement caveats as Pattern B apply.
 - **BASS callbacks fire on BASS-owned threads.** Marshal to the UI thread via
   `Dispatcher` before touching the view model, UI, or SMTC.
 - **Pack URI for bundled font.** The Hanken Grotesk TTFs are embedded as WPF resources
-  and referenced as `/aurora-radio;component/Fonts/static/#Hanken Grotesk`. If the
+  and referenced as `/crystal-radio;component/Fonts/static/#Hanken Grotesk`. If the
   assembly name changes, update `Views/Theme.xaml`.
 - **`ClipToBounds` is rectangular.** WPF's `ClipToBounds` clips to layout bounds, not
   the visual rounded shape of a `Border`. The shell border uses `UIElement.Clip` (set in
