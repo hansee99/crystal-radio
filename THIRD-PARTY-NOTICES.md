@@ -21,8 +21,34 @@ License. It is a separate component from the native BASS libraries above.
 
 - Project: <https://github.com/ManagedBass/ManagedBass>
 
+## Hanken Grotesk (UI font) — SIL Open Font License 1.1
+
+Files: `Fonts/**` (the app embeds the Light/Regular/Medium/SemiBold static weights as
+resources; the other weights are included for convenience).
+
+Copyright 2021 The Hanken Grotesk Project Authors
+(<https://github.com/marcologous/hanken-grotesk>). Licensed under the **SIL Open Font
+License, Version 1.1** — full text in [`Fonts/OFL.txt`](Fonts/OFL.txt). The OFL permits
+bundling and redistribution; the font is **not** covered by this project's license.
+
 ## Segoe Fluent Icons — Microsoft
 
-UI glyphs use the **Segoe Fluent Icons** font that ships with Windows 11. The font is not
-redistributed by this project; it is provided by the operating system and remains subject
-to Microsoft's terms.
+A few toolbar glyphs use the **Segoe Fluent Icons** font that ships with Windows 11. The
+font is not redistributed by this project; it is provided by the operating system and
+remains subject to Microsoft's terms.
+
+## all-MiniLM-L6-v2 sentence-transformer — Apache License 2.0
+
+Files: `MlAssets/vocab.txt` (bundled WordPiece vocabulary);
+`MlAssets/all-MiniLM-L6-v2.onnx` (large; fetched on setup, **not** committed — see
+[`MlAssets/README.md`](MlAssets/README.md)).
+
+The model and its tokenizer vocabulary are © their authors (Sentence-Transformers /
+Hugging Face) and licensed under the **Apache License 2.0**.
+
+## .NET package dependencies
+
+Managed dependencies are restored from NuGet (not redistributed in this repo) and keep
+their own licenses — notably **ManagedBass** / **ManagedBass.Aac** (MIT, above),
+**Microsoft.Data.Sqlite**, **Microsoft.ML.OnnxRuntime**, and **Microsoft.ML.Tokenizers**
+(MIT / Apache-2.0). See each package for details.

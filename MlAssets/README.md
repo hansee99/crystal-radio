@@ -18,3 +18,9 @@ curl -L -o MlAssets/all-MiniLM-L6-v2.onnx \
 Both files are copied to the build output (`MlAssets/`) via `<Content>` in the csproj.
 If the model file is missing, semantic search degrades gracefully (the embedding provider
 reports unavailable and search falls back to Pattern B); the rest of the app is unaffected.
+
+## License
+
+`all-MiniLM-L6-v2` and its `vocab.txt` are licensed under the **Apache License 2.0**
+(© Sentence-Transformers / Hugging Face). See also
+[`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md).
