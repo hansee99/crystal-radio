@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Add station" Width="430" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
-        ShowInTaskbar="False" Icon="Assets/app.ico"
+        ShowInTaskbar="False" Icon="/Assets/app.ico"
         FontFamily="{StaticResource UiFont}" Background="#FF0A1513"
         TextElement.Foreground="{StaticResource TextBody}">
 

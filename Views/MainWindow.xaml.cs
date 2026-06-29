@@ -103,10 +103,27 @@ public partial class MainWindow : Window
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
     private void About_Click(object sender, RoutedEventArgs e)
-        => new AboutDialog { Owner = this }.ShowDialog();
+        => ShowDialogSafely(() => new AboutDialog { Owner = this });
 
     private void Options_Click(object sender, RoutedEventArgs e)
-        => new OptionsDialog(_settingsStore) { Owner = this }.ShowDialog();
+        => ShowDialogSafely(() => new OptionsDialog(_settingsStore) { Owner = this });
+
+    /// <summary>
+    /// Open a modal dialog, surfacing any construction/display failure as a message box instead
+    /// of letting it bubble up as an unhandled exception that silently kills the whole app.
+    /// </summary>
+    private void ShowDialogSafely(Func<Window> create)
+    {
+        try
+        {
+            create().ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Couldn't open the window:\n\n{ex.Message}", "Aurora Radio",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
 
     private void SearchResults_DoubleClick(object sender, MouseButtonEventArgs e)
     {
