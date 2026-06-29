@@ -545,11 +545,12 @@
                 <!-- ===== About this track reading view (swaps with Now Playing) =====
                      Stretches to the right column's width; bottom margin keeps the footer off
                      the transport row below. -->
+                <!-- Negative top margin lifts the header up to align with the left-panel tabs
+                     (which sit higher than this column's top padding). -->
                 <Grid Grid.Row="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                      Margin="0,0,0,22"
+                      Margin="0,-18,0,22"
                       Visibility="{Binding ShowAbout, Converter={StaticResource BoolToVis}}">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
@@ -557,7 +558,7 @@
 
                     <!-- Reading scrim: dark behind the text for legibility, fading to transparent
                          on the right so the wave art still peeks through. Behind all content. -->
-                    <Rectangle Grid.RowSpan="4" IsHitTestVisible="False" Margin="-20,-12,-44,0">
+                    <Rectangle Grid.RowSpan="3" IsHitTestVisible="False" Margin="-20,-12,-44,0">
                         <Rectangle.Fill>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                                 <GradientStop Color="#F2050D0C" Offset="0"/>
@@ -578,17 +579,19 @@
                                    Foreground="#FF8FD6CB" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <!-- Context: the track title + artist -->
-                    <StackPanel Grid.Row="1" Margin="0,18,0,0">
-                        <TextBlock Text="{Binding NowPlayingTitle}" FontSize="24" FontWeight="Light"
-                                   Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding NowPlayingArtist}" FontSize="14" Margin="0,3,0,0"
-                                   Foreground="#FF9FB3AE" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-
-                    <!-- Scroll region: loading / result / error -->
-                    <ScrollViewer Grid.Row="2" Margin="0,18,0,0" Padding="0,0,8,0"
+                    <!-- Scroll region: track context (title + artist) scrolls together with the
+                         loading / result / error content, so it frees vertical room when scrolled. -->
+                    <ScrollViewer Grid.Row="1" Margin="0,20,0,0" Padding="0,0,8,0"
                                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <!-- Context: the track title + artist (scrolls with the content) -->
+                            <StackPanel Margin="0,0,0,20">
+                                <TextBlock Text="{Binding NowPlayingTitle}" FontSize="24" FontWeight="Light"
+                                           Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding NowPlayingArtist}" FontSize="14" Margin="0,3,0,0"
+                                           Foreground="#FF9FB3AE" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+
                         <Grid>
                             <!-- Loading skeleton -->
                             <StackPanel Visibility="{Binding IsAboutLoading, Converter={StaticResource BoolToVis}}">
@@ -717,10 +720,11 @@
                                        Text="{Binding AboutError}" FontSize="13.5" LineHeight="21"
                                        Foreground="#FF7D938E" TextWrapping="Wrap"/>
                         </Grid>
+                        </StackPanel>
                     </ScrollViewer>
 
                     <!-- Footer: regenerate (result/error) + disclaimer -->
-                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,14,0,0"
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,14,0,0"
                                 Background="Transparent">
                         <Border BorderBrush="#0FFFFFFF" BorderThickness="0,1,0,0"
                                 Padding="0,13,0,0" HorizontalAlignment="Stretch">
