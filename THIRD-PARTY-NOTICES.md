@@ -23,8 +23,8 @@ License. It is a separate component from the native BASS libraries above.
 
 ## Hanken Grotesk (UI font) — SIL Open Font License 1.1
 
-Files: `Fonts/**` (the app embeds the Light/Regular/Medium/SemiBold static weights as
-resources; the other weights are included for convenience).
+Files: `Fonts/static/*.ttf` (the four weights the app embeds as resources — Light,
+Regular, Medium, SemiBold).
 
 Copyright 2021 The Hanken Grotesk Project Authors
 (<https://github.com/marcologous/hanken-grotesk>). Licensed under the **SIL Open Font
