@@ -33,6 +33,7 @@ Architecture, AI search design, and project structure for contributors and devel
 | `Services/LlmSearchRanker.cs` | LLM relevance re-rank of the merged candidate pool; its strictness also drives the web-escalation decision. |
 | `Services/EnrichmentService.cs`, `EnrichmentStore.cs` | Phase 1 — distil + cache per-station descriptions in SQLite under `%LocalAppData%\RadioPlayer\`. |
 | `Services/SemanticSearchService.cs`, `MiniLmEmbeddingProvider.cs` | Phase 2 — local ONNX embeddings + brute-force cosine search. |
+| `Services/TrackInfoService.cs` | "About this track" — on-demand AI briefing about the now-playing song/artist via server-side web search (Sonnet); per-session cached. |
 | `ViewModels/MainViewModel.cs` | Playback state, commands, station list, now-playing, search orchestration. |
 | `Views/MainWindow.xaml(.cs)` | UI layout, taskbar thumb buttons, custom window chrome, HWND/SMTC bootstrap. |
 | `Views/Theme.xaml` | Aurora theme: brushes, icon geometries, all control styles. |
@@ -146,6 +147,21 @@ description generated, embedding stored. The next similar query finds those stat
 the cheap sources (Pattern A tags + the local semantic index), so the pool fills the page
 without escalating to web. Over time the local side contributes increasingly more and web
 search fires less — the enrichment layer augments web discovery rather than replacing it.
+
+## "About this track"
+
+On-demand AI briefing about the currently playing song/artist, shown inside the player (no
+modal). `TrackInfoService` calls the Anthropic Messages API with the server-side `web_search`
+tool (Sonnet) and returns `{ Song, Artist, Notable[] }` — short song facts, a short artist
+bio, and a few trivia bullets, sourced from varied sites (not Wikipedia alone) and length-
+capped by the prompt. Results are cached per session keyed by artist+title; Regenerate
+bypasses the cache.
+
+In the UI the right pane's upper region swaps between the Now Playing block and an "About this
+track" reading view (`AboutViewState`: Home → Loading → Result/Error); transport + volume stay
+fixed. The view model cancels any in-flight generation when the user hits Back or the track
+changes, and the trigger pill only appears with a playing track and an API key. Because it
+relies on `web_search`, the same cost/enablement caveats as Pattern B apply.
 
 ## Key gotchas
 

@@ -485,6 +485,28 @@ enrichment DB / vector index still **augments** web discovery — Pattern B's fi
 - Keep embedding compute and similarity off the UI thread; load/cache the index in memory.
 - Tune the cosine threshold that decides "good enough" vs. falling back to Pattern B.
 
+## "About this track" — now-playing artist/song info
+
+On-demand AI briefing about the currently playing track, rendered inside the player (no modal
+popup). Separate from station *search* — it explains what's already playing.
+
+- **`TrackInfoService` (`ITrackInfoService`)** — Anthropic Messages API with the server-side
+  `web_search` tool (Sonnet 4.6, no client tool, so the only loop is re-calling on
+  `pause_turn`). Returns the fixed shape `TrackInfo { Song, Artist, Notable[] }`. The system
+  prompt requires varied sources (not Wikipedia alone) and caps length so the panel doesn't
+  scroll much. If the track can't be identified the model returns all-empty and the service
+  yields null. Per-session in-memory cache keyed by artist+title; Regenerate bypasses it. No
+  playback knowledge.
+- **UI (Claude Design handoff).** The right pane's upper region swaps between the Now Playing
+  block and an "About this track" reading view; transport + volume never move. State machine
+  `AboutViewState` (Home → Loading → Result/Error) on `MainViewModel`, with
+  `OpenAbout`/`Regenerate`/`BackToNowPlaying` commands. Back and track-change cancel any
+  in-flight generation (CancellationTokenSource); the trigger pill is gated on a playing track
+  + an API key. Geometries `SparkleGeometry`/`BackGeometry` and the `AboutPillButton` /
+  `AboutBackButton` / `AboutLinkButton` styles live in `Views/Theme.xaml`.
+- Same `web_search` cost/enablement caveats as Pattern B. The model id lives only in
+  `TrackInfoService`.
+
 ## Conventions
 
 - MVVM throughout; keep code-behind to view wiring and the HWND/SMTC bootstrap only.

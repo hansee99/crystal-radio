@@ -167,5 +167,29 @@ Batch 11 - File structure + README split
     Move architecture / AI search concept to doc/TECHNICAL.md.
 
 
+Batch 12 - "About this track" (AI artist/song briefing)  (DONE)
+--------------------------------------------------------
+[x] On-demand AI briefing about the now-playing artist/song, shown in-UI (no modal).
+    - TrackInfoService (ITrackInfoService): Anthropic Messages API + server-side web_search
+      (Sonnet 4.6), returns { Song, Artist, Notable[] }; varied sources, brevity-capped;
+      in-memory per-session cache keyed by artist+title (Regenerate bypasses).
+    - UI per the Claude Design handoff: the right pane's upper region SWAPS between the Now
+      Playing block and an "About this track" reading view (home/loading/result/error);
+      transport + volume stay fixed. Trigger pill below the status row; back button + eyebrow;
+      THE SONG / THE ARTIST / NOTABLE sections; loading spinner + shimmer; Regenerate +
+      disclaimer footer.
+    - VM: AboutViewState, TrackInfo, OpenAbout/Regenerate/BackToNowPlaying commands; cancels
+      in-flight gen on Back; resets to Home on track change/stop; pill gated on key + track.
+    - Theme: SparkleGeometry, BackGeometry; AboutPillButton/AboutBackButton/AboutLinkButton.
+
+
+Search architecture (post-batches) - unified retrieval pipeline  (DONE)
+-----------------------------------------------------------------------
+[x] Replaced the literal-vs-fuzzy classifier routing with one pipeline: cheap recall
+    (Pattern A + local semantic) -> LLM re-rank -> quality-gated web (Pattern B) escalation
+    when the cheap pool can't fill a page -> re-rank combined. Removed LlmQueryClassifier,
+    IsFuzzy, Broaden. See CLAUDE.md "Routing - one unified pipeline".
+
+
 Backlog:
 (empty)

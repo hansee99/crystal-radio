@@ -17,6 +17,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly IEnrichmentService _enrichment;
     private readonly ISemanticSearchService _semanticSearch;
     private readonly ISearchRanker _ranker;
+    private readonly ITrackInfoService _trackInfoService;
 
     // Below this cosine score the local index is considered too weak (heuristic fallback only).
     private const double SemanticThreshold = 0.30;
@@ -44,6 +45,12 @@ public sealed class MainViewModel : ObservableObject
     private bool _hasTrackInfo;
     private double _volume;
 
+    // "About this track" reading-view state.
+    private AboutViewState _aboutState = AboutViewState.Home;
+    private TrackInfo? _trackInfo;
+    private string _aboutError = string.Empty;
+    private CancellationTokenSource? _aboutCts;
+
     // When set, changing SelectedStation won't auto-start playback. Used by the
     // add/edit/delete commands so managing the list doesn't yank what's playing.
     private bool _suppressAutoPlay;
@@ -51,7 +58,7 @@ public sealed class MainViewModel : ObservableObject
     public MainViewModel(RadioEngine engine, StationStore store, SettingsStore settingsStore,
         IStationDialog stationDialog, IPromptInterpreter interpreter, IStationSearchService searchService,
         IAgenticSearchService agenticSearch, IEnrichmentService enrichment,
-        ISemanticSearchService semanticSearch, ISearchRanker ranker)
+        ISemanticSearchService semanticSearch, ISearchRanker ranker, ITrackInfoService trackInfoService)
     {
         _engine = engine;
         _store = store;
@@ -63,6 +70,7 @@ public sealed class MainViewModel : ObservableObject
         _enrichment = enrichment;
         _semanticSearch = semanticSearch;
         _ranker = ranker;
+        _trackInfoService = trackInfoService;
 
         // Restore the persisted volume.
         _volume = settingsStore.Load().Volume;
@@ -84,6 +92,12 @@ public sealed class MainViewModel : ObservableObject
         DeleteStationCommand = new RelayCommand(DeleteStation, () => SelectedStation is not null);
         SearchCommand = new RelayCommand(() => _ = RunSearchAsync(), () => !IsSearching);
         AddSearchResultCommand = new RelayCommand<SearchResultItem>(AddSearchResultToLibrary);
+
+        OpenAboutCommand = new RelayCommand(() => _ = GenerateAboutAsync(forceRefresh: false),
+            () => CanShowAbout);
+        RegenerateAboutCommand = new RelayCommand(() => _ = GenerateAboutAsync(forceRefresh: true),
+            () => CanShowAbout);
+        BackToNowPlayingCommand = new RelayCommand(BackToNowPlaying);
     }
 
     // ===== AI-assisted station search =====
@@ -92,6 +106,11 @@ public sealed class MainViewModel : ObservableObject
 
     public RelayCommand SearchCommand { get; }
     public RelayCommand<SearchResultItem> AddSearchResultCommand { get; }
+
+    // "About this track" — on-demand AI briefing about the now-playing song/artist.
+    public RelayCommand OpenAboutCommand { get; }
+    public RelayCommand RegenerateAboutCommand { get; }
+    public RelayCommand BackToNowPlayingCommand { get; }
 
     public string SearchPrompt
     {
@@ -520,7 +539,12 @@ public sealed class MainViewModel : ObservableObject
         private set
         {
             if (SetProperty(ref _hasTrackInfo, value))
+            {
                 OnPropertyChanged(nameof(NowPlayingClipboardText));
+                OnPropertyChanged(nameof(CanShowAbout));
+                OpenAboutCommand.RaiseCanExecuteChanged();
+                RegenerateAboutCommand.RaiseCanExecuteChanged();
+            }
         }
     }
 
@@ -529,6 +553,114 @@ public sealed class MainViewModel : ObservableObject
         !HasTrackInfo ? null
         : string.IsNullOrWhiteSpace(NowPlayingArtist) ? NowPlayingTitle
         : $"{NowPlayingArtist} - {NowPlayingTitle}";
+
+    // ===== "About this track" reading view =====
+
+    /// <summary>State of the right pane's upper region (Now Playing ⟷ About reading view).</summary>
+    public AboutViewState AboutState
+    {
+        get => _aboutState;
+        private set
+        {
+            if (SetProperty(ref _aboutState, value))
+            {
+                OnPropertyChanged(nameof(ShowNowPlaying));
+                OnPropertyChanged(nameof(ShowAbout));
+                OnPropertyChanged(nameof(IsAboutLoading));
+                OnPropertyChanged(nameof(IsAboutResult));
+                OnPropertyChanged(nameof(IsAboutError));
+            }
+        }
+    }
+
+    public bool ShowNowPlaying => AboutState == AboutViewState.Home;
+    public bool ShowAbout => AboutState != AboutViewState.Home;
+    public bool IsAboutLoading => AboutState == AboutViewState.Loading;
+    public bool IsAboutResult => AboutState == AboutViewState.Result;
+    public bool IsAboutError => AboutState == AboutViewState.Error;
+
+    /// <summary>The generated briefing (song/artist/notable), set in the Result state.</summary>
+    public TrackInfo? TrackInfo
+    {
+        get => _trackInfo;
+        private set => SetProperty(ref _trackInfo, value);
+    }
+
+    /// <summary>User-facing message shown in the Error state.</summary>
+    public string AboutError
+    {
+        get => _aboutError;
+        private set => SetProperty(ref _aboutError, value);
+    }
+
+    /// <summary>The "About this track" trigger shows only with a playing track and an API key.</summary>
+    public bool CanShowAbout => HasTrackInfo && _trackInfoService.IsConfigured;
+
+    /// <summary>
+    /// Generate the briefing: switch to Loading, call the service (cancellable so Back aborts it),
+    /// then land on Result or Error. <paramref name="forceRefresh"/> bypasses the per-session cache.
+    /// </summary>
+    private async Task GenerateAboutAsync(bool forceRefresh)
+    {
+        if (!CanShowAbout)
+            return;
+
+        // Cancel any in-flight generation and start a fresh token for this run.
+        _aboutCts?.Cancel();
+        _aboutCts?.Dispose();
+        var cts = _aboutCts = new CancellationTokenSource();
+
+        var title = NowPlayingTitle;
+        var artist = NowPlayingArtist;
+        var station = NowPlayingStation;
+
+        AboutState = AboutViewState.Loading;
+        try
+        {
+            var info = await _trackInfoService.GetTrackInfoAsync(title, artist, station, forceRefresh, cts.Token);
+            if (cts.IsCancellationRequested)
+                return; // Back was pressed (or a new track reset us) — discard this result.
+
+            if (info is null)
+            {
+                AboutError = "Couldn't find reliable notes on this track.";
+                AboutState = AboutViewState.Error;
+            }
+            else
+            {
+                TrackInfo = info;
+                AboutState = AboutViewState.Result;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled by Back / track change — leave the state as whoever cancelled us set it.
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TrackInfo] generation failed: {ex.Message}");
+            if (!cts.IsCancellationRequested)
+            {
+                AboutError = "Couldn't generate notes right now.";
+                AboutState = AboutViewState.Error;
+            }
+        }
+    }
+
+    private void BackToNowPlaying()
+    {
+        _aboutCts?.Cancel();
+        AboutState = AboutViewState.Home;
+    }
+
+    /// <summary>Return to Now Playing and cancel any in-flight generation — used on track change/stop.</summary>
+    private void ResetAbout()
+    {
+        if (AboutState == AboutViewState.Home)
+            return;
+        _aboutCts?.Cancel();
+        AboutState = AboutViewState.Home;
+    }
 
     public string StatusText
     {
@@ -723,6 +855,7 @@ public sealed class MainViewModel : ObservableObject
                 NowPlayingTitle = "Not playing";
                 NowPlayingArtist = string.Empty;
                 HasTrackInfo = false;
+                ResetAbout(); // nothing playing → leave the About view
                 break;
             case PlaybackState.Buffering:
             case PlaybackState.Reconnecting:
@@ -743,5 +876,8 @@ public sealed class MainViewModel : ObservableObject
             : meta.Title;
         NowPlayingArtist = meta.Artist ?? meta.StationName ?? string.Empty;
         HasTrackInfo = !string.IsNullOrWhiteSpace(NowPlayingTitle);
+        // A new track invalidates any open briefing — return to Now Playing so stale info
+        // for the previous song is never shown.
+        ResetAbout();
     }
 }

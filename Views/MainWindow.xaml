@@ -444,9 +444,10 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- ===== Now playing (vertically centred) ===== -->
+                <!-- ===== Now playing (vertically centred). Swaps with the About reading view. ===== -->
                 <StackPanel Grid.Row="0" VerticalAlignment="Center"
-                            MaxWidth="440" HorizontalAlignment="Left">
+                            MaxWidth="440" HorizontalAlignment="Left"
+                            Visibility="{Binding ShowNowPlaying, Converter={StaticResource BoolToVis}}">
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
                         <TextBlock Text="NOW PLAYING" FontSize="11" FontWeight="SemiBold"
                                    Foreground="#FF6F8C87" VerticalAlignment="Center"/>
@@ -534,7 +535,200 @@
                                    Foreground="#FF6F8783" VerticalAlignment="Center"
                                    Visibility="{Binding HasStation, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
+
+                    <!-- "About this track" trigger (only with a playing track + an API key) -->
+                    <Button Style="{StaticResource AboutPillButton}" Content="About this track"
+                            Command="{Binding OpenAboutCommand}" Margin="0,28,0,0"
+                            Visibility="{Binding CanShowAbout, Converter={StaticResource BoolToVis}}"/>
                 </StackPanel>
+
+                <!-- ===== About this track reading view (swaps with Now Playing) ===== -->
+                <Grid Grid.Row="0" MaxWidth="520" HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                      Visibility="{Binding ShowAbout, Converter={StaticResource BoolToVis}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header: back button + eyebrow -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource AboutBackButton}" Command="{Binding BackToNowPlayingCommand}"
+                                ToolTip="Back to now playing"/>
+                        <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform" Width="15" Height="15"
+                              Fill="#FF62D2C4" VerticalAlignment="Center" Margin="13,0,0,0"/>
+                        <TextBlock Text="ABOUT THIS TRACK" Margin="8,0,0,0" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="#FF8FD6CB" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Context: the track title + artist -->
+                    <StackPanel Grid.Row="1" Margin="0,18,0,0">
+                        <TextBlock Text="{Binding NowPlayingTitle}" FontSize="24" FontWeight="Light"
+                                   Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding NowPlayingArtist}" FontSize="14" Margin="0,3,0,0"
+                                   Foreground="#FF9FB3AE" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+
+                    <!-- Scroll region: loading / result / error -->
+                    <ScrollViewer Grid.Row="2" Margin="0,18,0,0" Padding="0,0,8,0"
+                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <Grid>
+                            <!-- Loading skeleton -->
+                            <StackPanel Visibility="{Binding IsAboutLoading, Converter={StaticResource BoolToVis}}">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                    <Grid Width="13" Height="13" Margin="0,0,9,0" VerticalAlignment="Center"
+                                          RenderTransformOrigin="0.5,0.5">
+                                        <Grid.RenderTransform>
+                                            <RotateTransform/>
+                                        </Grid.RenderTransform>
+                                        <Grid.Triggers>
+                                            <EventTrigger RoutedEvent="Loaded">
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation
+                                                            Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                            From="0" To="360" Duration="0:0:0.8" RepeatBehavior="Forever"/>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </EventTrigger>
+                                        </Grid.Triggers>
+                                        <Ellipse Stroke="#4D56C7BA" StrokeThickness="1.6"/>
+                                        <Path Stroke="#FF62D2C4" StrokeThickness="1.6"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                              Data="M 6.5,1 A 5.5,5.5 0 0 1 12,6.5"/>
+                                    </Grid>
+                                    <TextBlock Text="Gathering notes on this track…" FontSize="12.5"
+                                               Foreground="#FF8FD6CB" VerticalAlignment="Center"/>
+                                </StackPanel>
+
+                                <!-- Shimmer placeholder bars (staggered opacity pulse) -->
+                                <StackPanel x:Name="ShimmerBars">
+                                    <StackPanel.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Height" Value="10"/>
+                                            <Setter Property="CornerRadius" Value="5"/>
+                                            <Setter Property="Margin" Value="0,0,0,13"/>
+                                            <Setter Property="HorizontalAlignment" Value="Left"/>
+                                            <Setter Property="Background" Value="#14FFFFFF"/>
+                                        </Style>
+                                    </StackPanel.Resources>
+                                    <Border x:Name="sb1" Width="130"/>
+                                    <Border x:Name="sb2" Width="430"/>
+                                    <Border x:Name="sb3" Width="404"/>
+                                    <Border x:Name="sb4" Width="378"/>
+                                    <Border x:Name="sb5" Width="198"/>
+                                    <Border x:Name="sb6" Width="105" Background="#1F56C7BA" Margin="0,9,0,13"/>
+                                    <Border x:Name="sb7" Width="416"/>
+                                    <Border x:Name="sb8" Width="300"/>
+                                    <StackPanel.Triggers>
+                                        <EventTrigger RoutedEvent="Loaded">
+                                            <BeginStoryboard>
+                                                <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                    <DoubleAnimation Storyboard.TargetName="sb1" Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:0.7"/>
+                                                    <DoubleAnimation Storyboard.TargetName="sb2" Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:0.7" BeginTime="0:0:0.10"/>
+                                                    <DoubleAnimation Storyboard.TargetName="sb3" Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:0.7" BeginTime="0:0:0.20"/>
+                                                    <DoubleAnimation Storyboard.TargetName="sb4" Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:0.7" BeginTime="0:0:0.30"/>
+                                                    <DoubleAnimation Storyboard.TargetName="sb5" Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:0.7" BeginTime="0:0:0.40"/>
+                                                    <DoubleAnimation Storyboard.TargetName="sb6" Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:0.7" BeginTime="0:0:0.50"/>
+                                                    <DoubleAnimation Storyboard.TargetName="sb7" Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:0.7" BeginTime="0:0:0.60"/>
+                                                    <DoubleAnimation Storyboard.TargetName="sb8" Storyboard.TargetProperty="Opacity" From="1" To="0.4" Duration="0:0:0.7" BeginTime="0:0:0.70"/>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </EventTrigger>
+                                    </StackPanel.Triggers>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Result: THE SONG / THE ARTIST / NOTABLE -->
+                            <StackPanel Visibility="{Binding IsAboutResult, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <TextBlock Text="THE SONG" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="#FF62D2C4" Margin="0,0,0,9"/>
+                                    <TextBlock Text="{Binding TrackInfo.Song}" FontSize="14" LineHeight="23"
+                                               Foreground="#FFCDD9D6" TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <StackPanel Margin="0,22,0,0">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding TrackInfo.Artist}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <TextBlock Text="THE ARTIST" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="#FF62D2C4" Margin="0,0,0,9"/>
+                                    <TextBlock Text="{Binding TrackInfo.Artist}" FontSize="14" LineHeight="23"
+                                               Foreground="#FFCDD9D6" TextWrapping="Wrap"/>
+                                </StackPanel>
+
+                                <StackPanel Margin="0,22,0,0">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding TrackInfo.Notable.Count}" Value="0">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <TextBlock Text="NOTABLE" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="#FF62D2C4" Margin="0,0,0,11"/>
+                                    <ItemsControl ItemsSource="{Binding TrackInfo.Notable}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,0,0,11">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Ellipse Grid.Column="0" Width="5" Height="5" Margin="0,8,11,0"
+                                                             Fill="{StaticResource Teal}" VerticalAlignment="Top"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding}" FontSize="14"
+                                                               LineHeight="21" Foreground="#FFCDD9D6" TextWrapping="Wrap"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Error -->
+                            <TextBlock Visibility="{Binding IsAboutError, Converter={StaticResource BoolToVis}}"
+                                       Text="{Binding AboutError}" FontSize="13.5" LineHeight="21"
+                                       Foreground="#FF7D938E" TextWrapping="Wrap"/>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <!-- Footer: regenerate (result/error) + disclaimer -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,14,0,0"
+                                Background="Transparent">
+                        <Border BorderBrush="#0FFFFFFF" BorderThickness="0,1,0,0"
+                                Padding="0,13,0,0" HorizontalAlignment="Stretch">
+                            <StackPanel Orientation="Horizontal">
+                                <!-- Shown in Result and Error (retry); hidden while loading. -->
+                                <Button Content="Regenerate" Command="{Binding RegenerateAboutCommand}"
+                                        Margin="0,0,14,0">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource AboutLinkButton}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsAboutLoading}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <TextBlock Text="AI-generated · may be imperfect" FontSize="11"
+                                           Foreground="#FF5F736F" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
 
                 <!-- ===== Transport + volume ===== -->
                 <StackPanel Grid.Row="1">

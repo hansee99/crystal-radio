@@ -23,6 +23,8 @@ Built with WPF on .NET 10, using the [BASS](https://www.un4seen.com/) audio libr
 - **Station management** — add / edit / delete stations, persisted as JSON.
 - **AI-assisted search** — describe a vibe, get real playable stations (optional; see
   below).
+- **"About this track"** — an on-demand AI briefing (web-sourced) about the now-playing
+  song and artist, shown inside the player (optional; needs an API key).
 - **OS integration** — SMTC (Win11 flyout, lock screen, media keys) and taskbar thumbnail
   buttons.
 - Automatic reconnection on dropped streams; single running instance.

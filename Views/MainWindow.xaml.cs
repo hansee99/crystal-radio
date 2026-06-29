@@ -50,10 +50,11 @@ public partial class MainWindow : Window
         var agenticSearch = new AgenticSearchService(            // Pattern B
             new HttpClient(), searchService, enrichment, apiKey);
         var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
+        var trackInfo = new TrackInfoService(new HttpClient(), apiKey); // "About this track" briefings
 
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
-            semanticSearch, ranker);
+            semanticSearch, ranker, trackInfo);
         DataContext = _viewModel;
 
         // One-time/background: embed any enriched rows lacking a current-model vector.

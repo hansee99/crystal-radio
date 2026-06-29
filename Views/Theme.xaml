@@ -70,6 +70,11 @@
     <PathGeometry x:Key="MinGeometry" Figures="M6 12 H18"/>
     <PathGeometry x:Key="CloseGeometry" Figures="M7 7 L17 17 M17 7 L7 17"/>
     <PathGeometry x:Key="VolumeWaves" Figures="M16 9.2a4 4 0 0 1 0 5.6 M18.4 7a7.2 7.2 0 0 1 0 10"/>
+    <!-- Back chevron (stroke) for the About reading-view header. -->
+    <PathGeometry x:Key="BackGeometry" Figures="M14 6 L8 12 L14 18"/>
+
+    <!-- Sparkle / 4-point star (fill) — "About this track" pill, eyebrow, regenerate. -->
+    <PathGeometry x:Key="SparkleGeometry" Figures="M12 3 L13.5 10.5 L21 12 L13.5 13.5 L12 21 L10.5 13.5 L3 12 L10.5 10.5 Z"/>
 
     <!-- Fill icons -->
     <PathGeometry x:Key="PlayGeometry" Figures="M8 5 L19 12 L8 19 Z"/>
@@ -345,6 +350,88 @@
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="b" Property="Background" Value="#FFE81123"/>
                             <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== "About this track" controls ===== -->
+
+    <!-- Trigger pill: sparkle + "About this track", teal-tinted. Content is the label text. -->
+    <Style x:Key="AboutPillButton" TargetType="Button">
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="b" CornerRadius="999" Padding="13,9,16,9"
+                            Background="#1F56C7BA" BorderBrush="#4D56C7BA" BorderThickness="1">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform"
+                                  Width="16" Height="16" Fill="#FF62D2C4" VerticalAlignment="Center"/>
+                            <TextBlock Text="{TemplateBinding Content}" Margin="9,0,0,0" FontSize="13"
+                                       FontWeight="SemiBold" Foreground="#FFBDEEE6" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="#3356C7BA"/>
+                            <Setter TargetName="b" Property="BorderBrush" Value="#8056C7BA"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Back button: 38px circle with a stroke chevron, returns to Now Playing. -->
+    <Style x:Key="AboutBackButton" TargetType="Button">
+        <Setter Property="Width" Value="38"/>
+        <Setter Property="Height" Value="38"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="b" CornerRadius="999" Background="Transparent"
+                            BorderBrush="#1FFFFFFF" BorderThickness="1">
+                        <Viewbox Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="24" Height="24">
+                                <Path Data="{StaticResource BackGeometry}" Stroke="#FFBCD0CC"
+                                      StrokeThickness="1.7" StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                            </Canvas>
+                        </Viewbox>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="#0FFFFFFF"/>
+                            <Setter TargetName="b" Property="BorderBrush" Value="#38FFFFFF"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Regenerate: borderless sparkle + label link in the reading-view footer. -->
+    <Style x:Key="AboutLinkButton" TargetType="Button">
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Foreground" Value="#FF8FB6AE"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <StackPanel x:Name="b" Orientation="Horizontal" Background="Transparent">
+                        <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform"
+                              Width="13" Height="13" Fill="{TemplateBinding Foreground}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{TemplateBinding Content}" Margin="6,0,0,0" FontSize="12"
+                                   FontWeight="Medium" Foreground="{TemplateBinding Foreground}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Foreground" Value="#FFCDEEE7"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
