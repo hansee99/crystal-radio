@@ -146,8 +146,11 @@
 
             <!-- ===== Body (Row 1): existing background + content (reworked in R3-R5). ===== -->
             <Grid Grid.Row="1">
-        <!-- ===== 0. Ambient wave background (spans the whole body, behind everything) ===== -->
-        <Grid Panel.ZIndex="0">
+        <!-- ===== 0. Ambient wave background (spans the whole body, behind everything) =====
+             ClipToBounds stops the right-aligned UniformToFill image (which is wider than the
+             grid and overflows left) from reaching the 1px shell border and bleeding through
+             its semi-transparent stroke at the window's left edge. -->
+        <Grid Panel.ZIndex="0" ClipToBounds="True">
             <Rectangle Fill="{StaticResource WindowBg}"/>
             <Image Source="/Assets/player-bg.png" Stretch="UniformToFill" HorizontalAlignment="Right"
                    RenderTransformOrigin="0.5,0.5">
