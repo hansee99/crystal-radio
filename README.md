@@ -1,6 +1,6 @@
 # Aurora Radio
 
-A lightweight Windows desktop app for playing internet radio streams (Icecast/Shoutcast),
+A vibe-coded lightweight Windows desktop app for playing internet radio streams (Icecast/Shoutcast),
 with playback surfaced natively in the OS:
 
 - **System Media Transport Controls (SMTC)** — the now-playing widget in the Windows 11
