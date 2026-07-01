@@ -3,7 +3,7 @@ using RadioPlayer.Models;
 namespace RadioPlayer.Services;
 
 /// <summary>A semantically-matched station with its cosine similarity score.</summary>
-public sealed record SemanticResult(Station Station, double Score, string? Description);
+public sealed record SemanticResult(Station Station, double Score, string? Description, string? Country = null);
 
 /// <summary>
 /// Local semantic retrieval over the Phase 1 enriched descriptions: embed the query with the

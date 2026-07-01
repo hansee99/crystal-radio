@@ -12,9 +12,10 @@ public interface IStationSearchService
 
     /// <summary>
     /// Same filtering as <see cref="SearchAsync"/>, but returns candidates carrying their
-    /// Radio Browser <c>stationuuid</c> — used by the Pattern B agentic tool.
+    /// Radio Browser <c>stationuuid</c> — used by the Pattern B agentic tool. <paramref name="offset"/>
+    /// pages past earlier directory rows (used by "Show different" to fetch fresh results).
     /// </summary>
-    Task<IReadOnlyList<StationCandidate>> SearchCandidatesAsync(StationSearchQuery query, CancellationToken ct = default);
+    Task<IReadOnlyList<StationCandidate>> SearchCandidatesAsync(StationSearchQuery query, int offset = 0, CancellationToken ct = default);
 
     /// <summary>Resolve a station by name to playable candidates (with stationuuid).</summary>
     Task<IReadOnlyList<StationCandidate>> SearchByNameAsync(string name, CancellationToken ct = default);

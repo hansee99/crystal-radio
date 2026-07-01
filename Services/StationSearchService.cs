@@ -31,14 +31,14 @@ public sealed class StationSearchService : IStationSearchService
 
     public async Task<IReadOnlyList<Station>> SearchAsync(StationSearchQuery query, CancellationToken ct = default)
     {
-        var candidates = await SearchCandidatesAsync(query, ct);
+        var candidates = await SearchCandidatesAsync(query, 0, ct);
         return candidates.Select(c => c.Station).ToList();
     }
 
-    public Task<IReadOnlyList<StationCandidate>> SearchCandidatesAsync(StationSearchQuery query, CancellationToken ct = default)
+    public Task<IReadOnlyList<StationCandidate>> SearchCandidatesAsync(StationSearchQuery query, int offset = 0, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(query);
-        return QueryAsync(BuildQueryString(query), ct);
+        return QueryAsync(BuildQueryString(query, offset), ct);
     }
 
     public Task<IReadOnlyList<StationCandidate>> SearchByNameAsync(string name, CancellationToken ct = default)
@@ -154,12 +154,14 @@ public sealed class StationSearchService : IStationSearchService
     private static void AppendParam(StringBuilder sb, string key, string value) =>
         sb.Append(sb.Length == 0 ? "" : "&").Append(key).Append('=').Append(Uri.EscapeDataString(value));
 
-    private static string BuildQueryString(StationSearchQuery q)
+    private static string BuildQueryString(StationSearchQuery q, int offset)
     {
         var sb = new StringBuilder();
 
         AppendParam(sb, "hidebroken", "true");
         AppendParam(sb, "limit", ResultLimit.ToString());
+        if (offset > 0)
+            AppendParam(sb, "offset", offset.ToString());
 
         if (q.Tags is { Length: > 0 })
             AppendParam(sb, "tagList", string.Join(",", q.Tags.Where(t => !string.IsNullOrWhiteSpace(t))));

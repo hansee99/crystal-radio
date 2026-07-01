@@ -63,7 +63,7 @@ public sealed class SemanticSearchService : ISemanticSearchService
         var results = new List<SemanticResult>(scored.Count);
         foreach (var s in scored) // preserve score order
             if (byUuid.TryGetValue(s.Uuid, out var cand))
-                results.Add(new SemanticResult(cand.Station, s.Score, s.Description));
+                results.Add(new SemanticResult(cand.Station, s.Score, s.Description, cand.Country));
         return results;
     }
 

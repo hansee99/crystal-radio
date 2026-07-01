@@ -36,6 +36,16 @@ public sealed class MainViewModel : ObservableObject
     private string _searchPrompt = string.Empty;
     private string _searchStatus = string.Empty;
     private bool _isSearching;
+
+    // "Show different" (Regenerate) search: remember what's already been shown for the current
+    // prompt so a re-run surfaces fresh stations, and page deeper into the directory each time.
+    private readonly HashSet<string> _shownStationUrls = new(StringComparer.OrdinalIgnoreCase);
+    private string _lastSearchPrompt = string.Empty;
+    private int _searchPage;
+
+    // Radio Browser rows fetched per structured page — must match StationSearchService's limit
+    // so paging on regenerate advances past the previous page's directory rows.
+    private const int StructuredPageSize = 30;
     private string _nowPlayingTitle = "Not playing";
     private string _nowPlayingArtist = string.Empty;
     private string _nowPlayingStation = string.Empty;
@@ -50,6 +60,11 @@ public sealed class MainViewModel : ObservableObject
     private TrackInfo? _trackInfo;
     private string _aboutError = string.Empty;
     private CancellationTokenSource? _aboutCts;
+    // The track a briefing is ABOUT, frozen when it opens. The reading view shows these (not the
+    // live now-playing fields) so a new song can start underneath without disturbing what the
+    // user is reading — the view stays put until they hit Back.
+    private string _aboutSubjectTitle = string.Empty;
+    private string _aboutSubjectArtist = string.Empty;
 
     // When set, changing SelectedStation won't auto-start playback. Used by the
     // add/edit/delete commands so managing the list doesn't yank what's playing.
@@ -90,7 +105,9 @@ public sealed class MainViewModel : ObservableObject
         AddStationCommand = new RelayCommand(AddStation);
         EditStationCommand = new RelayCommand(EditStation, () => SelectedStation is not null);
         DeleteStationCommand = new RelayCommand(DeleteStation, () => SelectedStation is not null);
-        SearchCommand = new RelayCommand(() => _ = RunSearchAsync(), () => !IsSearching);
+        SearchCommand = new RelayCommand(() => _ = RunSearchAsync(regenerate: false), () => !IsSearching);
+        RegenerateSearchCommand = new RelayCommand(() => _ = RunSearchAsync(regenerate: true),
+            () => CanRegenerateSearch);
         AddSearchResultCommand = new RelayCommand<SearchResultItem>(AddSearchResultToLibrary);
 
         OpenAboutCommand = new RelayCommand(() => _ = GenerateAboutAsync(forceRefresh: false),
@@ -105,6 +122,7 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<SearchResultItem> SearchResults { get; } = new();
 
     public RelayCommand SearchCommand { get; }
+    public RelayCommand RegenerateSearchCommand { get; }
     public RelayCommand<SearchResultItem> AddSearchResultCommand { get; }
 
     // "About this track" — on-demand AI briefing about the now-playing song/artist.
@@ -115,7 +133,21 @@ public sealed class MainViewModel : ObservableObject
     public string SearchPrompt
     {
         get => _searchPrompt;
-        set => SetProperty(ref _searchPrompt, value);
+        set
+        {
+            if (SetProperty(ref _searchPrompt, value))
+                RaiseRegenerateCanExecute();
+        }
+    }
+
+    /// <summary>"Show different" is offered once there are results for a prompt and we're idle.</summary>
+    public bool CanRegenerateSearch =>
+        !IsSearching && SearchResults.Count > 0 && !string.IsNullOrWhiteSpace(SearchPrompt);
+
+    private void RaiseRegenerateCanExecute()
+    {
+        OnPropertyChanged(nameof(CanRegenerateSearch));
+        RegenerateSearchCommand.RaiseCanExecuteChanged();
     }
 
     public string SearchStatus
@@ -130,7 +162,10 @@ public sealed class MainViewModel : ObservableObject
         private set
         {
             if (SetProperty(ref _isSearching, value))
+            {
                 SearchCommand.RaiseCanExecuteChanged();
+                RaiseRegenerateCanExecute();
+            }
         }
     }
 
@@ -140,19 +175,34 @@ public sealed class MainViewModel : ObservableObject
         set => SetProperty(ref _selectedSearchResult, value);
     }
 
-    private async Task RunSearchAsync()
+    private async Task RunSearchAsync(bool regenerate)
     {
         if (IsSearching || string.IsNullOrWhiteSpace(SearchPrompt))
             return;
 
         var prompt = SearchPrompt;
+
+        // A fresh search (or a regenerate after the prompt was edited) starts over: forget what
+        // was shown and reset paging. A regenerate of the same prompt pages deeper and keeps the
+        // "already shown" set so it surfaces different stations.
+        if (!regenerate || !string.Equals(prompt, _lastSearchPrompt, StringComparison.OrdinalIgnoreCase))
+        {
+            _shownStationUrls.Clear();
+            _searchPage = 0;
+            _lastSearchPrompt = prompt;
+        }
+        else
+        {
+            _searchPage++;
+        }
+
         IsSearching = true;
         SearchResults.Clear();
         SelectedSearchResult = null;
 
         try
         {
-            await RunUnifiedSearchAsync(prompt);
+            await RunUnifiedSearchAsync(prompt, _searchPage);
         }
         catch (Exception ex)
         {
@@ -162,6 +212,7 @@ public sealed class MainViewModel : ObservableObject
         finally
         {
             IsSearching = false;
+            RaiseRegenerateCanExecute();
         }
     }
 
@@ -181,7 +232,7 @@ public sealed class MainViewModel : ObservableObject
     /// "BBC Radio 1" is filled by the cheap sources and never pays for web; a niche
     /// genre/region/qualifier prompt comes back thin and escalates automatically.
     /// </summary>
-    private async Task RunUnifiedSearchAsync(string prompt)
+    private async Task RunUnifiedSearchAsync(string prompt, int page)
     {
         if (!_interpreter.IsConfigured && !_semanticSearch.IsAvailable && !_agenticSearch.IsConfigured)
         {
@@ -189,11 +240,13 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        SearchStatus = "Scanning the airwaves…";
+        var isRegenerate = page > 0;
+        SearchStatus = isRegenerate ? "Looking for something different…" : "Scanning the airwaves…";
 
         // 1. Cheap recall sources, together: structured Radio Browser lookup + local semantic.
-        //    Gather a larger semantic pool so the ranker has real choice.
-        var structuredTask = RunStructuredAsync(prompt);
+        //    Gather a larger semantic pool so the ranker has real choice. On regenerate, page
+        //    deeper into the directory so Pattern A brings back rows we haven't shown yet.
+        var structuredTask = RunStructuredAsync(prompt, page * StructuredPageSize);
         var semanticTask = _semanticSearch.IsAvailable
             ? _semanticSearch.SearchAsync(prompt, CandidatePoolSize)
             : Task.FromResult<IReadOnlyList<SemanticResult>>([]);
@@ -214,13 +267,15 @@ public sealed class MainViewModel : ObservableObject
         //    ranker judges: an enriched description / tags (structured) or the stored
         //    description (semantic).
         var pool = new List<SearchResultItem>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Seed "seen" with stations already shown for this prompt so a regenerate excludes them
+        // (fresh searches start with an empty set — see RunSearchAsync).
+        var seen = new HashSet<string>(_shownStationUrls, StringComparer.OrdinalIgnoreCase);
         foreach (var c in structured)
             if (seen.Add(c.Station.Url))
-                pool.Add(new SearchResultItem(c.Station, DescriptionFor(c)));
+                pool.Add(new SearchResultItem(c.Station, DescriptionFor(c), c.Country));
         foreach (var r in semantic)
             if (seen.Add(r.Station.Url))
-                pool.Add(new SearchResultItem(r.Station, r.Description));
+                pool.Add(new SearchResultItem(r.Station, r.Description, r.Country));
 
         var shortlist = await RankOrMerge(prompt, pool, semantic);
 
@@ -242,14 +297,21 @@ public sealed class MainViewModel : ObservableObject
 
         if (shortlist.Count == 0)
         {
-            SearchStatus = "Nothing turned up — try describing it differently.";
+            SearchStatus = isRegenerate
+                ? "That's everything I could find for this — try a new description."
+                : "Nothing turned up — try describing it differently.";
             return;
         }
 
         // 4. Validate streams before showing (drops dead/undecodable ones).
         SearchStatus = "Making sure they actually play…";
         await AddValidatedAsync(shortlist);
-        SetResultStatus();
+
+        // Remember what we've shown so the next "Show different" surfaces new stations.
+        foreach (var item in SearchResults)
+            _shownStationUrls.Add(item.Station.Url);
+
+        SetResultStatus(isRegenerate);
     }
 
     /// <summary>
@@ -258,14 +320,14 @@ public sealed class MainViewModel : ObservableObject
     /// the prompt — there is no Broaden fallback any more; the pool's other sources and the
     /// re-ranker decide relevance, so a query that matches nothing simply contributes nothing.
     /// </summary>
-    private async Task<IReadOnlyList<StationCandidate>> RunStructuredAsync(string prompt)
+    private async Task<IReadOnlyList<StationCandidate>> RunStructuredAsync(string prompt, int offset)
     {
         if (!_interpreter.IsConfigured)
             return [];
         var query = await _interpreter.InterpretAsync(prompt);
         if (query is null)
             return [];
-        return await _searchService.SearchCandidatesAsync(query);
+        return await _searchService.SearchCandidatesAsync(query, offset);
     }
 
     /// <summary>
@@ -281,7 +343,7 @@ public sealed class MainViewModel : ObservableObject
         if (_ranker.IsConfigured)
         {
             SearchStatus = "Finding the best matches…";
-            var candidates = pool.Select((p, i) => new RankCandidate(i, p.Station.Name, p.Reason ?? "")).ToList();
+            var candidates = pool.Select((p, i) => new RankCandidate(i, p.Station.Name, p.Reason ?? "", p.Country)).ToList();
             var verdicts = await _ranker.RankAsync(prompt, candidates, ResultsToValidate);
             if (verdicts is not null) // null = ranker couldn't run → fall back to heuristic
             {
@@ -399,9 +461,11 @@ public sealed class MainViewModel : ObservableObject
         return parts.Length == 0 ? null : string.Join(" · ", parts.Take(5));
     }
 
-    private void SetResultStatus() =>
+    private void SetResultStatus(bool isRegenerate) =>
         SearchStatus = SearchResults.Count == 0
-            ? "Nothing playable came through — try describing it differently."
+            ? (isRegenerate
+                ? "No more new stations for this — try a new description."
+                : "Nothing playable came through — try describing it differently.")
             : $"Found {SearchResults.Count} station{(SearchResults.Count == 1 ? "" : "s")} you can play.";
 
 
@@ -438,9 +502,11 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        // Carry the search-panel blurb onto the saved station so the fixed list shows the
-        // same secondary line (Reason = enriched description / web rationale, or null).
-        Stations.Add(station with { Description = item.Reason });
+        // Save the cleaned display name (technical noise stripped) and carry the search-panel
+        // blurb onto the saved station so the fixed list shows the same secondary line
+        // (Reason = enriched description / web rationale, or null). Dedup here is by URL, so
+        // renaming is safe.
+        Stations.Add(station with { Name = StationNameFormatter.Clean(station.Name), Description = item.Reason });
         _store.Save(Stations);
         NextStationCommand.RaiseCanExecuteChanged();
         PrevStationCommand.RaiseCanExecuteChanged();
@@ -593,6 +659,20 @@ public sealed class MainViewModel : ObservableObject
         private set => SetProperty(ref _aboutError, value);
     }
 
+    /// <summary>Title of the track the open briefing is about (frozen — see the fields above).</summary>
+    public string AboutSubjectTitle
+    {
+        get => _aboutSubjectTitle;
+        private set => SetProperty(ref _aboutSubjectTitle, value);
+    }
+
+    /// <summary>Artist of the track the open briefing is about (frozen).</summary>
+    public string AboutSubjectArtist
+    {
+        get => _aboutSubjectArtist;
+        private set => SetProperty(ref _aboutSubjectArtist, value);
+    }
+
     /// <summary>The "About this track" trigger shows only with a playing track and an API key.</summary>
     public bool CanShowAbout => HasTrackInfo && _trackInfoService.IsConfigured;
 
@@ -610,8 +690,16 @@ public sealed class MainViewModel : ObservableObject
         _aboutCts?.Dispose();
         var cts = _aboutCts = new CancellationTokenSource();
 
-        var title = NowPlayingTitle;
-        var artist = NowPlayingArtist;
+        // A fresh open captures the current track as the subject; a regenerate keeps the subject
+        // already on screen (the live track may have moved on since it opened).
+        if (!forceRefresh)
+        {
+            AboutSubjectTitle = NowPlayingTitle;
+            AboutSubjectArtist = NowPlayingArtist;
+        }
+
+        var title = AboutSubjectTitle;
+        var artist = AboutSubjectArtist;
         var station = NowPlayingStation;
 
         AboutState = AboutViewState.Loading;
@@ -864,6 +952,18 @@ public sealed class MainViewModel : ObservableObject
                 NowPlayingArtist = _engine.CurrentStation?.Name ?? string.Empty;
                 HasTrackInfo = false;
                 break;
+            case PlaybackState.Playing:
+                // Recovering from a stall goes straight to Playing WITHOUT firing fresh
+                // metadata, so a lingering "Connecting…/Reconnecting…" placeholder would
+                // otherwise stay until the next song's ICY title arrives. Restore the station
+                // name in that case; leave a real track title (set via metadata) untouched.
+                if (NowPlayingTitle is "Connecting..." or "Reconnecting..." or "Not playing")
+                {
+                    NowPlayingTitle = _engine.CurrentStation?.Name ?? "Live stream";
+                    NowPlayingArtist = string.Empty;
+                    HasTrackInfo = !string.IsNullOrWhiteSpace(NowPlayingTitle);
+                }
+                break;
         }
 
         StopCommand.RaiseCanExecuteChanged();
@@ -876,8 +976,8 @@ public sealed class MainViewModel : ObservableObject
             : meta.Title;
         NowPlayingArtist = meta.Artist ?? meta.StationName ?? string.Empty;
         HasTrackInfo = !string.IsNullOrWhiteSpace(NowPlayingTitle);
-        // A new track invalidates any open briefing — return to Now Playing so stale info
-        // for the previous song is never shown.
-        ResetAbout();
+        // An open briefing is deliberately left in place when a new track starts: it's frozen on
+        // its subject (AboutSubjectTitle/Artist), so the user can finish reading. Only Back
+        // (or playback stopping) returns to Now Playing.
     }
 }

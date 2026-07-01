@@ -57,6 +57,17 @@ public partial class MainWindow : Window
             semanticSearch, ranker, trackInfo);
         DataContext = _viewModel;
 
+        // Reset the About reading view to the top whenever fresh content loads (a new briefing
+        // or a regenerate), so the previous track's scroll offset isn't carried over.
+        _viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.AboutState)
+                && _viewModel.AboutState is AboutViewState.Loading or AboutViewState.Result)
+            {
+                AboutScroll.ScrollToTop();
+            }
+        };
+
         // One-time/background: embed any enriched rows lacking a current-model vector.
         enrichment.BackfillEmbeddingsInBackground();
     }

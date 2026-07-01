@@ -20,12 +20,20 @@ public sealed class LlmSearchRanker : ISearchRanker
 
     private const string SystemPrompt = """
         You rank internet radio stations by how well they match a user's request. You get the
-        request and a numbered list of candidates, each with a name and a short description.
+        request and a numbered list of candidates, each with a name, a short description, and
+        (when known) an origin country.
 
         Score each candidate 0.0–1.0 for how well it matches the REQUEST specifically — its
         genre, mood, era, activity, language, etc. — NOT merely whether it is a radio station.
         Be strict: a generic, unrelated, or only-loosely-related station scores low. Only
         include candidates that genuinely match (score >= 0.5).
+
+        Use the origin country to honour the request's geographic intent:
+        - If the request names or clearly implies a specific country, region, or language,
+          prefer stations that fit it and penalise ones that don't.
+        - If the request implies international or broad scope (e.g. "international", "world",
+          "global", or no geographic hint at all), prefer VARIETY across countries and avoid
+          returning a set dominated by a single country.
 
         Respond with ONLY this JSON object (no prose, no markdown fences):
         { "ranked": [ { "id": <number>, "score": <0..1> } ] }
@@ -58,7 +66,10 @@ public sealed class LlmSearchRanker : ISearchRanker
             var text = c.Text ?? "";
             if (text.Length > MaxTextChars)
                 text = text[..MaxTextChars];
-            sb.Append('[').Append(c.Id).Append("] ").Append(c.Name).Append(" — ").Append(text).Append('\n');
+            sb.Append('[').Append(c.Id).Append("] ").Append(c.Name);
+            if (!string.IsNullOrWhiteSpace(c.Country))
+                sb.Append(" (").Append(c.Country).Append(')');
+            sb.Append(" — ").Append(text).Append('\n');
         }
         sb.Append("\nReturn at most ").Append(topK).Append(" best matches.");
 

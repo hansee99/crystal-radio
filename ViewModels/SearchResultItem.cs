@@ -13,15 +13,24 @@ public sealed class SearchResultItem : ObservableObject
 {
     private bool _isAdded;
 
-    public SearchResultItem(Station station, string? reason, bool isAdded = false)
+    public SearchResultItem(Station station, string? reason, string? country = null, bool isAdded = false)
     {
         Station = station;
         Reason = reason;
+        Country = country;
         _isAdded = isAdded;
     }
 
     public Station Station { get; }
     public string? Reason { get; }
+
+    /// <summary>Origin country (from Radio Browser), when known — fed to the ranker so it can
+    /// honour or diversify by country per the prompt's intent. Null for web finds.</summary>
+    public string? Country { get; }
+
+    /// <summary>Display name with technical noise (bitrate/codec) stripped; the raw
+    /// <see cref="Station"/> name is kept for playback identity and dedup.</summary>
+    public string DisplayName => StationNameFormatter.Clean(Station.Name);
 
     public bool IsAdded
     {

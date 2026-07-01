@@ -244,7 +244,7 @@ public sealed class AgenticSearchService : IAgenticSearchService
                     BitrateMin = Int(input?["bitrateMin"]),
                     Order = Str(input?["order"]) ?? "votes"
                 };
-                candidates = await _search.SearchCandidatesAsync(query, ct);
+                candidates = await _search.SearchCandidatesAsync(query, 0, ct);
             }
         }
         catch (Exception ex)
