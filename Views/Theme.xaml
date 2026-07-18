@@ -94,6 +94,8 @@
     </GeometryGroup>
     <PathGeometry x:Key="VolumeGeometry" Figures="M4 9.5 L8 9.5 L13 5.5 L13 18.5 L8 14.5 L4 14.5 Z"/>
     <PathGeometry x:Key="HeartGeometry" Figures="M12 20 C5 15.6 5 10.4 5 10.4 A3.7 3.7 0 0 1 12 7.2 A3.7 3.7 0 0 1 19 10.4 C19 15.6 12 20 12 20 Z"/>
+    <!-- Eighth note (history rows): head circle + stem + slanted beam -->
+    <PathGeometry x:Key="NoteGeometry" Figures="M7 16.8 A2.6 2.6 0 1 0 12.2 16.8 A2.6 2.6 0 1 0 7 16.8 M12.2 16.8 L12.2 5.4 L17.6 7"/>
 
     <!-- ===== Title-bar icon buttons (R2). Content = a stroke Geometry. ===== -->
     <Style x:Key="TitleIconButton" TargetType="Button">

@@ -10,6 +10,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly RadioEngine _engine;
     private readonly StationStore _store;
     private readonly SettingsStore _settingsStore;
+    private readonly SongHistoryStore _historyStore;
     private readonly IStationDialog _stationDialog;
     private readonly IPromptInterpreter _interpreter;
     private readonly IStationSearchService _searchService;
@@ -62,15 +63,18 @@ public sealed class MainViewModel : ObservableObject
     private CancellationTokenSource? _aboutCts;
     // The track a briefing is ABOUT, frozen when it opens. The reading view shows these (not the
     // live now-playing fields) so a new song can start underneath without disturbing what the
-    // user is reading — the view stays put until they hit Back.
+    // user is reading — the view stays put until they hit Back. Since the subject can also come
+    // from a history row, the originating station is frozen alongside (for Regenerate).
     private string _aboutSubjectTitle = string.Empty;
     private string _aboutSubjectArtist = string.Empty;
+    private string? _aboutSubjectStation;
 
     // When set, changing SelectedStation won't auto-start playback. Used by the
     // add/edit/delete commands so managing the list doesn't yank what's playing.
     private bool _suppressAutoPlay;
 
     public MainViewModel(RadioEngine engine, StationStore store, SettingsStore settingsStore,
+        SongHistoryStore historyStore,
         IStationDialog stationDialog, IPromptInterpreter interpreter, IStationSearchService searchService,
         IAgenticSearchService agenticSearch, IEnrichmentService enrichment,
         ISemanticSearchService semanticSearch, ISearchRanker ranker, ITrackInfoService trackInfoService)
@@ -78,6 +82,7 @@ public sealed class MainViewModel : ObservableObject
         _engine = engine;
         _store = store;
         _settingsStore = settingsStore;
+        _historyStore = historyStore;
         _stationDialog = stationDialog;
         _interpreter = interpreter;
         _searchService = searchService;
@@ -97,6 +102,7 @@ public sealed class MainViewModel : ObservableObject
 
         Stations = new ObservableCollection<Station>(_store.Load());
         _selectedStation = Stations.FirstOrDefault();
+        History = new ObservableCollection<SongHistoryEntry>(_historyStore.Load());
 
         PlayPauseCommand = new RelayCommand(TogglePlayPause);
         StopCommand = new RelayCommand(_engine.Stop, () => _engine.State != PlaybackState.Stopped);
@@ -110,10 +116,14 @@ public sealed class MainViewModel : ObservableObject
             () => CanRegenerateSearch);
         AddSearchResultCommand = new RelayCommand<SearchResultItem>(AddSearchResultToLibrary);
 
-        OpenAboutCommand = new RelayCommand(() => _ = GenerateAboutAsync(forceRefresh: false),
+        OpenAboutCommand = new RelayCommand(
+            () => _ = GenerateAboutAsync(NowPlayingTitle, NowPlayingArtist, NowPlayingStation, forceRefresh: false),
             () => CanShowAbout);
-        RegenerateAboutCommand = new RelayCommand(() => _ = GenerateAboutAsync(forceRefresh: true),
-            () => CanShowAbout);
+        RegenerateAboutCommand = new RelayCommand(
+            () => _ = GenerateAboutAsync(AboutSubjectTitle, AboutSubjectArtist, _aboutSubjectStation, forceRefresh: true),
+            () => CanRegenerateAbout);
+        OpenAboutForEntryCommand = new RelayCommand<SongHistoryEntry>(
+            e => { if (e is not null) _ = GenerateAboutAsync(e.Title, e.Artist, e.Station, forceRefresh: false); });
         BackToNowPlayingCommand = new RelayCommand(BackToNowPlaying);
     }
 
@@ -125,10 +135,41 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand RegenerateSearchCommand { get; }
     public RelayCommand<SearchResultItem> AddSearchResultCommand { get; }
 
-    // "About this track" — on-demand AI briefing about the now-playing song/artist.
+    // "About this track" — on-demand AI briefing about a song (now playing or from history).
     public RelayCommand OpenAboutCommand { get; }
     public RelayCommand RegenerateAboutCommand { get; }
+    public RelayCommand<SongHistoryEntry> OpenAboutForEntryCommand { get; }
     public RelayCommand BackToNowPlayingCommand { get; }
+
+    // ===== Song history (Phase A: metadata only; audio segments arrive with the cache) =====
+
+    /// <summary>Songs heard on streams, newest first, persisted across sessions.</summary>
+    public ObservableCollection<SongHistoryEntry> History { get; }
+
+    /// <summary>Cap on stored history rows (metadata is tiny; this is a UI/file sanity bound).</summary>
+    private const int HistoryCap = 100;
+
+    /// <summary>The per-row About affordance shows only when the service has an API key.</summary>
+    public bool IsAboutAvailable => _trackInfoService.IsConfigured;
+
+    /// <summary>
+    /// Record a title change in the history: filter out ads/jingles/idents, skip consecutive
+    /// duplicates (reconnects re-announce the same song), cap, persist.
+    /// </summary>
+    private void RecordHistory(TrackMetadata meta)
+    {
+        if (!SongHistoryFilter.IsLikelySong(meta.Title, meta.Artist, meta.StationName))
+            return;
+        if (History.Count > 0
+            && string.Equals(History[0].Title, meta.Title, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(History[0].Artist, meta.Artist, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        History.Insert(0, new SongHistoryEntry(meta.Title, meta.Artist!, meta.StationName ?? string.Empty, DateTime.Now));
+        while (History.Count > HistoryCap)
+            History.RemoveAt(History.Count - 1);
+        _historyStore.Save(History);
+    }
 
     public string SearchPrompt
     {
@@ -635,6 +676,8 @@ public sealed class MainViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsAboutLoading));
                 OnPropertyChanged(nameof(IsAboutResult));
                 OnPropertyChanged(nameof(IsAboutError));
+                OnPropertyChanged(nameof(CanRegenerateAbout));
+                RegenerateAboutCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -676,13 +719,19 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>The "About this track" trigger shows only with a playing track and an API key.</summary>
     public bool CanShowAbout => HasTrackInfo && _trackInfoService.IsConfigured;
 
+    /// <summary>Regenerate needs an open reading view (a frozen subject) — not a playing track,
+    /// since briefings can be opened from history rows while stopped.</summary>
+    public bool CanRegenerateAbout => ShowAbout && _trackInfoService.IsConfigured;
+
     /// <summary>
-    /// Generate the briefing: switch to Loading, call the service (cancellable so Back aborts it),
-    /// then land on Result or Error. <paramref name="forceRefresh"/> bypasses the per-session cache.
+    /// Generate a briefing for an explicit subject (the now-playing track, a history row, or —
+    /// on Regenerate — the subject already frozen on screen): freeze it, switch to Loading, call
+    /// the service (cancellable so Back aborts it), then land on Result or Error.
+    /// <paramref name="forceRefresh"/> bypasses the per-session cache.
     /// </summary>
-    private async Task GenerateAboutAsync(bool forceRefresh)
+    private async Task GenerateAboutAsync(string title, string? artist, string? station, bool forceRefresh)
     {
-        if (!CanShowAbout)
+        if (!_trackInfoService.IsConfigured || string.IsNullOrWhiteSpace(title))
             return;
 
         // Cancel any in-flight generation and start a fresh token for this run.
@@ -690,17 +739,10 @@ public sealed class MainViewModel : ObservableObject
         _aboutCts?.Dispose();
         var cts = _aboutCts = new CancellationTokenSource();
 
-        // A fresh open captures the current track as the subject; a regenerate keeps the subject
-        // already on screen (the live track may have moved on since it opened).
-        if (!forceRefresh)
-        {
-            AboutSubjectTitle = NowPlayingTitle;
-            AboutSubjectArtist = NowPlayingArtist;
-        }
-
-        var title = AboutSubjectTitle;
-        var artist = AboutSubjectArtist;
-        var station = NowPlayingStation;
+        // Freeze the subject: the reading view binds to these, independent of live now-playing.
+        AboutSubjectTitle = title;
+        AboutSubjectArtist = artist ?? string.Empty;
+        _aboutSubjectStation = station;
 
         AboutState = AboutViewState.Loading;
         try
@@ -737,15 +779,6 @@ public sealed class MainViewModel : ObservableObject
 
     private void BackToNowPlaying()
     {
-        _aboutCts?.Cancel();
-        AboutState = AboutViewState.Home;
-    }
-
-    /// <summary>Return to Now Playing and cancel any in-flight generation — used on track change/stop.</summary>
-    private void ResetAbout()
-    {
-        if (AboutState == AboutViewState.Home)
-            return;
         _aboutCts?.Cancel();
         AboutState = AboutViewState.Home;
     }
@@ -943,7 +976,8 @@ public sealed class MainViewModel : ObservableObject
                 NowPlayingTitle = "Not playing";
                 NowPlayingArtist = string.Empty;
                 HasTrackInfo = false;
-                ResetAbout(); // nothing playing → leave the About view
+                // An open briefing stays open even across Stop — its subject is frozen and may
+                // have come from a history row; only Back closes the reading view.
                 break;
             case PlaybackState.Buffering:
             case PlaybackState.Reconnecting:
@@ -978,6 +1012,8 @@ public sealed class MainViewModel : ObservableObject
         HasTrackInfo = !string.IsNullOrWhiteSpace(NowPlayingTitle);
         // An open briefing is deliberately left in place when a new track starts: it's frozen on
         // its subject (AboutSubjectTitle/Artist), so the user can finish reading. Only Back
-        // (or playback stopping) returns to Now Playing.
+        // returns to Now Playing.
+
+        RecordHistory(meta);
     }
 }

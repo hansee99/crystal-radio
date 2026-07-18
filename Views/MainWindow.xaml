@@ -221,11 +221,14 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <RadioButton x:Name="StationsTab" Grid.Column="0" GroupName="leftTab"
                                          IsChecked="True" Style="{StaticResource PillTab}" Content="Stations"/>
                             <RadioButton x:Name="SearchTab" Grid.Column="1" GroupName="leftTab"
                                          Style="{StaticResource PillTab}" Content="Search"/>
+                            <RadioButton x:Name="HistoryTab" Grid.Column="2" GroupName="leftTab"
+                                         Style="{StaticResource PillTab}" Content="History"/>
                         </Grid>
                     </Border>
 
@@ -468,6 +471,68 @@
                                 </ListBox.ItemTemplate>
                             </ListBox>
                         </DockPanel>
+
+                        <!-- ===== History tab (Phase A: songs heard, About per row) ===== -->
+                        <Grid Visibility="{Binding IsChecked, ElementName=HistoryTab,
+                              Converter={StaticResource BoolToVis}}">
+                            <ListBox ItemsSource="{Binding History}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ItemContainerStyle="{StaticResource StationRowItem}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="34"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                    Background="{StaticResource FillSubtle}"
+                                                    BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
+                                                <Path Data="{StaticResource NoteGeometry}" Stretch="Uniform"
+                                                      Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
+                                                           Foreground="{StaticResource TextBody}"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                                                <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
+                                                           Foreground="{StaticResource TextMuted}"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                            </StackPanel>
+                                            <!-- About this song (uses the same reading view as now-playing About) -->
+                                            <Button Grid.Column="2" VerticalAlignment="Center"
+                                                    Style="{StaticResource GhostSquareButton}"
+                                                    Content="{StaticResource SparkleGeometry}"
+                                                    ToolTip="About this song"
+                                                    Command="{Binding DataContext.OpenAboutForEntryCommand,
+                                                              RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                    CommandParameter="{Binding}"
+                                                    Visibility="{Binding DataContext.IsAboutAvailable,
+                                                                 RelativeSource={RelativeSource AncestorType=ListBox},
+                                                                 Converter={StaticResource BoolToVis}}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <!-- Empty state -->
+                            <TextBlock Text="Songs you hear will show up here."
+                                       FontSize="12.5" Foreground="{StaticResource TextMuted}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding History.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
                     </Grid>
                 </DockPanel>
             </Border>

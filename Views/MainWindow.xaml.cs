@@ -53,6 +53,7 @@ public partial class MainWindow : Window
         var trackInfo = new TrackInfoService(new HttpClient(), apiKey); // "About this track" briefings
 
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
+            new SongHistoryStore(),
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
             semanticSearch, ranker, trackInfo);
         DataContext = _viewModel;
