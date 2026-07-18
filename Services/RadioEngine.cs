@@ -325,11 +325,18 @@ public sealed class RadioEngine : IDisposable
         var stationName = _currentStation?.Name;
         MetadataChanged?.Invoke(this, new TrackMetadata(trackTitle, artist, stationName));
 
-        // Title boundary for the rolling cache: finalize the finished song's segment and start
-        // the next. Raised AFTER MetadataChanged so the history row for the new song exists
-        // before the previous song's SegmentCompleted looks for its row. (The initial per-connect
-        // station-info publish doesn't come through here — it isn't a track boundary.)
-        _recorder?.OnTrackChanged(_recSession, trackTitle, artist, stationName);
+        // Title boundary for the rolling cache: schedules the (offset-delayed) segment cut.
+        // Raised AFTER MetadataChanged so the history row for the new song exists before the
+        // finished song's SegmentCompleted looks for its row. The decoder-reported bitrate lets
+        // the recorder convert its boundary offset from seconds to bytes. (The initial
+        // per-connect station-info publish doesn't come through here — it isn't a boundary.)
+        if (_recorder is not null)
+        {
+            double bytesPerSecond = 0;
+            if (Bass.ChannelGetAttribute(channel, ChannelAttribute.Bitrate, out var kbps) && kbps > 0)
+                bytesPerSecond = kbps * 1000.0 / 8.0;
+            _recorder.OnTrackChanged(_recSession, trackTitle, artist, stationName, bytesPerSecond);
+        }
     }
 
     private static string? ParseStreamTitle(string? meta)

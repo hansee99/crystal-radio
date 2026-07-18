@@ -30,9 +30,9 @@ public partial class MainWindow : Window
         SizeChanged  += (_, _) => UpdateShellClip();
         StateChanged += (_, _) => UpdateShellClip();
 
-        _recorder = new StreamRecorder();
-        _engine = new RadioEngine(_recorder);
         _settingsStore = new SettingsStore();
+        _recorder = new StreamRecorder(_settingsStore.Load().CaptureBoundaryOffsetSeconds);
+        _engine = new RadioEngine(_recorder);
 
         // AI-assisted search services (raw HttpClient; key never committed). Prefer the key
         // saved in-app (DPAPI-encrypted), then fall back to the ANTHROPIC_API_KEY env var.
