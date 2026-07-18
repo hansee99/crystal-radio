@@ -16,6 +16,7 @@ namespace RadioPlayer;
 public partial class MainWindow : Window
 {
     private readonly RadioEngine _engine;
+    private readonly StreamRecorder _recorder;
     private readonly MainViewModel _viewModel;
     private readonly SettingsStore _settingsStore;
     private readonly EnrichmentStore _enrichmentStore;
@@ -29,7 +30,8 @@ public partial class MainWindow : Window
         SizeChanged  += (_, _) => UpdateShellClip();
         StateChanged += (_, _) => UpdateShellClip();
 
-        _engine = new RadioEngine();
+        _recorder = new StreamRecorder();
+        _engine = new RadioEngine(_recorder);
         _settingsStore = new SettingsStore();
 
         // AI-assisted search services (raw HttpClient; key never committed). Prefer the key
@@ -53,7 +55,7 @@ public partial class MainWindow : Window
         var trackInfo = new TrackInfoService(new HttpClient(), apiKey); // "About this track" briefings
 
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
-            new SongHistoryStore(),
+            new SongHistoryStore(), _recorder,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
             semanticSearch, ranker, trackInfo);
         DataContext = _viewModel;
@@ -88,7 +90,8 @@ public partial class MainWindow : Window
     {
         _viewModel.SaveSettings();
         _smtc?.Dispose();
-        _engine.Dispose();
+        _engine.Dispose();     // ends the capture session (discards the in-progress segment)
+        _recorder.Dispose();
         _embeddingProvider.Dispose();
         _enrichmentStore.Dispose();
         base.OnClosed(e);

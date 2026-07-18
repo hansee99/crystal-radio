@@ -17,6 +17,18 @@ public sealed class AppSettings
     /// / <see cref="SettingsStore.SetApiKey"/>. Null when no key has been set in-app.
     /// </summary>
     public string? ApiKeyProtected { get; set; }
+
+    /// <summary>Folder saved songs are written to. Null → the default (Music\Crystal Radio).</summary>
+    public string? LibraryFolder { get; set; }
+
+    /// <summary>Rolling-cache size cap in megabytes (oldest segments are evicted beyond it).</summary>
+    public int CacheCapMb { get; set; } = 200;
+
+    /// <summary>Resolved library folder (the stored value or the default).</summary>
+    public string ResolveLibraryFolder() =>
+        string.IsNullOrWhiteSpace(LibraryFolder)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "Crystal Radio")
+            : LibraryFolder;
 }
 
 /// <summary>
@@ -43,6 +55,7 @@ public sealed class SettingsStore
                 if (settings is not null)
                 {
                     settings.Volume = Math.Clamp(settings.Volume, 0.0, 1.0);
+                    settings.CacheCapMb = Math.Clamp(settings.CacheCapMb, 20, 10_000);
                     return settings;
                 }
             }

@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.IO;
 using RadioPlayer.Models;
 using RadioPlayer.Mvvm;
 using RadioPlayer.Services;
@@ -11,6 +12,9 @@ public sealed class MainViewModel : ObservableObject
     private readonly StationStore _store;
     private readonly SettingsStore _settingsStore;
     private readonly SongHistoryStore _historyStore;
+    private readonly StreamRecorder _recorder;
+    private readonly long _cacheCapBytes;
+    private readonly string _libraryFolder;
     private readonly IStationDialog _stationDialog;
     private readonly IPromptInterpreter _interpreter;
     private readonly IStationSearchService _searchService;
@@ -74,7 +78,7 @@ public sealed class MainViewModel : ObservableObject
     private bool _suppressAutoPlay;
 
     public MainViewModel(RadioEngine engine, StationStore store, SettingsStore settingsStore,
-        SongHistoryStore historyStore,
+        SongHistoryStore historyStore, StreamRecorder recorder,
         IStationDialog stationDialog, IPromptInterpreter interpreter, IStationSearchService searchService,
         IAgenticSearchService agenticSearch, IEnrichmentService enrichment,
         ISemanticSearchService semanticSearch, ISearchRanker ranker, ITrackInfoService trackInfoService)
@@ -83,6 +87,7 @@ public sealed class MainViewModel : ObservableObject
         _store = store;
         _settingsStore = settingsStore;
         _historyStore = historyStore;
+        _recorder = recorder;
         _stationDialog = stationDialog;
         _interpreter = interpreter;
         _searchService = searchService;
@@ -100,9 +105,29 @@ public sealed class MainViewModel : ObservableObject
         _engine.MetadataChanged += (_, meta) => OnMetadataChanged(meta);
         _engine.ErrorOccurred += (_, msg) => StatusText = msg;
 
+        // Rolling-cache settings resolved once at startup (Options changes apply on restart,
+        // consistent with the other settings).
+        var settings = settingsStore.Load();
+        _cacheCapBytes = settings.CacheCapMb * 1024L * 1024L;
+        _libraryFolder = settings.ResolveLibraryFolder();
+
         Stations = new ObservableCollection<Station>(_store.Load());
         _selectedStation = Stations.FirstOrDefault();
         History = new ObservableCollection<SongHistoryEntry>(_historyStore.Load());
+
+        // Reconcile history with the cache on disk: drop references to segments that no longer
+        // exist, then delete cache files nothing references (crash leftovers).
+        foreach (var entry in History)
+        {
+            if (entry.SegmentFile is not null && !File.Exists(StreamRecorder.PathFor(entry.SegmentFile)))
+            {
+                entry.SegmentFile = null;
+                entry.SegmentBytes = 0;
+            }
+        }
+        StreamRecorder.SweepOrphans(History.Where(e => e.SegmentFile is not null).Select(e => e.SegmentFile!));
+
+        _recorder.SegmentCompleted += (_, seg) => OnSegmentCompleted(seg);
 
         PlayPauseCommand = new RelayCommand(TogglePlayPause);
         StopCommand = new RelayCommand(_engine.Stop, () => _engine.State != PlaybackState.Stopped);
@@ -125,6 +150,7 @@ public sealed class MainViewModel : ObservableObject
         OpenAboutForEntryCommand = new RelayCommand<SongHistoryEntry>(
             e => { if (e is not null) _ = GenerateAboutAsync(e.Title, e.Artist, e.Station, forceRefresh: false); });
         BackToNowPlayingCommand = new RelayCommand(BackToNowPlaying);
+        SaveSongCommand = new RelayCommand<SongHistoryEntry>(SaveSong, e => e?.CanSave == true);
     }
 
     // ===== AI-assisted station search =====
@@ -141,10 +167,13 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand<SongHistoryEntry> OpenAboutForEntryCommand { get; }
     public RelayCommand BackToNowPlayingCommand { get; }
 
-    // ===== Song history (Phase A: metadata only; audio segments arrive with the cache) =====
+    // ===== Song history + rolling cache (Phases A/B) =====
 
     /// <summary>Songs heard on streams, newest first, persisted across sessions.</summary>
     public ObservableCollection<SongHistoryEntry> History { get; }
+
+    /// <summary>Save a completed song's cached audio into the library folder.</summary>
+    public RelayCommand<SongHistoryEntry> SaveSongCommand { get; }
 
     /// <summary>Cap on stored history rows (metadata is tiny; this is a UI/file sanity bound).</summary>
     private const int HistoryCap = 100;
@@ -165,10 +194,106 @@ public sealed class MainViewModel : ObservableObject
             && string.Equals(History[0].Artist, meta.Artist, StringComparison.OrdinalIgnoreCase))
             return;
 
-        History.Insert(0, new SongHistoryEntry(meta.Title, meta.Artist!, meta.StationName ?? string.Empty, DateTime.Now));
+        History.Insert(0, new SongHistoryEntry
+        {
+            Title = meta.Title,
+            Artist = meta.Artist!,
+            Station = meta.StationName ?? string.Empty,
+            PlayedAt = DateTime.Now
+        });
         while (History.Count > HistoryCap)
-            History.RemoveAt(History.Count - 1);
+            RemoveHistoryAt(History.Count - 1);
         _historyStore.Save(History);
+    }
+
+    /// <summary>Removes a history row AND its cached segment file (never orphan audio).</summary>
+    private void RemoveHistoryAt(int index)
+    {
+        var entry = History[index];
+        if (entry.SegmentFile is not null)
+            StreamRecorder.TryDelete(StreamRecorder.PathFor(entry.SegmentFile));
+        History.RemoveAt(index);
+    }
+
+    /// <summary>
+    /// A song finished capturing completely: attach the segment to its history row (making it
+    /// saveable), then enforce the cache size cap. Raised on the UI thread right after the
+    /// next song's history row was recorded, so the finished song sits just below it.
+    /// </summary>
+    private void OnSegmentCompleted(CompletedSegment seg)
+    {
+        var entry = History.FirstOrDefault(e =>
+            e.SegmentFile is null
+            && string.Equals(e.Title, seg.Title, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(e.Artist, seg.Artist ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            // No matching row (filtered or trimmed in the meantime) — don't keep orphan audio.
+            StreamRecorder.TryDelete(StreamRecorder.PathFor(seg.FileName));
+            return;
+        }
+
+        entry.SegmentFile = seg.FileName;
+        entry.SegmentBytes = seg.Bytes;
+        PruneCacheToCap();
+        _historyStore.Save(History);
+        SaveSongCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>Evict the oldest cached segments until the cache fits the configured cap.
+    /// The rows stay in the history — they just lose their Save affordance.</summary>
+    private void PruneCacheToCap()
+    {
+        var total = History.Where(e => e.SegmentFile is not null).Sum(e => e.SegmentBytes);
+        for (var i = History.Count - 1; i >= 0 && total > _cacheCapBytes; i--)
+        {
+            var entry = History[i];
+            if (entry.SegmentFile is null)
+                continue;
+            StreamRecorder.TryDelete(StreamRecorder.PathFor(entry.SegmentFile));
+            total -= entry.SegmentBytes;
+            entry.SegmentFile = null;
+            entry.SegmentBytes = 0;
+        }
+    }
+
+    /// <summary>
+    /// Copy a completed segment into the library folder as "Artist - Title.ext" (personal use —
+    /// the raw stream bytes, no re-encode). Best-effort: failure surfaces in the status text.
+    /// </summary>
+    private void SaveSong(SongHistoryEntry? entry)
+    {
+        if (entry is not { SegmentFile: not null } || entry.IsSaved)
+            return;
+        try
+        {
+            Directory.CreateDirectory(_libraryFolder);
+
+            var ext = Path.GetExtension(entry.SegmentFile);
+            var baseName = SanitizeFileName($"{entry.Artist} - {entry.Title}");
+            var dest = Path.Combine(_libraryFolder, baseName + ext);
+            for (var n = 2; File.Exists(dest); n++)
+                dest = Path.Combine(_libraryFolder, $"{baseName} ({n}){ext}");
+
+            File.Copy(StreamRecorder.PathFor(entry.SegmentFile), dest);
+            entry.SavedPath = dest;
+            _historyStore.Save(History);
+            SaveSongCommand.RaiseCanExecuteChanged();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Save] failed: {ex.Message}");
+            StatusText = "Couldn't save the song — check the library folder in Options.";
+        }
+    }
+
+    /// <summary>Makes "Artist - Title" safe as a file name (invalid chars → '_', capped length).</summary>
+    private static string SanitizeFileName(string name)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+        name = name.Trim().TrimEnd('.');
+        return name.Length > 120 ? name[..120] : name;
     }
 
     public string SearchPrompt

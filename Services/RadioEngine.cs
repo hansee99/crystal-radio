@@ -27,6 +27,7 @@ public sealed record TrackMetadata(string Title, string? Artist, string? Station
 public sealed class RadioEngine : IDisposable
 {
     private readonly Dispatcher _dispatcher;
+    private readonly StreamRecorder? _recorder;
 
     private int _stream;
     private Station? _currentStation;
@@ -39,13 +40,22 @@ public sealed class RadioEngine : IDisposable
     private SyncProcedure? _stallSync;
     private SyncProcedure? _endSync;
 
+    // Download callbacks (rolling cache) keyed by generation. Kept in a dictionary rather
+    // than a single field because a superseded connect may still invoke its callback until
+    // its stream is freed — entries are pruned once attempts are safely dead.
+    private readonly Dictionary<int, DownloadProcedure> _downloadProcs = new();
+
+    // The recorder session belonging to the current/most recent connection attempt.
+    private int _recSession;
+
     // Bumped whenever the stream is (re)created or torn down, so a stale reconnect
     // attempt scheduled for an older stream can detect it lost the race and bail.
     private int _generation;
 
-    public RadioEngine()
+    public RadioEngine(StreamRecorder? recorder = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
+        _recorder = recorder;
 
         // Init the default output device. Returns false if already initialised; that's fine.
         if (!Bass.Init() && Bass.LastError != Errors.Already)
@@ -156,12 +166,29 @@ public sealed class RadioEngine : IDisposable
         var url = station.Url;
         var isAac = station.Format == StreamFormat.Aac;
 
+        // Rolling cache: capture the raw stream bytes on the SAME connection as playback via a
+        // download callback. The session id keeps a superseded connect's late callbacks from
+        // writing into the new session; the dictionary roots the delegate while BASS may still
+        // call it (see field comment).
+        DownloadProcedure? downloadProc = null;
+        if (_recorder is not null)
+        {
+            var session = _recSession = _recorder.BeginSession(station, station.Format);
+            var recorder = _recorder;
+            downloadProc = (buffer, length, _) => recorder.Write(session, buffer, length);
+            _downloadProcs[generation] = downloadProc;
+            // Attempts more than a few generations old are long dead (connects time out in
+            // seconds) — prune so the dictionary doesn't grow with every station change.
+            foreach (var g in _downloadProcs.Keys.Where(g => g < generation - 8).ToList())
+                _downloadProcs.Remove(g);
+        }
+
         Task.Run(() =>
         {
             // AAC core is NOT in BASS core — the add-on path is required for aac streams.
             var handle = isAac
-                ? BassAac.CreateStream(url, 0, BassFlags.Default, null)
-                : Bass.CreateStream(url, 0, BassFlags.Default, null);
+                ? BassAac.CreateStream(url, 0, BassFlags.Default, downloadProc)
+                : Bass.CreateStream(url, 0, BassFlags.Default, downloadProc);
             var error = Bass.LastError; // BASS error state is per-thread
             _dispatcher.BeginInvoke(() => OnStreamCreated(generation, station, pendingState, handle, error));
         });
@@ -173,11 +200,14 @@ public sealed class RadioEngine : IDisposable
         if (generation != _generation)
         {
             if (handle != 0) Bass.StreamFree(handle);
+            _downloadProcs.Remove(generation); // freed → no more callbacks for this attempt
             return;
         }
 
         if (handle == 0)
         {
+            _downloadProcs.Remove(generation);
+            _recorder?.EndSession(_recSession);
             FailOrRetry(station, pendingState, $"Could not open stream: {error}");
             return;
         }
@@ -294,6 +324,12 @@ public sealed class RadioEngine : IDisposable
 
         var stationName = _currentStation?.Name;
         MetadataChanged?.Invoke(this, new TrackMetadata(trackTitle, artist, stationName));
+
+        // Title boundary for the rolling cache: finalize the finished song's segment and start
+        // the next. Raised AFTER MetadataChanged so the history row for the new song exists
+        // before the previous song's SegmentCompleted looks for its row. (The initial per-connect
+        // station-info publish doesn't come through here — it isn't a track boundary.)
+        _recorder?.OnTrackChanged(_recSession, trackTitle, artist, stationName);
     }
 
     private static string? ParseStreamTitle(string? meta)
@@ -309,6 +345,9 @@ public sealed class RadioEngine : IDisposable
 
     private void FreeStream()
     {
+        // The tail of the current capture session is mid-song by definition — discard it.
+        _recorder?.EndSession(_recSession);
+
         // Always bump: this invalidates any in-flight async connect, even when no stream
         // exists yet (e.g. the user skips again while still buffering).
         _generation++;
@@ -316,6 +355,7 @@ public sealed class RadioEngine : IDisposable
         {
             Bass.StreamFree(_stream);
             _stream = 0;
+            _downloadProcs.Remove(_generation - 1); // freed → its callback can't fire again
         }
         _metaSync = null;
         _stallSync = null;

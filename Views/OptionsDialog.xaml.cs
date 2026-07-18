@@ -4,9 +4,9 @@ using RadioPlayer.Services;
 namespace RadioPlayer;
 
 /// <summary>
-/// Modal settings dialog. Currently just the Anthropic API key; the layout is structured so
-/// future settings slot in as additional labelled fields. The key is persisted encrypted via
-/// <see cref="SettingsStore"/> (DPAPI) — this dialog never writes it anywhere in plain text.
+/// Modal settings dialog: the Anthropic API key (persisted encrypted via
+/// <see cref="SettingsStore"/> (DPAPI) — never written anywhere in plain text) and the
+/// library folder that saved songs are copied into.
 /// </summary>
 public partial class OptionsDialog : Window
 {
@@ -19,6 +19,7 @@ public partial class OptionsDialog : Window
         _store = store;
 
         ApiKeyBox.Text = store.GetApiKey() ?? string.Empty;
+        LibraryFolderBox.Text = store.Load().ResolveLibraryFolder();
 
         // If no in-app key is stored but the environment provides one, say so — it's the key
         // actually in effect until they save one here.
@@ -33,9 +34,27 @@ public partial class OptionsDialog : Window
         Loaded += (_, _) => { ApiKeyBox.Focus(); ApiKeyBox.SelectAll(); };
     }
 
+    private void BrowseLibrary_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Choose the folder saved songs go to",
+            InitialDirectory = LibraryFolderBox.Text
+        };
+        if (dialog.ShowDialog(this) == true)
+            LibraryFolderBox.Text = dialog.FolderName;
+    }
+
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         _store.SetApiKey(ApiKeyBox.Text.Trim()); // blank clears the stored key
+
+        // Load-modify-save (after SetApiKey, so its write isn't clobbered).
+        var settings = _store.Load();
+        var folder = LibraryFolderBox.Text.Trim();
+        settings.LibraryFolder = string.IsNullOrWhiteSpace(folder) ? null : folder;
+        _store.Save(settings);
+
         DialogResult = true;
     }
 }
