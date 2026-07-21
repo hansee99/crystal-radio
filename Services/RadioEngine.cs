@@ -24,7 +24,7 @@ public sealed record TrackMetadata(string Title, string? Artist, string? Station
 /// callbacks fire on BASS-owned threads and are marshalled to the UI thread here so
 /// callers never have to think about it.
 /// </summary>
-public sealed class RadioEngine : IDisposable
+public sealed class RadioEngine : IPlaybackEngine
 {
     private readonly Dispatcher _dispatcher;
     private readonly StreamRecorder? _recorder;

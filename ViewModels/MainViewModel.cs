@@ -24,6 +24,8 @@ public sealed class MainViewModel : ObservableObject
     private readonly ISearchRanker _ranker;
     private readonly ITrackInfoService _trackInfoService;
     private readonly ISongLibraryService _songLibrary;
+    private readonly LocalPlaybackEngine _local;
+    private readonly ISongCurator _curator;
 
     // Below this cosine score the local index is considered too weak (heuristic fallback only).
     private const double SemanticThreshold = 0.30;
@@ -83,7 +85,7 @@ public sealed class MainViewModel : ObservableObject
         IStationDialog stationDialog, IPromptInterpreter interpreter, IStationSearchService searchService,
         IAgenticSearchService agenticSearch, IEnrichmentService enrichment,
         ISemanticSearchService semanticSearch, ISearchRanker ranker, ITrackInfoService trackInfoService,
-        ISongLibraryService songLibrary)
+        ISongLibraryService songLibrary, LocalPlaybackEngine local, ISongCurator curator)
     {
         _engine = engine;
         _store = store;
@@ -99,14 +101,23 @@ public sealed class MainViewModel : ObservableObject
         _ranker = ranker;
         _trackInfoService = trackInfoService;
         _songLibrary = songLibrary;
+        _local = local;
+        _curator = curator;
 
-        // Restore the persisted volume.
+        // Restore the persisted volume onto both engines (either/or, but volume is shared).
         _volume = settingsStore.Load().Volume;
         _engine.Volume = _volume;
+        _local.Volume = _volume;
 
         _engine.StateChanged += (_, state) => OnStateChanged(state);
         _engine.MetadataChanged += (_, meta) => OnMetadataChanged(meta);
         _engine.ErrorOccurred += (_, msg) => StatusText = msg;
+
+        // Local (library) engine — its handlers no-op unless Library mode is active.
+        _local.StateChanged += (_, state) => OnLocalStateChanged(state);
+        _local.TrackChanged += (_, e) => OnLocalTrackChanged(e.Track, e.Index);
+        _local.PositionChanged += (_, e) => OnLocalPosition(e.Position, e.Duration);
+        _local.ErrorOccurred += (_, msg) => LibraryStatus = msg;
 
         // Rolling-cache settings resolved once at startup (Options changes apply on restart,
         // consistent with the other settings).
@@ -136,9 +147,13 @@ public sealed class MainViewModel : ObservableObject
         _songLibrary.BackfillInBackground();
 
         PlayPauseCommand = new RelayCommand(TogglePlayPause);
-        StopCommand = new RelayCommand(_engine.Stop, () => _engine.State != PlaybackState.Stopped);
-        NextStationCommand = new RelayCommand(NextStation, () => Stations.Count > 0);
-        PrevStationCommand = new RelayCommand(PrevStation, () => Stations.Count > 0);
+        StopCommand = new RelayCommand(() => ActiveEngine.Stop(), () => ActiveEngine.State != PlaybackState.Stopped);
+        NextStationCommand = new RelayCommand(Next, CanGoNext);
+        PrevStationCommand = new RelayCommand(Prev, CanGoPrev);
+        SwitchToRadioCommand = new RelayCommand(() => SetMode(PlayerMode.Radio));
+        SwitchToLibraryCommand = new RelayCommand(() => SetMode(PlayerMode.Library));
+        CurateCommand = new RelayCommand(() => _ = RunCurateAsync(), () => !IsCurating);
+        PlayQueueItemCommand = new RelayCommand<CuratedQueueItem>(PlayQueueItem);
         AddStationCommand = new RelayCommand(AddStation);
         EditStationCommand = new RelayCommand(EditStation, () => SelectedStation is not null);
         DeleteStationCommand = new RelayCommand(DeleteStation, () => SelectedStation is not null);
@@ -704,6 +719,12 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand EditStationCommand { get; }
     public RelayCommand DeleteStationCommand { get; }
 
+    // Phase D: mode switch + local library curation/playback.
+    public RelayCommand SwitchToRadioCommand { get; }
+    public RelayCommand SwitchToLibraryCommand { get; }
+    public RelayCommand CurateCommand { get; }
+    public RelayCommand<CuratedQueueItem> PlayQueueItemCommand { get; }
+
     public Station? SelectedStation
     {
         get => _selectedStation;
@@ -777,7 +798,10 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>True while a stream is connecting/reconnecting (drives the loading spinner).</summary>
-    public bool IsBusy => _engine.State is PlaybackState.Buffering or PlaybackState.Reconnecting;
+    public bool IsBusy => IsRadioMode && _engine.State is PlaybackState.Buffering or PlaybackState.Reconnecting;
+
+    /// <summary>The LIVE badge is a radio-only affordance (local tracks show a seek timeline instead).</summary>
+    public bool ShowLiveBadge => IsPlaying && IsRadioMode;
 
     /// <summary>True when there's real now-playing info worth copying.</summary>
     public bool HasTrackInfo
@@ -935,7 +959,10 @@ public sealed class MainViewModel : ObservableObject
         private set
         {
             if (SetProperty(ref _isPlaying, value))
+            {
                 OnPropertyChanged(nameof(PlayPauseLabel));
+                OnPropertyChanged(nameof(ShowLiveBadge));
+            }
         }
     }
 
@@ -949,6 +976,7 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _volume, value))
             {
                 _engine.Volume = value;
+                _local.Volume = value; // volume is shared across modes
                 OnPropertyChanged(nameof(VolumePercent));
             }
         }
@@ -956,6 +984,23 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>Volume as a whole-number percent (0–100) for the readout next to the slider.</summary>
     public int VolumePercent => (int)Math.Round(_volume * 100);
+
+    // Transport prev/next route to the active mode: stations (wrapping) for radio, the curated
+    // queue for the library.
+    private void Next()
+    {
+        if (IsLibraryMode) _local.Next();
+        else NextStation();
+    }
+
+    private void Prev()
+    {
+        if (IsLibraryMode) _local.Previous();
+        else PrevStation();
+    }
+
+    private bool CanGoNext() => IsLibraryMode ? _local.HasQueue : Stations.Count > 0;
+    private bool CanGoPrev() => IsLibraryMode ? _local.HasQueue : Stations.Count > 0;
 
     private void NextStation()
     {
@@ -1063,6 +1108,16 @@ public sealed class MainViewModel : ObservableObject
 
     private void TogglePlayPause()
     {
+        if (IsLibraryMode)
+        {
+            // Stopped → (re)start the queue; otherwise pause/resume.
+            if (_local.State is PlaybackState.Stopped && _local.HasQueue)
+                _local.PlayAt(_local.CurrentIndex >= 0 ? _local.CurrentIndex : 0);
+            else
+                _local.TogglePause();
+            return;
+        }
+
         if (_engine.State is PlaybackState.Stopped or PlaybackState.Error)
         {
             if (SelectedStation is not null)
@@ -1076,6 +1131,8 @@ public sealed class MainViewModel : ObservableObject
 
     private void OnStateChanged(PlaybackState state)
     {
+        if (!IsRadioMode) return; // radio engine drives now-playing only in radio mode
+
         IsPlaying = state == PlaybackState.Playing;
         OnPropertyChanged(nameof(IsBusy));
 
@@ -1154,6 +1211,274 @@ public sealed class MainViewModel : ObservableObject
         // its subject (AboutSubjectTitle/Artist), so the user can finish reading. Only Back
         // returns to Now Playing.
 
+        _nowPlayingChanged?.Invoke(NowPlayingTitle, NowPlayingArtist); // mirror to OS media controls
         RecordHistory(meta);
     }
+
+    // ===== Phase D: mode switch + local library player =====
+
+    private PlayerMode _mode = PlayerMode.Radio;
+
+    /// <summary>The engine driving playback in the current mode.</summary>
+    private IPlaybackEngine ActiveEngine => IsLibraryMode ? _local : _engine;
+
+    public PlayerMode Mode
+    {
+        get => _mode;
+        private set
+        {
+            if (!SetProperty(ref _mode, value)) return;
+            OnPropertyChanged(nameof(IsRadioMode));
+            OnPropertyChanged(nameof(IsLibraryMode));
+            OnPropertyChanged(nameof(ShowRadioPanel));
+            OnPropertyChanged(nameof(ShowLibraryPanel));
+            OnPropertyChanged(nameof(IsBusy));
+            OnPropertyChanged(nameof(ShowLiveBadge));
+            OnPropertyChanged(nameof(HasDuration));
+        }
+    }
+
+    public bool IsRadioMode => _mode == PlayerMode.Radio;
+    public bool IsLibraryMode => _mode == PlayerMode.Library;
+    public bool ShowRadioPanel => IsRadioMode;
+    public bool ShowLibraryPanel => IsLibraryMode;
+
+    /// <summary>Switch player modes. Either/or: the now-inactive engine is stopped and the
+    /// now-playing view reset, so only one thing ever plays.</summary>
+    private void SetMode(PlayerMode mode)
+    {
+        if (_mode == mode) return;
+
+        Mode = mode; // set first so the stopped engine's handler no-ops (guards on mode)
+        if (mode == PlayerMode.Library) _engine.Stop(); else _local.Stop();
+
+        BackToNowPlaying();  // close any open About reading view
+        ResetNowPlaying();
+        RaiseTransportCanExecute();
+        ActiveEngineChanged?.Invoke(ActiveEngine); // let the host repoint OS media controls
+    }
+
+    /// <summary>Raised when the active playback engine changes (mode switch), so the host can
+    /// repoint the OS media transport controls at it.</summary>
+    public event Action<IPlaybackEngine>? ActiveEngineChanged;
+
+    private void RaiseTransportCanExecute()
+    {
+        StopCommand.RaiseCanExecuteChanged();
+        NextStationCommand.RaiseCanExecuteChanged();
+        PrevStationCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>Clear the now-playing view to its idle state (used on mode switch).</summary>
+    private void ResetNowPlaying()
+    {
+        IsPlaying = false;
+        NowPlayingTitle = "Not playing";
+        NowPlayingArtist = string.Empty;
+        NowPlayingStation = string.Empty;
+        NowPlayingFormat = string.Empty;
+        NowPlayingUrl = null;
+        HasTrackInfo = false;
+        PositionSeconds = 0;
+        DurationSeconds = 0;
+        OnPropertyChanged(nameof(IsBusy));
+        OnPropertyChanged(nameof(ShowLiveBadge));
+    }
+
+    // --- Local library: curation + queue ---
+
+    public ObservableCollection<CuratedQueueItem> CuratedQueue { get; } = new();
+
+    private string _libraryPrompt = string.Empty;
+    public string LibraryPrompt
+    {
+        get => _libraryPrompt;
+        set => SetProperty(ref _libraryPrompt, value);
+    }
+
+    private string _libraryStatus = string.Empty;
+    public string LibraryStatus
+    {
+        get => _libraryStatus;
+        private set => SetProperty(ref _libraryStatus, value);
+    }
+
+    private bool _isCurating;
+    public bool IsCurating
+    {
+        get => _isCurating;
+        private set
+        {
+            if (SetProperty(ref _isCurating, value))
+                CurateCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    /// <summary>Curate a playlist from the local library for the prompt, then start playing it.</summary>
+    private async Task RunCurateAsync()
+    {
+        if (IsCurating || string.IsNullOrWhiteSpace(LibraryPrompt))
+            return;
+        if (!_curator.IsAvailable)
+        {
+            LibraryStatus = "Save some songs first — the library is empty.";
+            return;
+        }
+
+        var prompt = LibraryPrompt;
+        IsCurating = true;
+        LibraryStatus = "Curating a playlist…";
+        try
+        {
+            var songs = await _curator.CurateAsync(prompt, 20);
+            CuratedQueue.Clear();
+            foreach (var s in songs)
+                CuratedQueue.Add(new CuratedQueueItem(s));
+
+            if (CuratedQueue.Count == 0)
+            {
+                LibraryStatus = "Nothing in your library matched — try a different vibe.";
+                return;
+            }
+
+            LibraryStatus = $"Playing {CuratedQueue.Count} song{(CuratedQueue.Count == 1 ? "" : "s")}.";
+            _local.SetQueue(CuratedQueue.Select(ToLocalTrack).ToList(), 0);
+            RaiseTransportCanExecute();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Curate] failed: {ex}");
+            LibraryStatus = "Curation hit a snag — please try again.";
+        }
+        finally
+        {
+            IsCurating = false;
+        }
+    }
+
+    private void PlayQueueItem(CuratedQueueItem? item)
+    {
+        if (item is null) return;
+        var index = CuratedQueue.IndexOf(item);
+        if (index < 0) return;
+
+        // Ensure the engine's queue matches what's shown, then jump to the clicked track.
+        if (!_local.HasQueue)
+            _local.SetQueue(CuratedQueue.Select(ToLocalTrack).ToList(), index);
+        else
+            _local.PlayAt(index);
+    }
+
+    private static LocalTrack ToLocalTrack(CuratedQueueItem item)
+    {
+        var format = item.Path.EndsWith(".aac", StringComparison.OrdinalIgnoreCase)
+            ? StreamFormat.Aac
+            : StreamFormat.Mp3;
+        return new LocalTrack(item.Path, item.Title, item.Artist, format);
+    }
+
+    // --- Local engine event handlers (only act in Library mode) ---
+
+    private void OnLocalStateChanged(PlaybackState state)
+    {
+        if (!IsLibraryMode) return;
+
+        IsPlaying = state == PlaybackState.Playing;
+        OnPropertyChanged(nameof(IsBusy));
+
+        if (state == PlaybackState.Stopped)
+        {
+            // Queue finished (or stopped): clear the now-playing header and row highlight.
+            foreach (var item in CuratedQueue) item.IsCurrent = false;
+            NowPlayingTitle = "Not playing";
+            NowPlayingArtist = string.Empty;
+            HasTrackInfo = false;
+            PositionSeconds = 0;
+            DurationSeconds = 0;
+        }
+
+        RaiseTransportCanExecute();
+    }
+
+    private void OnLocalTrackChanged(LocalTrack track, int index)
+    {
+        if (!IsLibraryMode) return;
+
+        NowPlayingTitle = track.Title;
+        NowPlayingArtist = track.Artist;
+        NowPlayingStation = string.Empty; // no station chip for library tracks
+        NowPlayingFormat = string.Empty;
+        NowPlayingUrl = null;
+        HasTrackInfo = !string.IsNullOrWhiteSpace(track.Title);
+
+        for (var i = 0; i < CuratedQueue.Count; i++)
+            CuratedQueue[i].IsCurrent = i == index;
+
+        _nowPlayingChanged?.Invoke(track.Title, track.Artist);
+    }
+
+    private void OnLocalPosition(double position, double duration)
+    {
+        if (!IsLibraryMode) return;
+        if (_suspendPositionUpdates) return;
+
+        _applyingPosition = true;
+        PositionSeconds = position;
+        _applyingPosition = false;
+        DurationSeconds = duration;
+    }
+
+    // --- Position / seek (library) ---
+
+    private double _positionSeconds;
+    private double _durationSeconds;
+    private bool _applyingPosition;    // true while the timer sets position (so the setter doesn't seek)
+    private bool _suspendPositionUpdates; // set by the view while the user drags the seek slider
+
+    /// <summary>Playback position in seconds. User-driven changes seek; timer updates don't.</summary>
+    public double PositionSeconds
+    {
+        get => _positionSeconds;
+        set
+        {
+            if (!SetProperty(ref _positionSeconds, value)) return;
+            OnPropertyChanged(nameof(PositionText));
+            if (!_applyingPosition && IsLibraryMode)
+                _local.Seek(value);
+        }
+    }
+
+    public double DurationSeconds
+    {
+        get => _durationSeconds;
+        private set
+        {
+            if (SetProperty(ref _durationSeconds, value))
+            {
+                OnPropertyChanged(nameof(DurationText));
+                OnPropertyChanged(nameof(HasDuration));
+            }
+        }
+    }
+
+    /// <summary>The seek timeline shows only in library mode with a track loaded.</summary>
+    public bool HasDuration => IsLibraryMode && _durationSeconds > 0;
+
+    public string PositionText => FormatTime(_positionSeconds);
+    public string DurationText => FormatTime(_durationSeconds);
+
+    private static string FormatTime(double seconds)
+    {
+        if (seconds <= 0 || double.IsNaN(seconds)) return "0:00";
+        var t = TimeSpan.FromSeconds(seconds);
+        return t.TotalHours >= 1 ? t.ToString(@"h\:mm\:ss") : t.ToString(@"m\:ss");
+    }
+
+    /// <summary>The view calls these around a seek-slider drag so timer ticks don't fight the drag.</summary>
+    public void BeginSeekDrag() => _suspendPositionUpdates = true;
+    public void EndSeekDrag() => _suspendPositionUpdates = false;
+
+    // Optional hook so the host can mirror now-playing text to the OS media controls in both modes.
+    private Action<string, string>? _nowPlayingChanged;
+    public void SetNowPlayingSink(Action<string, string> sink) => _nowPlayingChanged = sink;
 }
