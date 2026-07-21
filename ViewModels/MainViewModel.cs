@@ -23,6 +23,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly ISemanticSearchService _semanticSearch;
     private readonly ISearchRanker _ranker;
     private readonly ITrackInfoService _trackInfoService;
+    private readonly ISongLibraryService _songLibrary;
 
     // Below this cosine score the local index is considered too weak (heuristic fallback only).
     private const double SemanticThreshold = 0.30;
@@ -81,7 +82,8 @@ public sealed class MainViewModel : ObservableObject
         SongHistoryStore historyStore, StreamRecorder recorder,
         IStationDialog stationDialog, IPromptInterpreter interpreter, IStationSearchService searchService,
         IAgenticSearchService agenticSearch, IEnrichmentService enrichment,
-        ISemanticSearchService semanticSearch, ISearchRanker ranker, ITrackInfoService trackInfoService)
+        ISemanticSearchService semanticSearch, ISearchRanker ranker, ITrackInfoService trackInfoService,
+        ISongLibraryService songLibrary)
     {
         _engine = engine;
         _store = store;
@@ -96,6 +98,7 @@ public sealed class MainViewModel : ObservableObject
         _semanticSearch = semanticSearch;
         _ranker = ranker;
         _trackInfoService = trackInfoService;
+        _songLibrary = songLibrary;
 
         // Restore the persisted volume.
         _volume = settingsStore.Load().Volume;
@@ -128,6 +131,9 @@ public sealed class MainViewModel : ObservableObject
         StreamRecorder.SweepOrphans(History.Where(e => e.SegmentFile is not null).Select(e => e.SegmentFile!));
 
         _recorder.SegmentCompleted += (_, seg) => OnSegmentCompleted(seg);
+
+        // Reconcile the song library against disk and finish any pending enrichment/embeddings.
+        _songLibrary.BackfillInBackground();
 
         PlayPauseCommand = new RelayCommand(TogglePlayPause);
         StopCommand = new RelayCommand(_engine.Stop, () => _engine.State != PlaybackState.Stopped);
@@ -279,6 +285,15 @@ public sealed class MainViewModel : ObservableObject
             entry.SavedPath = dest;
             _historyStore.Save(History);
             SaveSongCommand.RaiseCanExecuteChanged();
+
+            // Index the saved song (metadata now; AI description + embedding fill in async).
+            _songLibrary.AddAndEnrich(new SavedSong(
+                Path: dest,
+                Title: entry.Title,
+                Artist: entry.Artist,
+                Station: string.IsNullOrWhiteSpace(entry.Station) ? null : entry.Station,
+                Codec: ext.TrimStart('.').ToUpperInvariant(),
+                SavedAt: DateTimeOffset.Now));
         }
         catch (Exception ex)
         {

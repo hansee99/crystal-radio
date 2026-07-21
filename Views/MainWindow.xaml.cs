@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly MainViewModel _viewModel;
     private readonly SettingsStore _settingsStore;
     private readonly EnrichmentStore _enrichmentStore;
+    private readonly LibraryStore _libraryStore;
     private readonly MiniLmEmbeddingProvider _embeddingProvider;
     private SmtcController? _smtc;
 
@@ -54,10 +55,14 @@ public partial class MainWindow : Window
         var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
         var trackInfo = new TrackInfoService(new HttpClient(), apiKey); // "About this track" briefings
 
+        // Phase C: local song-library index (metadata + AI description + local embedding on save).
+        _libraryStore = new LibraryStore();
+        var songLibrary = new SongLibraryService(new HttpClient(), _libraryStore, _embeddingProvider, apiKey);
+
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new SongHistoryStore(), _recorder,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
-            semanticSearch, ranker, trackInfo);
+            semanticSearch, ranker, trackInfo, songLibrary);
         DataContext = _viewModel;
 
         // Reset the About reading view to the top whenever fresh content loads (a new briefing
@@ -94,6 +99,7 @@ public partial class MainWindow : Window
         _recorder.Dispose();
         _embeddingProvider.Dispose();
         _enrichmentStore.Dispose();
+        _libraryStore.Dispose();
         base.OnClosed(e);
     }
 
