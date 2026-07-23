@@ -312,6 +312,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                    VerticalAlignment="Top"
                                                     Background="{StaticResource FillSubtle}"
                                                     BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
                                                 <Grid>
@@ -341,12 +342,13 @@
                                                     </ContentControl>
                                                 </Grid>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
                                                 <TextBlock Text="{Binding Name}" FontSize="13.5" FontWeight="Medium"
                                                            Foreground="{StaticResource TextBody}"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
                                                 <TextBlock Text="{Binding Description}" FontSize="11.5" Margin="0,2,0,0"
                                                            Foreground="{StaticResource TextMuted}"
+                                                           TextWrapping="Wrap" MaxHeight="30"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Description}">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
@@ -359,8 +361,32 @@
                                                     </TextBlock.Style>
                                                 </TextBlock>
                                             </StackPanel>
-                                            <!-- Per-row actions: Edit + Delete (Add lives at the bottom) -->
+                                            <!-- Per-row hover-menu: Edit + Delete (Add lives at the bottom).
+                                                 Hidden by default; appears on row hover or selection, so the
+                                                 list doesn't carry two icons on every row all the time
+                                                 (Shared Framework Spec §5). -->
                                             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <StackPanel.Style>
+                                                    <Style TargetType="StackPanel">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Value="True">
+                                                                <DataTrigger.Binding>
+                                                                    <Binding Path="IsMouseOver"
+                                                                             RelativeSource="{RelativeSource AncestorType=ListBoxItem}"/>
+                                                                </DataTrigger.Binding>
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Value="True">
+                                                                <DataTrigger.Binding>
+                                                                    <Binding Path="IsSelected"
+                                                                             RelativeSource="{RelativeSource AncestorType=ListBoxItem}"/>
+                                                                </DataTrigger.Binding>
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </StackPanel.Style>
                                                 <Button Style="{StaticResource GhostSquareButton}" Margin="0,0,6,0"
                                                         Content="{StaticResource EditGeometry}" ToolTip="Edit station"
                                                         Command="{Binding DataContext.EditStationCommand,
@@ -468,6 +494,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                    VerticalAlignment="Top"
                                                     Background="{StaticResource FillSubtle}"
                                                     BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
                                                 <Grid>
@@ -497,12 +524,13 @@
                                                     </ContentControl>
                                                 </Grid>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
                                                 <TextBlock Text="{Binding DisplayName}" FontSize="13.5" FontWeight="Medium"
                                                            Foreground="{StaticResource TextBody}"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}"/>
                                                 <TextBlock Text="{Binding Reason}" FontSize="11.5" Margin="0,2,0,0"
                                                            Foreground="{StaticResource TextMuted}"
+                                                           TextWrapping="Wrap" MaxHeight="30"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Reason}">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
@@ -555,18 +583,20 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                    VerticalAlignment="Top"
                                                     Background="{StaticResource FillSubtle}"
                                                     BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
                                                 <Path Data="{StaticResource NoteGeometry}" Stretch="Uniform"
                                                       Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
                                                       StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
                                                 <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
                                                            Foreground="{StaticResource TextBody}"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
                                                 <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
                                                            Foreground="{StaticResource TextMuted}"
+                                                           TextWrapping="Wrap" MaxHeight="30"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
                                             </StackPanel>
                                             <ContentControl Grid.Column="2" Content="{Binding}"
@@ -716,6 +746,7 @@
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                VerticalAlignment="Top"
                                                 Background="{StaticResource FillSubtle}"
                                                 BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
                                             <Grid>
@@ -749,12 +780,13 @@
                                                 </ContentControl>
                                             </Grid>
                                         </Border>
-                                        <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                        <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
                                             <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
                                                        Foreground="{StaticResource TextBody}"
                                                        TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
                                             <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
                                                        Foreground="{StaticResource TextMuted}"
+                                                       TextWrapping="Wrap" MaxHeight="30"
                                                        TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
                                         </StackPanel>
                                     </Grid>
@@ -796,6 +828,7 @@
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
                                             <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                    VerticalAlignment="Top"
                                                     Background="{StaticResource FillSubtle}"
                                                     BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
                                                 <Grid>
@@ -829,12 +862,13 @@
                                                     </ContentControl>
                                                 </Grid>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
                                                 <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
                                                            Foreground="{StaticResource TextBody}"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
                                                 <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
                                                            Foreground="{StaticResource TextMuted}"
+                                                           TextWrapping="Wrap" MaxHeight="30"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
                                             </StackPanel>
                                         </Grid>
