@@ -592,7 +592,9 @@
     <Style TargetType="ScrollBar">
         <Setter Property="OverridesDefaultStyle" Value="True"/>
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Width" Value="10"/>
+        <!-- 8px track with a 2px thumb margin on each side gives a ~4px visual thumb (Shared
+             Framework Spec pin 8), while the track itself stays a comfortable drag/click target. -->
+        <Setter Property="Width" Value="8"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ScrollBar">

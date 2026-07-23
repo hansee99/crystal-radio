@@ -1246,6 +1246,21 @@
                         </StackPanel>
                     </ScrollViewer>
 
+                    <!-- Bottom fade: the scrolled text dissolves at the fold instead of clipping
+                         mid-line (Shared Framework Spec pin 8). Non-hit-testable so scrolling and
+                         the scrollbar underneath still work; sits above the ScrollViewer in
+                         z-order (later sibling) but only covers its own reserved band at the
+                         bottom of the scroll region. -->
+                    <Rectangle Grid.Row="1" Height="38" VerticalAlignment="Bottom" Margin="0,0,8,0"
+                               IsHitTestVisible="False">
+                        <Rectangle.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#00050D0C" Offset="0"/>
+                                <GradientStop Color="#F2050D0C" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Rectangle.Fill>
+                    </Rectangle>
+
                     <!-- Footer: regenerate (result/error) + disclaimer -->
                     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,14,0,0"
                                 Background="Transparent">
