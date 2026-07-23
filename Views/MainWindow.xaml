@@ -261,10 +261,6 @@
                             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button Style="{StaticResource ListToolButton}" Content="&#xE710;"
                                         Command="{Binding AddStationCommand}" ToolTip="Add station"/>
-                                <Button Style="{StaticResource ListToolButton}" Content="&#xE70F;"
-                                        Command="{Binding EditStationCommand}" ToolTip="Edit station"/>
-                                <Button Style="{StaticResource ListToolButton}" Content="&#xE74D;"
-                                        Command="{Binding DeleteStationCommand}" ToolTip="Delete station"/>
                             </StackPanel>
                             <ListBox ItemsSource="{Binding Stations}"
                                      SelectedItem="{Binding SelectedStation, Mode=TwoWay}"
@@ -278,6 +274,7 @@
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="34"/>
                                                 <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
                                                     Background="{StaticResource FillSubtle}"
@@ -326,6 +323,19 @@
                                                         </Style>
                                                     </TextBlock.Style>
                                                 </TextBlock>
+                                            </StackPanel>
+                                            <!-- Per-row actions: Edit + Delete (Add lives at the bottom) -->
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Button Style="{StaticResource GhostSquareButton}" Margin="0,0,6,0"
+                                                        Content="{StaticResource EditGeometry}" ToolTip="Edit station"
+                                                        Command="{Binding DataContext.EditStationCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                        CommandParameter="{Binding}"/>
+                                                <Button Style="{StaticResource GhostSquareButton}"
+                                                        Content="{StaticResource DeleteGeometry}" ToolTip="Delete station"
+                                                        Command="{Binding DataContext.DeleteStationCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                        CommandParameter="{Binding}"/>
                                             </StackPanel>
                                         </Grid>
                                     </DataTemplate>

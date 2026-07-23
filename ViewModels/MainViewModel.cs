@@ -155,8 +155,8 @@ public sealed class MainViewModel : ObservableObject
         CurateCommand = new RelayCommand(() => _ = RunCurateAsync(), () => !IsCurating);
         PlayQueueItemCommand = new RelayCommand<CuratedQueueItem>(PlayQueueItem);
         AddStationCommand = new RelayCommand(AddStation);
-        EditStationCommand = new RelayCommand(EditStation, () => SelectedStation is not null);
-        DeleteStationCommand = new RelayCommand(DeleteStation, () => SelectedStation is not null);
+        EditStationCommand = new RelayCommand<Station>(EditStation, s => s is not null);
+        DeleteStationCommand = new RelayCommand<Station>(DeleteStation, s => s is not null);
         SearchCommand = new RelayCommand(() => _ = RunSearchAsync(regenerate: false), () => !IsSearching);
         RegenerateSearchCommand = new RelayCommand(() => _ = RunSearchAsync(regenerate: true),
             () => CanRegenerateSearch);
@@ -716,8 +716,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand NextStationCommand { get; }
     public RelayCommand PrevStationCommand { get; }
     public RelayCommand AddStationCommand { get; }
-    public RelayCommand EditStationCommand { get; }
-    public RelayCommand DeleteStationCommand { get; }
+    public RelayCommand<Station> EditStationCommand { get; }
+    public RelayCommand<Station> DeleteStationCommand { get; }
 
     // Phase D: mode switch + local library curation/playback.
     public RelayCommand SwitchToRadioCommand { get; }
@@ -731,9 +731,6 @@ public sealed class MainViewModel : ObservableObject
         set
         {
             if (!SetProperty(ref _selectedStation, value)) return;
-
-            EditStationCommand.RaiseCanExecuteChanged();
-            DeleteStationCommand.RaiseCanExecuteChanged();
             if (value is null) return;
 
             // Switching station while already on-air restarts playback immediately.
@@ -1039,9 +1036,9 @@ public sealed class MainViewModel : ObservableObject
         PrevStationCommand.RaiseCanExecuteChanged();
     }
 
-    private void EditStation()
+    private void EditStation(Station? station)
     {
-        var existing = SelectedStation;
+        var existing = station ?? SelectedStation;
         if (existing is null) return;
 
         var edited = _stationDialog.Show(existing);
@@ -1060,9 +1057,9 @@ public sealed class MainViewModel : ObservableObject
             _engine.Play(edited);
     }
 
-    private void DeleteStation()
+    private void DeleteStation(Station? station)
     {
-        var target = SelectedStation;
+        var target = station ?? SelectedStation;
         if (target is null) return;
 
         if (ReferenceEquals(_engine.CurrentStation, target))
