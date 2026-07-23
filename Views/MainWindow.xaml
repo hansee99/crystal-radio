@@ -738,6 +738,23 @@
                                 Content="{StaticResource CopyGeometry}" ToolTip="Copy title &amp; artist"
                                 Width="24" Height="24" Margin="8,0,0,0" VerticalAlignment="Center"
                                 Visibility="{Binding HasTrackInfo, Converter={StaticResource BoolToVis}}"/>
+                        <!-- Mark this song to be saved once its recording completes -->
+                        <Button Command="{Binding MarkForSaveCommand}" Width="24" Height="24"
+                                Margin="4,0,0,0" VerticalAlignment="Center"
+                                Visibility="{Binding CanMarkForSave, Converter={StaticResource BoolToVis}}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource TitleIconButton}">
+                                    <Setter Property="Content" Value="{StaticResource BookmarkGeometry}"/>
+                                    <Setter Property="ToolTip" Value="Save this song when it finishes"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsCurrentSongMarked}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource TealBright}"/>
+                                            <Setter Property="ToolTip" Value="Marked to save — click to cancel"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                     </StackPanel>
 
                     <TextBlock Text="{Binding NowPlayingTitle}" FontSize="44" FontWeight="Normal"

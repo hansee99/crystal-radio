@@ -172,6 +172,7 @@ public sealed class MainViewModel : ObservableObject
             e => { if (e is not null) _ = GenerateAboutAsync(e.Title, e.Artist, e.Station, forceRefresh: false); });
         BackToNowPlayingCommand = new RelayCommand(BackToNowPlaying);
         SaveSongCommand = new RelayCommand<SongHistoryEntry>(SaveSong, e => e?.CanSave == true);
+        MarkForSaveCommand = new RelayCommand(ToggleMarkForSave, () => CanMarkForSave);
     }
 
     // ===== AI-assisted station search =====
@@ -196,6 +197,9 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Save a completed song's cached audio into the library folder.</summary>
     public RelayCommand<SongHistoryEntry> SaveSongCommand { get; }
 
+    /// <summary>Mark/unmark the currently-playing song to be saved when its segment completes.</summary>
+    public RelayCommand MarkForSaveCommand { get; }
+
     /// <summary>Cap on stored history rows (metadata is tiny; this is a UI/file sanity bound).</summary>
     private const int HistoryCap = 100;
 
@@ -215,16 +219,20 @@ public sealed class MainViewModel : ObservableObject
             && string.Equals(History[0].Artist, meta.Artist, StringComparison.OrdinalIgnoreCase))
             return;
 
-        History.Insert(0, new SongHistoryEntry
+        var entry = new SongHistoryEntry
         {
             Title = meta.Title,
             Artist = meta.Artist!,
             Station = meta.StationName ?? string.Empty,
             PlayedAt = DateTime.Now
-        });
+        };
+        History.Insert(0, entry);
         while (History.Count > HistoryCap)
             RemoveHistoryAt(History.Count - 1);
         _historyStore.Save(History);
+
+        // This is now the current song; the mark-for-save toggle targets it (fresh → unmarked).
+        SetCurrentSong(entry);
     }
 
     /// <summary>Removes a history row AND its cached segment file (never orphan audio).</summary>
@@ -256,9 +264,45 @@ public sealed class MainViewModel : ObservableObject
 
         entry.SegmentFile = seg.FileName;
         entry.SegmentBytes = seg.Bytes;
+
+        // Marked while playing → save it now that its audio is complete. If it was never
+        // completed (stopped mid-song, or a mid-song head segment), we simply never get here.
+        if (entry.MarkedForSave && entry.CanSave)
+            SaveSong(entry);
+
         PruneCacheToCap();
         _historyStore.Save(History);
         SaveSongCommand.RaiseCanExecuteChanged();
+    }
+
+    // --- Mark the currently-playing song to be saved when its segment completes ---
+
+    private SongHistoryEntry? _currentSong;
+
+    /// <summary>The mark toggle is available while a radio song is playing (the library plays
+    /// already-saved files).</summary>
+    public bool CanMarkForSave => IsRadioMode && _currentSong is not null;
+
+    /// <summary>Whether the current song is marked (drives the toggle button's state).</summary>
+    public bool IsCurrentSongMarked => _currentSong?.MarkedForSave == true;
+
+    private void SetCurrentSong(SongHistoryEntry? entry)
+    {
+        _currentSong = entry;
+        OnPropertyChanged(nameof(CanMarkForSave));
+        OnPropertyChanged(nameof(IsCurrentSongMarked));
+        MarkForSaveCommand.RaiseCanExecuteChanged();
+    }
+
+    private void ToggleMarkForSave()
+    {
+        if (_currentSong is null) return;
+        _currentSong.MarkedForSave = !_currentSong.MarkedForSave;
+        OnPropertyChanged(nameof(IsCurrentSongMarked));
+
+        // If it's already saveable (segment complete) and just got marked, save immediately.
+        if (_currentSong.MarkedForSave && _currentSong.CanSave)
+            SaveSong(_currentSong);
     }
 
     /// <summary>Evict the oldest cached segments until the cache fits the configured cap.
@@ -1178,6 +1222,7 @@ public sealed class MainViewModel : ObservableObject
                 NowPlayingTitle = "Not playing";
                 NowPlayingArtist = string.Empty;
                 HasTrackInfo = false;
+                SetCurrentSong(null); // nothing playing → nothing to mark for saving
                 // An open briefing stays open even across Stop — its subject is frozen and may
                 // have come from a history row; only Back closes the reading view.
                 break;
@@ -1286,6 +1331,7 @@ public sealed class MainViewModel : ObservableObject
         HasTrackInfo = false;
         PositionSeconds = 0;
         DurationSeconds = 0;
+        SetCurrentSong(null);
         OnPropertyChanged(nameof(IsBusy));
         OnPropertyChanged(nameof(ShowLiveBadge));
     }

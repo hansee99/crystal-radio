@@ -14,6 +14,7 @@ public sealed class SongHistoryEntry : ObservableObject
 {
     private string? _segmentFile;
     private string? _savedPath;
+    private bool _markedForSave;
 
     public string Title { get; set; } = string.Empty;
     public string Artist { get; set; } = string.Empty;
@@ -53,6 +54,15 @@ public sealed class SongHistoryEntry : ObservableObject
                 OnPropertyChanged(nameof(CanSave));
             }
         }
+    }
+
+    /// <summary>User asked (while it was playing) to save this song as soon as its segment is
+    /// complete. Transient — a mark that never resolves before the song rolls off is just dropped.</summary>
+    [JsonIgnore]
+    public bool MarkedForSave
+    {
+        get => _markedForSave;
+        set => SetProperty(ref _markedForSave, value);
     }
 
     [JsonIgnore] public bool HasSegment => SegmentFile is not null;
