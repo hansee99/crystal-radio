@@ -444,48 +444,74 @@
         </Setter>
     </Style>
 
-    <!-- ===== Animated equalizer (R6): 4 bars with a staggered ScaleY loop ===== -->
+    <!-- ===== Animated equalizer (R6): 4 bars with a staggered ScaleY loop =====
+         Each bar animates ITSELF (self-targeted storyboard, no Storyboard.TargetName), so there
+         is no name-scope lookup to resolve. Name-based targeting inside a ControlTemplate can
+         fail with "'b1' cannot be found in the name scope" when the template is realized in some
+         hosts (e.g. a freshly-populated, style-driven ListBox row) — which crashes the process. -->
+    <Style x:Key="EqualizerBar" TargetType="Rectangle">
+        <Setter Property="Width" Value="2.6"/>
+        <Setter Property="Height" Value="13"/>
+        <Setter Property="Margin" Value="0,0,2.5,0"/>
+        <Setter Property="Fill" Value="{StaticResource Teal}"/>
+        <Setter Property="RadiusX" Value="2"/>
+        <Setter Property="RadiusY" Value="2"/>
+        <Setter Property="RenderTransformOrigin" Value="0.5,1"/>
+        <Setter Property="RenderTransform">
+            <Setter.Value><ScaleTransform/></Setter.Value>
+        </Setter>
+    </Style>
     <ControlTemplate x:Key="EqualizerTemplate">
         <StackPanel Orientation="Horizontal" Height="13" VerticalAlignment="Bottom">
-            <StackPanel.Resources>
-                <Style TargetType="Rectangle">
-                    <Setter Property="Width" Value="2.6"/>
-                    <Setter Property="Height" Value="13"/>
-                    <Setter Property="Margin" Value="0,0,2.5,0"/>
-                    <Setter Property="Fill" Value="{StaticResource Teal}"/>
-                    <Setter Property="RadiusX" Value="2"/>
-                    <Setter Property="RadiusY" Value="2"/>
-                    <Setter Property="RenderTransformOrigin" Value="0.5,1"/>
-                    <Setter Property="RenderTransform">
-                        <Setter.Value><ScaleTransform/></Setter.Value>
-                    </Setter>
-                </Style>
-            </StackPanel.Resources>
-            <Rectangle x:Name="b1"/>
-            <Rectangle x:Name="b2"/>
-            <Rectangle x:Name="b3"/>
-            <Rectangle x:Name="b4"/>
+            <Rectangle Style="{StaticResource EqualizerBar}">
+                <Rectangle.Triggers>
+                    <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                        <BeginStoryboard>
+                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                    From="0.25" To="1" Duration="0:0:0.45"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Rectangle.Triggers>
+            </Rectangle>
+            <Rectangle Style="{StaticResource EqualizerBar}">
+                <Rectangle.Triggers>
+                    <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                        <BeginStoryboard>
+                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                <DoubleAnimation BeginTime="0:0:0.14" Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                    From="0.25" To="1" Duration="0:0:0.45"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Rectangle.Triggers>
+            </Rectangle>
+            <Rectangle Style="{StaticResource EqualizerBar}">
+                <Rectangle.Triggers>
+                    <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                        <BeginStoryboard>
+                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                <DoubleAnimation BeginTime="0:0:0.28" Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                    From="0.25" To="1" Duration="0:0:0.45"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Rectangle.Triggers>
+            </Rectangle>
+            <Rectangle Style="{StaticResource EqualizerBar}">
+                <Rectangle.Triggers>
+                    <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                        <BeginStoryboard>
+                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                <DoubleAnimation BeginTime="0:0:0.40" Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                    From="0.25" To="1" Duration="0:0:0.45"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Rectangle.Triggers>
+            </Rectangle>
         </StackPanel>
-        <ControlTemplate.Triggers>
-            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
-                <BeginStoryboard>
-                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
-                        <DoubleAnimation Storyboard.TargetName="b1"
-                            Storyboard.TargetProperty="RenderTransform.ScaleY"
-                            From="0.25" To="1" Duration="0:0:0.45"/>
-                        <DoubleAnimation Storyboard.TargetName="b2" BeginTime="0:0:0.14"
-                            Storyboard.TargetProperty="RenderTransform.ScaleY"
-                            From="0.25" To="1" Duration="0:0:0.45"/>
-                        <DoubleAnimation Storyboard.TargetName="b3" BeginTime="0:0:0.28"
-                            Storyboard.TargetProperty="RenderTransform.ScaleY"
-                            From="0.25" To="1" Duration="0:0:0.45"/>
-                        <DoubleAnimation Storyboard.TargetName="b4" BeginTime="0:0:0.40"
-                            Storyboard.TargetProperty="RenderTransform.ScaleY"
-                            From="0.25" To="1" Duration="0:0:0.45"/>
-                    </Storyboard>
-                </BeginStoryboard>
-            </EventTrigger>
-        </ControlTemplate.Triggers>
     </ControlTemplate>
 
 </ResourceDictionary>
