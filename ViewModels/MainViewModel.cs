@@ -1118,14 +1118,22 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        if (_engine.State is PlaybackState.Stopped or PlaybackState.Error)
+        switch (_engine.State)
         {
-            if (SelectedStation is not null)
-                _engine.Play(SelectedStation);
-        }
-        else
-        {
-            _engine.TogglePause();
+            case PlaybackState.Playing:
+                // "Pause" a live stream: keep the Paused state (station stays on screen) but…
+                _engine.Pause();
+                break;
+            case PlaybackState.Paused:
+                // …resume by RECONNECTING fresh rather than un-pausing a stale buffer — otherwise
+                // playback briefly resumes the buffered audio, then jumps ahead to the live point.
+                if (_engine.CurrentStation is { } paused)
+                    _engine.Play(paused);
+                break;
+            default: // Stopped / Error (and any transient) → start the selected station
+                if (SelectedStation is not null)
+                    _engine.Play(SelectedStation);
+                break;
         }
     }
 
