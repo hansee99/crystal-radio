@@ -176,6 +176,12 @@ public sealed class MainViewModel : ObservableObject
         BackToNowPlayingCommand = new RelayCommand(BackToNowPlaying);
         SaveSongCommand = new RelayCommand<SongHistoryEntry>(SaveSong, e => e?.CanSave == true);
         MarkForSaveCommand = new RelayCommand(ToggleMarkForSave, () => CanMarkForSave && !IsCurrentSongSaved);
+
+        // Show the selected station's preview from the very first frame instead of a bare
+        // "Not playing" (Shared Framework Spec §4a) — SelectedStation was set on the backing
+        // field above, bypassing the setter's own preview refresh.
+        ApplyStoppedPreview();
+        RefreshRecentOnStation();
     }
 
     // ===== AI-assisted station search =====
@@ -209,6 +215,29 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>The per-row About affordance shows only when the service has an API key.</summary>
     public bool IsAboutAvailable => _trackInfoService.IsConfigured;
 
+    /// <summary>Songs previously heard on the station currently shown in Now Playing (playing, or
+    /// merely selected-but-not-started — see <see cref="ApplyStoppedPreview"/>), newest first.
+    /// Fills the space Radio has no scrubber to put in (Shared Framework Spec §4a, pin 2).</summary>
+    public ObservableCollection<SongHistoryEntry> RecentOnStation { get; } = new();
+
+    private const int RecentOnStationCap = 6;
+
+    /// <summary>Radio-only: the list shows once there's at least one prior play for this station.</summary>
+    public bool ShowRecentOnStation => IsRadioMode && RecentOnStation.Count > 0;
+
+    private void RefreshRecentOnStation()
+    {
+        RecentOnStation.Clear();
+        if (!string.IsNullOrWhiteSpace(NowPlayingStation))
+        {
+            foreach (var e in History
+                .Where(h => string.Equals(h.Station, NowPlayingStation, StringComparison.OrdinalIgnoreCase))
+                .Take(RecentOnStationCap))
+                RecentOnStation.Add(e);
+        }
+        OnPropertyChanged(nameof(ShowRecentOnStation));
+    }
+
     /// <summary>
     /// Record a title change in the history: filter out ads/jingles/idents, skip consecutive
     /// duplicates (reconnects re-announce the same song), cap, persist.
@@ -233,6 +262,7 @@ public sealed class MainViewModel : ObservableObject
         while (History.Count > HistoryCap)
             RemoveHistoryAt(History.Count - 1);
         _historyStore.Save(History);
+        RefreshRecentOnStation(); // the new entry (or an evicted one) may affect this station's list
 
         // This is now the current song; the mark-for-save toggle targets it (fresh → unmarked).
         SetCurrentSong(entry);
@@ -791,6 +821,13 @@ public sealed class MainViewModel : ObservableObject
         set
         {
             if (!SetProperty(ref _selectedStation, value)) return;
+
+            // Stopped: browsing the list updates the preview live instead of waiting for Play.
+            if (_engine.State == PlaybackState.Stopped)
+            {
+                ApplyStoppedPreview();
+                RefreshRecentOnStation();
+            }
             if (value is null) return;
 
             // Switching station while already on-air restarts playback immediately.
@@ -1207,19 +1244,19 @@ public sealed class MainViewModel : ObservableObject
             ? _engine.CurrentStation?.Url
             : null;
 
-        // The playing station name is the source of truth for "what's playing" (cleared when
-        // stopped), so a selected-but-not-playing row in either list isn't mistaken for it.
-        NowPlayingStation = state == PlaybackState.Stopped
-            ? string.Empty
-            : _engine.CurrentStation?.Name ?? string.Empty;
-        NowPlayingFormat = state == PlaybackState.Stopped
-            ? string.Empty
-            : _engine.CurrentStation?.Format switch
+        // The playing station name is the source of truth for "what's playing" while something IS
+        // playing/connecting. On Stopped it's handled below by ApplyStoppedPreview instead of
+        // being cleared, so the panel can preview the selected station rather than going bare.
+        if (state != PlaybackState.Stopped)
+        {
+            NowPlayingStation = _engine.CurrentStation?.Name ?? string.Empty;
+            NowPlayingFormat = _engine.CurrentStation?.Format switch
             {
                 StreamFormat.Aac => "AAC",
                 StreamFormat.Mp3 => "MP3",
                 _ => string.Empty
             };
+        }
 
         StatusText = state switch
         {
@@ -1235,8 +1272,9 @@ public sealed class MainViewModel : ObservableObject
         switch (state)
         {
             case PlaybackState.Stopped:
-                NowPlayingTitle = "Not playing";
-                NowPlayingArtist = string.Empty;
+                // Preview the selected station instead of going bare (Shared Framework Spec
+                // §4a) — only the true first-run state (no station ever selected) stays empty.
+                ApplyStoppedPreview();
                 HasTrackInfo = false;
                 SetCurrentSong(null); // nothing playing → nothing to mark for saving
                 // An open briefing stays open even across Stop — its subject is frozen and may
@@ -1263,7 +1301,27 @@ public sealed class MainViewModel : ObservableObject
                 break;
         }
 
+        RefreshRecentOnStation(); // NowPlayingStation may have just changed (any branch above)
         StopCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Stopped-state preview (Shared Framework Spec §4a): show the selected station's name and
+    /// description instead of a bare "Not playing", so the right panel only ever looks truly
+    /// empty when no station has been selected at all (e.g. an empty Stations list).
+    /// </summary>
+    private void ApplyStoppedPreview()
+    {
+        var sel = SelectedStation;
+        NowPlayingStation = sel?.Name ?? string.Empty;
+        NowPlayingTitle = sel?.Name ?? "Not playing";
+        NowPlayingArtist = sel?.Description ?? string.Empty;
+        NowPlayingFormat = sel?.Format switch
+        {
+            StreamFormat.Aac => "AAC",
+            StreamFormat.Mp3 => "MP3",
+            _ => string.Empty
+        };
     }
 
     private void OnMetadataChanged(TrackMetadata meta)
@@ -1301,6 +1359,7 @@ public sealed class MainViewModel : ObservableObject
             OnPropertyChanged(nameof(IsBusy));
             OnPropertyChanged(nameof(ShowLiveBadge));
             OnPropertyChanged(nameof(HasDuration));
+            OnPropertyChanged(nameof(ShowRecentOnStation));
         }
     }
 

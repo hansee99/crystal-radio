@@ -82,4 +82,20 @@ public sealed class SongHistoryEntry : ObservableObject
             return string.Join(" · ", parts);
         }
     }
+
+    /// <summary>Short relative time ("just now" / "3 min ago" / "1 hr ago" / a date), for rows —
+    /// like "Recently on this station" — where the station is already implied and repeating it
+    /// would be redundant. Computed once per binding refresh, not live-ticking.</summary>
+    [JsonIgnore]
+    public string RelativeTime
+    {
+        get
+        {
+            var delta = DateTime.Now - PlayedAt;
+            if (delta.TotalMinutes < 1) return "just now";
+            if (delta.TotalMinutes < 60) return $"{(int)delta.TotalMinutes} min ago";
+            if (delta.TotalHours < 24) return $"{(int)delta.TotalHours} hr ago";
+            return PlayedAt.ToString("d MMM");
+        }
+    }
 }

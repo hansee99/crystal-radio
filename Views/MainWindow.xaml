@@ -29,6 +29,41 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <mvvm:UrlIsPlayingMultiConverter x:Key="UrlIsPlayingConverter"/>
 
+        <!-- Save (download→check) + About (sparkle) row actions for anything that carries a
+             SongHistoryEntry — History rows and "Recently on this station" (Shared Framework
+             Spec pin 3: "the download→check pair ... now labeled", reused everywhere it appears).
+             AncestorType=Window (not ListBox/ItemsControl) so the same template works regardless
+             of which control hosts the row. -->
+        <DataTemplate x:Key="SaveAndAboutActions">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Margin="0,0,6,0"
+                        Command="{Binding DataContext.SaveSongCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"
+                        Visibility="{Binding HasSegment, Converter={StaticResource BoolToVis}}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource GhostSquareButton}">
+                            <Setter Property="Content" Value="{StaticResource SaveGeometry}"/>
+                            <Setter Property="ToolTip" Value="Save to library"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsSaved}" Value="True">
+                                    <Setter Property="Content" Value="{StaticResource CheckGeometry}"/>
+                                    <Setter Property="ToolTip" Value="Saved to library"/>
+                                    <Setter Property="IsHitTestVisible" Value="False"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Style="{StaticResource GhostSquareButton}"
+                        Content="{StaticResource SparkleGeometry}"
+                        ToolTip="About this song"
+                        Command="{Binding DataContext.OpenAboutForEntryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"
+                        Visibility="{Binding DataContext.IsAboutAvailable, RelativeSource={RelativeSource AncestorType=Window},
+                                     Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </DataTemplate>
+
         <!-- Monochrome glyphs for the taskbar thumbnail buttons (these need an
              ImageSource, not a font glyph). -->
         <DrawingImage x:Key="PlayIcon">
@@ -534,37 +569,9 @@
                                                            Foreground="{StaticResource TextMuted}"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <!-- Save to library (only once the song's audio was fully captured) -->
-                                                <Button Margin="0,0,6,0"
-                                                        Command="{Binding DataContext.SaveSongCommand,
-                                                                  RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                        CommandParameter="{Binding}"
-                                                        Visibility="{Binding HasSegment, Converter={StaticResource BoolToVis}}">
-                                                    <Button.Style>
-                                                        <Style TargetType="Button" BasedOn="{StaticResource GhostSquareButton}">
-                                                            <Setter Property="Content" Value="{StaticResource SaveGeometry}"/>
-                                                            <Setter Property="ToolTip" Value="Save to library"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsSaved}" Value="True">
-                                                                    <Setter Property="Content" Value="{StaticResource CheckGeometry}"/>
-                                                                    <Setter Property="ToolTip" Value="{Binding SavedPath}"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Button.Style>
-                                                </Button>
-                                                <!-- About this song (uses the same reading view as now-playing About) -->
-                                                <Button Style="{StaticResource GhostSquareButton}"
-                                                        Content="{StaticResource SparkleGeometry}"
-                                                        ToolTip="About this song"
-                                                        Command="{Binding DataContext.OpenAboutForEntryCommand,
-                                                                  RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                        CommandParameter="{Binding}"
-                                                        Visibility="{Binding DataContext.IsAboutAvailable,
-                                                                     RelativeSource={RelativeSource AncestorType=ListBox},
-                                                                     Converter={StaticResource BoolToVis}}"/>
-                                            </StackPanel>
+                                            <ContentControl Grid.Column="2" Content="{Binding}"
+                                                             ContentTemplate="{StaticResource SaveAndAboutActions}"
+                                                             VerticalAlignment="Center" Focusable="False"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
@@ -978,6 +985,42 @@
                     <Button Style="{StaticResource AboutPillButton}" Content="About this track"
                             Command="{Binding OpenAboutCommand}" Margin="0,28,0,0"
                             Visibility="{Binding CanShowAbout, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- "Recently on this station" (Radio only) — the space Library uses for a
+                         scrubber has no seekable equivalent on a live stream, so it's used for
+                         this instead (Shared Framework Spec §4a, pin 2). -->
+                    <StackPanel Margin="0,28,0,0"
+                                Visibility="{Binding ShowRecentOnStation, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="RECENTLY ON THIS STATION" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="#FF6F8C87" Margin="0,0,0,12"/>
+                        <ItemsControl ItemsSource="{Binding RecentOnStation}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0">
+                                            <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="Medium"
+                                                       Foreground="{StaticResource TextBody}"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                                            <TextBlock FontSize="11" Margin="0,2,0,0"
+                                                       Foreground="{StaticResource TextMuted}"
+                                                       TextTrimming="CharacterEllipsis">
+                                                <Run Text="{Binding Artist, Mode=OneWay}"/>
+                                                <Run Text=" · "/>
+                                                <Run Text="{Binding RelativeTime, Mode=OneWay}"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <ContentControl Grid.Column="1" Content="{Binding}"
+                                                         ContentTemplate="{StaticResource SaveAndAboutActions}"
+                                                         VerticalAlignment="Center" Focusable="False"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- ===== About this track reading view (swaps with Now Playing) =====
