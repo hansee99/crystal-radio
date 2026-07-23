@@ -115,7 +115,7 @@ public sealed class MainViewModel : ObservableObject
 
         // Local (library) engine — its handlers no-op unless Library mode is active.
         _local.StateChanged += (_, state) => OnLocalStateChanged(state);
-        _local.TrackChanged += (_, e) => OnLocalTrackChanged(e.Track, e.Index);
+        _local.TrackChanged += (_, e) => OnLocalTrackChanged(e.Track);
         _local.PositionChanged += (_, e) => OnLocalPosition(e.Position, e.Duration);
         _local.ErrorOccurred += (_, msg) => LibraryStatus = msg;
 
@@ -145,6 +145,8 @@ public sealed class MainViewModel : ObservableObject
 
         // Reconcile the song library against disk and finish any pending enrichment/embeddings.
         _songLibrary.BackfillInBackground();
+        LibrarySongs = new ObservableCollection<LibrarySongItem>(
+            _songLibrary.GetAll().Select(s => new LibrarySongItem(s)));
 
         PlayPauseCommand = new RelayCommand(TogglePlayPause);
         StopCommand = new RelayCommand(() => ActiveEngine.Stop(), () => ActiveEngine.State != PlaybackState.Stopped);
@@ -154,6 +156,7 @@ public sealed class MainViewModel : ObservableObject
         SwitchToLibraryCommand = new RelayCommand(() => SetMode(PlayerMode.Library));
         CurateCommand = new RelayCommand(() => _ = RunCurateAsync(), () => !IsCurating);
         PlayQueueItemCommand = new RelayCommand<CuratedQueueItem>(PlayQueueItem);
+        PlayLibrarySongCommand = new RelayCommand<LibrarySongItem>(PlayLibrarySong);
         AddStationCommand = new RelayCommand(AddStation);
         EditStationCommand = new RelayCommand<Station>(EditStation, s => s is not null);
         DeleteStationCommand = new RelayCommand<Station>(DeleteStation, s => s is not null);
@@ -172,7 +175,7 @@ public sealed class MainViewModel : ObservableObject
             e => { if (e is not null) _ = GenerateAboutAsync(e.Title, e.Artist, e.Station, forceRefresh: false); });
         BackToNowPlayingCommand = new RelayCommand(BackToNowPlaying);
         SaveSongCommand = new RelayCommand<SongHistoryEntry>(SaveSong, e => e?.CanSave == true);
-        MarkForSaveCommand = new RelayCommand(ToggleMarkForSave, () => CanMarkForSave);
+        MarkForSaveCommand = new RelayCommand(ToggleMarkForSave, () => CanMarkForSave && !IsCurrentSongSaved);
     }
 
     // ===== AI-assisted station search =====
@@ -286,17 +289,22 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Whether the current song is marked (drives the toggle button's state).</summary>
     public bool IsCurrentSongMarked => _currentSong?.MarkedForSave == true;
 
+    /// <summary>Whether the current song has already been saved (button becomes a non-interactive
+    /// check, matching the download→check pair used everywhere else Save appears).</summary>
+    public bool IsCurrentSongSaved => _currentSong?.IsSaved == true;
+
     private void SetCurrentSong(SongHistoryEntry? entry)
     {
         _currentSong = entry;
         OnPropertyChanged(nameof(CanMarkForSave));
         OnPropertyChanged(nameof(IsCurrentSongMarked));
+        OnPropertyChanged(nameof(IsCurrentSongSaved));
         MarkForSaveCommand.RaiseCanExecuteChanged();
     }
 
     private void ToggleMarkForSave()
     {
-        if (_currentSong is null) return;
+        if (_currentSong is null || _currentSong.IsSaved) return;
         _currentSong.MarkedForSave = !_currentSong.MarkedForSave;
         OnPropertyChanged(nameof(IsCurrentSongMarked));
 
@@ -353,6 +361,13 @@ public sealed class MainViewModel : ObservableObject
                 Station: string.IsNullOrWhiteSpace(entry.Station) ? null : entry.Station,
                 Codec: ext.TrimStart('.').ToUpperInvariant(),
                 SavedAt: DateTimeOffset.Now));
+            RefreshLibrarySongs(); // so the Songs tab shows it immediately (description fills in later)
+
+            if (ReferenceEquals(entry, _currentSong))
+            {
+                OnPropertyChanged(nameof(IsCurrentSongSaved));
+                MarkForSaveCommand.RaiseCanExecuteChanged();
+            }
         }
         catch (Exception ex)
         {
@@ -768,6 +783,7 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand SwitchToLibraryCommand { get; }
     public RelayCommand CurateCommand { get; }
     public RelayCommand<CuratedQueueItem> PlayQueueItemCommand { get; }
+    public RelayCommand<LibrarySongItem> PlayLibrarySongCommand { get; }
 
     public Station? SelectedStation
     {
@@ -1340,6 +1356,40 @@ public sealed class MainViewModel : ObservableObject
 
     public ObservableCollection<CuratedQueueItem> CuratedQueue { get; } = new();
 
+    /// <summary>Every song in the local library — the "Songs" tab, browsable independent of any
+    /// curated playlist. Populated at startup and refreshed whenever a new song is saved.</summary>
+    public ObservableCollection<LibrarySongItem> LibrarySongs { get; }
+
+    private void RefreshLibrarySongs()
+    {
+        LibrarySongs.Clear();
+        foreach (var s in _songLibrary.GetAll())
+            LibrarySongs.Add(new LibrarySongItem(s));
+    }
+
+    private void PlayLibrarySong(LibrarySongItem? item)
+    {
+        if (item is null) return;
+        var index = LibrarySongs.IndexOf(item);
+        if (index < 0) return;
+        _local.SetQueue(LibrarySongs.Select(ToLocalTrack).ToList(), index);
+    }
+
+    private static LocalTrack ToLocalTrack(LibrarySongItem item)
+    {
+        var format = item.Song.Path.EndsWith(".aac", StringComparison.OrdinalIgnoreCase)
+            ? StreamFormat.Aac
+            : StreamFormat.Mp3;
+        return new LocalTrack(item.Song.Path, item.Title, item.Artist, format);
+    }
+
+    /// <summary>Title of the last successfully curated playlist (title-cased prompt), shown on
+    /// the Curate tab's context card. Empty until the first successful curation.</summary>
+    public string CuratedPlaylistTitle { get; private set; } = string.Empty;
+
+    /// <summary>The Curate tab's context card shows only once a playlist has been curated.</summary>
+    public bool HasCuratedPlaylist => CuratedQueue.Count > 0;
+
     private string _libraryPrompt = string.Empty;
     public string LibraryPrompt
     {
@@ -1389,8 +1439,16 @@ public sealed class MainViewModel : ObservableObject
             if (CuratedQueue.Count == 0)
             {
                 LibraryStatus = "Nothing in your library matched — try a different vibe.";
+                OnPropertyChanged(nameof(HasCuratedPlaylist));
                 return;
             }
+
+            // The context card's title, so "the thing I asked for" reads distinctly from the
+            // resulting track list (Shared Framework Spec §3).
+            CuratedPlaylistTitle = System.Globalization.CultureInfo.InvariantCulture.TextInfo
+                .ToTitleCase(prompt.ToLowerInvariant());
+            OnPropertyChanged(nameof(CuratedPlaylistTitle));
+            OnPropertyChanged(nameof(HasCuratedPlaylist));
 
             LibraryStatus = $"Playing {CuratedQueue.Count} song{(CuratedQueue.Count == 1 ? "" : "s")}.";
             _local.SetQueue(CuratedQueue.Select(ToLocalTrack).ToList(), 0);
@@ -1441,6 +1499,7 @@ public sealed class MainViewModel : ObservableObject
         {
             // Queue finished (or stopped): clear the now-playing header and row highlight.
             foreach (var item in CuratedQueue) item.IsCurrent = false;
+            foreach (var item in LibrarySongs) item.IsCurrent = false;
             NowPlayingTitle = "Not playing";
             NowPlayingArtist = string.Empty;
             HasTrackInfo = false;
@@ -1451,7 +1510,7 @@ public sealed class MainViewModel : ObservableObject
         RaiseTransportCanExecute();
     }
 
-    private void OnLocalTrackChanged(LocalTrack track, int index)
+    private void OnLocalTrackChanged(LocalTrack track)
     {
         if (!IsLibraryMode) return;
 
@@ -1462,10 +1521,19 @@ public sealed class MainViewModel : ObservableObject
         NowPlayingUrl = null;
         HasTrackInfo = !string.IsNullOrWhiteSpace(track.Title);
 
-        for (var i = 0; i < CuratedQueue.Count; i++)
-            CuratedQueue[i].IsCurrent = i == index;
+        // Highlight the playing row wherever it appears (Curate results and/or the full Songs
+        // list) — matched by title+artist rather than the given index, since that index is only
+        // meaningful within whichever list the engine's queue was actually built from.
+        foreach (var item in CuratedQueue)
+            item.IsCurrent = Matches(item.Title, item.Artist, track);
+        foreach (var item in LibrarySongs)
+            item.IsCurrent = Matches(item.Title, item.Artist, track);
 
         _nowPlayingChanged?.Invoke(track.Title, track.Artist);
+
+        static bool Matches(string title, string artist, LocalTrack track) =>
+            string.Equals(title, track.Title, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(artist, track.Artist, StringComparison.OrdinalIgnoreCase);
     }
 
     private void OnLocalPosition(double position, double duration)

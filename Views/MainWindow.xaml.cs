@@ -184,6 +184,13 @@ public partial class MainWindow : Window
             _viewModel.PlayQueueItemCommand.Execute(item);
     }
 
+    private void LibrarySong_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        // Double-click a Songs-tab row to play the whole library starting from that track.
+        if (sender is System.Windows.Controls.ListBox { SelectedItem: ViewModels.LibrarySongItem item })
+            _viewModel.PlayLibrarySongCommand.Execute(item);
+    }
+
     private void CopyNowPlaying_Click(object sender, RoutedEventArgs e)
     {
         var text = _viewModel.NowPlayingClipboardText;

@@ -591,6 +591,21 @@
 
                     <!-- ================= LIBRARY panel (AI-curated local player) ================= -->
                     <DockPanel Visibility="{Binding ShowLibraryPanel, Converter={StaticResource BoolToVis}}">
+                        <!-- Sub-nav: mirrors Radio's Stations/Search/History with the Library
+                             equivalents (Shared Framework Spec pin 1) — underlined, not a
+                             segmented pill, so it reads as a different nav level than the
+                             Radio/Library mode toggle above it. -->
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,14">
+                            <RadioButton x:Name="CurateTab" GroupName="libraryTab" IsChecked="True"
+                                         Style="{StaticResource UnderlineTab}" Content="Curate"/>
+                            <RadioButton x:Name="SongsTab" GroupName="libraryTab"
+                                         Style="{StaticResource UnderlineTab}" Content="Songs"/>
+                        </StackPanel>
+
+                        <Grid>
+                        <!-- ===== Curate tab ===== -->
+                        <DockPanel Visibility="{Binding IsChecked, ElementName=CurateTab,
+                                   Converter={StaticResource BoolToVis}}">
                         <!-- Prompt (Enter curates a playlist from your saved songs) -->
                         <Border DockPanel.Dock="Top" Height="40" CornerRadius="10" Margin="0,0,0,10"
                                 Background="{StaticResource FillSubtle}"
@@ -655,7 +670,32 @@
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
 
-                        <!-- Curated queue (double-click plays from that track) -->
+                        <!-- Context card: "the thing I asked for" (query), distinct from "the
+                             songs it produced" (queue) below (Shared Framework Spec §3). -->
+                        <Border DockPanel.Dock="Top" Margin="0,0,0,12" CornerRadius="10" Padding="13,12"
+                                Background="{StaticResource TealTint16}" BorderBrush="#4756C7BA" BorderThickness="1"
+                                Visibility="{Binding HasCuratedPlaylist, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform"
+                                          Width="12" Height="12" Fill="{StaticResource TealBright}"
+                                          VerticalAlignment="Center"/>
+                                    <TextBlock Text="CURATED PLAYLIST" Margin="7,0,0,0" FontSize="10.5"
+                                               FontWeight="SemiBold" Foreground="{StaticResource TealText}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding CuratedPlaylistTitle}" FontSize="15" FontWeight="Medium"
+                                           Foreground="{StaticResource TextPrimary}" Margin="0,6,0,3"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock FontSize="11.5" Foreground="{StaticResource TextMuted}">
+                                    <Run Text="{Binding CuratedQueue.Count, Mode=OneWay}"/>
+                                    <Run Text=" songs · from your recordings"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Curated queue (double-click plays from that track) + empty state -->
+                        <Grid>
                         <ListBox ItemsSource="{Binding CuratedQueue}"
                                  MouseDoubleClick="Queue_DoubleClick"
                                  Background="Transparent" BorderThickness="0"
@@ -714,6 +754,104 @@
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
+                        <!-- Empty state -->
+                        <TextBlock Text="Describe a mood or vibe above to curate a playlist from your recordings."
+                                   FontSize="12.5" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CuratedQueue.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        </Grid>
+                        </DockPanel>
+                        <!-- ===== end Curate tab ===== -->
+
+                        <!-- ===== Songs tab: every song saved to the library ===== -->
+                        <Grid Visibility="{Binding IsChecked, ElementName=SongsTab,
+                              Converter={StaticResource BoolToVis}}">
+                            <ListBox ItemsSource="{Binding LibrarySongs}"
+                                     MouseDoubleClick="LibrarySong_DoubleClick"
+                                     Background="Transparent" BorderThickness="0"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ItemContainerStyle="{StaticResource StationRowItem}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="34"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                    Background="{StaticResource FillSubtle}"
+                                                    BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
+                                                <Grid>
+                                                    <Path Data="{StaticResource NoteGeometry}" Stretch="Uniform"
+                                                          Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
+                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                                        <Path.Style>
+                                                            <Style TargetType="Path">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Path.Style>
+                                                    </Path>
+                                                    <ContentControl Template="{StaticResource EqualizerTemplate}"
+                                                                    Width="20" Height="13"
+                                                                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <ContentControl.Style>
+                                                            <Style TargetType="ContentControl">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ContentControl.Style>
+                                                    </ContentControl>
+                                                </Grid>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
+                                                           Foreground="{StaticResource TextBody}"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                                                <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
+                                                           Foreground="{StaticResource TextMuted}"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <!-- Empty state -->
+                            <TextBlock Text="Songs you save from the radio will show up here."
+                                       FontSize="12.5" Foreground="{StaticResource TextMuted}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding LibrarySongs.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                        <!-- ===== end Songs tab ===== -->
+                        </Grid>
                     </DockPanel>
                     <!-- ================= end LIBRARY panel ================= -->
                     </Grid>

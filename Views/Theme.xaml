@@ -135,6 +135,41 @@
         </Setter>
     </Style>
 
+    <!-- ===== Sub-nav underline tabs (Shared Framework Spec, pin 1) =====
+         Visually distinct from the segmented PillTab used for the Radio/Library mode toggle:
+         a left-aligned label with a thin underline that lights up when selected, rather than a
+         filled pill, so the two navigation levels don't look like the same control. -->
+    <Style x:Key="UnderlineTab" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Margin" Value="0,0,22,0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <StackPanel Background="Transparent">
+                        <ContentPresenter Margin="0,0,0,7" HorizontalAlignment="Left"/>
+                        <Border x:Name="underline" Height="2" CornerRadius="1" Background="Transparent"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                            <Setter TargetName="underline" Property="Background" Value="{StaticResource Teal}"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsChecked" Value="False"/>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Foreground" Value="{StaticResource TextBody}"/>
+                        </MultiTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ===== Left panel (R4) ===== -->
 
     <!-- Segmented pill tab (two share a rounded container). -->
