@@ -346,8 +346,10 @@ public sealed class RadioEngine : IPlaybackEngine
         var start = meta.IndexOf(key, StringComparison.Ordinal);
         if (start < 0) return null;
         start += key.Length;
-        var end = meta.IndexOf('\'', start);
-        return end < 0 ? meta[start..] : meta[start..end];
+        // ICY terminates the field with an apostrophe-semicolon ('; ), so search for that rather
+        // than a bare apostrophe — otherwise a title like "Don't let me down" truncates at "Don".
+        var end = meta.IndexOf("';", start, StringComparison.Ordinal);
+        return end < 0 ? meta[start..].TrimEnd('\'') : meta[start..end];
     }
 
     private void FreeStream()
