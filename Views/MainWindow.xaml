@@ -8,8 +8,8 @@
         xmlns:mvvm="clr-namespace:RadioPlayer.Mvvm"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
-        Title="Crystal Radio" Height="600" Width="920"
-        MinWidth="760" MinHeight="520"
+        Title="Crystal Radio" Height="760" Width="1000"
+        MinWidth="760" MinHeight="560"
         Icon="/Assets/app.ico"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="True"
@@ -362,9 +362,10 @@
                                                 </TextBlock>
                                             </StackPanel>
                                             <!-- Per-row hover-menu: Edit + Delete (Add lives at the bottom).
-                                                 Hidden by default; appears on row hover or selection, so the
-                                                 list doesn't carry two icons on every row all the time
-                                                 (Shared Framework Spec §5). -->
+                                                 Hidden unless the mouse is over the row, so the list doesn't
+                                                 carry two icons on every row all the time (Shared Framework
+                                                 Spec §5). Hover only — NOT selection, or the buttons would
+                                                 stay stuck on the selected row after the mouse leaves. -->
                                             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                                 <StackPanel.Style>
                                                     <Style TargetType="StackPanel">
@@ -373,13 +374,6 @@
                                                             <DataTrigger Value="True">
                                                                 <DataTrigger.Binding>
                                                                     <Binding Path="IsMouseOver"
-                                                                             RelativeSource="{RelativeSource AncestorType=ListBoxItem}"/>
-                                                                </DataTrigger.Binding>
-                                                                <Setter Property="Visibility" Value="Visible"/>
-                                                            </DataTrigger>
-                                                            <DataTrigger Value="True">
-                                                                <DataTrigger.Binding>
-                                                                    <Binding Path="IsSelected"
                                                                              RelativeSource="{RelativeSource AncestorType=ListBoxItem}"/>
                                                                 </DataTrigger.Binding>
                                                                 <Setter Property="Visibility" Value="Visible"/>

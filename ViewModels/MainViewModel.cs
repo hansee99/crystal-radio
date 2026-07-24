@@ -220,7 +220,7 @@ public sealed class MainViewModel : ObservableObject
     /// Fills the space Radio has no scrubber to put in (Shared Framework Spec §4a, pin 2).</summary>
     public ObservableCollection<SongHistoryEntry> RecentOnStation { get; } = new();
 
-    private const int RecentOnStationCap = 6;
+    private const int RecentOnStationCap = 4;
 
     /// <summary>Radio-only: the list shows once there's at least one prior play for this station.</summary>
     public bool ShowRecentOnStation => IsRadioMode && RecentOnStation.Count > 0;
