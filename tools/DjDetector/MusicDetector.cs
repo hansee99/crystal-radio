@@ -37,25 +37,32 @@ internal sealed class MusicDetector
     private const double WindowSeconds = 1.0;     // 1 s decision window
     private const double WindowHopSeconds = 0.5;  // 50% overlap
 
-    // Confidence rule (music = 1). A speech score is a weighted sum of z-ish normalized features;
-    // music confidence = 1 - sigmoid(score). 4 Hz modulation dominates, as the spec calls out.
-    // These are STARTING weights — tune against the CSV the harness writes.
-    private const double W_Mod4Hz = 3.2;
-    private const double W_ZcrVar = 1.1;
-    private const double W_LowEnergy = 1.4;
-    private const double W_FluxVar = 0.8;
-    private const double W_CentroidVar = 0.6;
-    private const double W_Flatness = 0.7;
-    private const double Bias = 1.5;              // higher → more readily called music
+    // Confidence rule (music = 1). A speech score is a weighted sum of normalized features;
+    // music confidence = 1 - sigmoid(score - Bias). Higher on speechy features → lower music
+    // confidence.
+    //
+    // Scales are centered on a real harvested-music corpus (11.7k windows) so a typical music
+    // window normalizes each feature to ≈1; weights then lean on the cleanest discriminator,
+    // low-energy-frame ratio (speech has inter-word pauses, music is sustained). These are still
+    // provisional — verified to classify MUSIC correctly, but the speech/talk side of the
+    // boundary needs labelled non-music clips (or a logistic fit on the CSV) to confirm.
+    private const double W_Mod4Hz = 1.2;
+    private const double W_ZcrVar = 0.6;
+    private const double W_LowEnergy = 2.2;
+    private const double W_FluxVar = 0.3;
+    private const double W_CentroidVar = 0.4;
+    private const double W_Flatness = 0.4;
+    private const double Bias = 4.0;              // higher → more readily called music
     private const double MusicThreshold = 0.5;    // confidence ≥ this ⇒ music
 
-    // Rough feature scales for normalization (so weights are comparable). Tune with the CSV.
-    private const double S_Mod4Hz = 0.35;
-    private const double S_ZcrVar = 4.0e5;
-    private const double S_LowEnergy = 0.35;
-    private const double S_FluxVar = 1.0;
-    private const double S_CentroidVar = 2.0e6;
-    private const double S_Flatness = 0.35;
+    // Normalization scales — the observed music-corpus means (lowEnergy widened so ordinary
+    // quiet music passages don't trip the speech side; only genuine pause-heavy windows do).
+    private const double S_Mod4Hz = 0.15;
+    private const double S_ZcrVar = 1.5e6;
+    private const double S_LowEnergy = 0.15;
+    private const double S_FluxVar = 0.010;
+    private const double S_CentroidVar = 6.0e5;
+    private const double S_Flatness = 0.015;
 
     public FileResult Analyze(float[] mono, int sampleRate)
     {
