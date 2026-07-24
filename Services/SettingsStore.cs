@@ -17,6 +17,27 @@ public sealed class AppSettings
     /// / <see cref="SettingsStore.SetApiKey"/>. Null when no key has been set in-app.
     /// </summary>
     public string? ApiKeyProtected { get; set; }
+
+    /// <summary>Folder saved songs are written to. Null → the default (Music\Crystal Radio).</summary>
+    public string? LibraryFolder { get; set; }
+
+    /// <summary>Rolling-cache size cap in megabytes (oldest segments are evicted beyond it).</summary>
+    public int CacheCapMb { get; set; } = 200;
+
+    /// <summary>
+    /// Seconds by which a station's ICY title change leads its audio (studio playout announces
+    /// the title while the audio is still in the encoder pipeline). Segment cuts are delayed by
+    /// this much so saved songs start/end on the real boundary. Station encoders differ; tune
+    /// here if saved songs consistently start late / end early (raise) or contain the previous /
+    /// next song (lower).
+    /// </summary>
+    public double CaptureBoundaryOffsetSeconds { get; set; } = 6.0;
+
+    /// <summary>Resolved library folder (the stored value or the default).</summary>
+    public string ResolveLibraryFolder() =>
+        string.IsNullOrWhiteSpace(LibraryFolder)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "Crystal Radio")
+            : LibraryFolder;
 }
 
 /// <summary>
@@ -43,6 +64,8 @@ public sealed class SettingsStore
                 if (settings is not null)
                 {
                     settings.Volume = Math.Clamp(settings.Volume, 0.0, 1.0);
+                    settings.CacheCapMb = Math.Clamp(settings.CacheCapMb, 20, 10_000);
+                    settings.CaptureBoundaryOffsetSeconds = Math.Clamp(settings.CaptureBoundaryOffsetSeconds, 0.0, 30.0);
                     return settings;
                 }
             }

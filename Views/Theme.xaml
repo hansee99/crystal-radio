@@ -94,6 +94,13 @@
     </GeometryGroup>
     <PathGeometry x:Key="VolumeGeometry" Figures="M4 9.5 L8 9.5 L13 5.5 L13 18.5 L8 14.5 L4 14.5 Z"/>
     <PathGeometry x:Key="HeartGeometry" Figures="M12 20 C5 15.6 5 10.4 5 10.4 A3.7 3.7 0 0 1 12 7.2 A3.7 3.7 0 0 1 19 10.4 C19 15.6 12 20 12 20 Z"/>
+    <!-- Eighth note (history rows): head circle + stem + slanted beam -->
+    <PathGeometry x:Key="NoteGeometry" Figures="M7 16.8 A2.6 2.6 0 1 0 12.2 16.8 A2.6 2.6 0 1 0 7 16.8 M12.2 16.8 L12.2 5.4 L17.6 7"/>
+    <!-- Save (history rows, Now Playing mark-for-save): arrow down into a tray -->
+    <PathGeometry x:Key="SaveGeometry" Figures="M12 4.5 L12 14 M8 10.5 L12 14.5 L16 10.5 M5.5 18 L18.5 18"/>
+    <!-- Edit (pencil) + Delete (trash can) for the per-row station actions -->
+    <PathGeometry x:Key="EditGeometry" Figures="M4 20 L4 16 L15 5 L19 9 L8 20 Z M12.5 7.5 L16.5 11.5"/>
+    <PathGeometry x:Key="DeleteGeometry" Figures="M5.5 7 H18.5 M9.5 7 V5 H14.5 V7 M7 7 L8 19.5 H16 L17 7 M10.5 10 V16 M13.5 10 V16"/>
 
     <!-- ===== Title-bar icon buttons (R2). Content = a stroke Geometry. ===== -->
     <Style x:Key="TitleIconButton" TargetType="Button">
@@ -120,6 +127,41 @@
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="b" Property="Background" Value="#12FFFFFF"/>
                         </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== Sub-nav underline tabs (Shared Framework Spec, pin 1) =====
+         Visually distinct from the segmented PillTab used for the Radio/Library mode toggle:
+         a left-aligned label with a thin underline that lights up when selected, rather than a
+         filled pill, so the two navigation levels don't look like the same control. -->
+    <Style x:Key="UnderlineTab" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Margin" Value="0,0,22,0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <StackPanel Background="Transparent">
+                        <ContentPresenter Margin="0,0,0,7" HorizontalAlignment="Left"/>
+                        <Border x:Name="underline" Height="2" CornerRadius="1" Background="Transparent"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                            <Setter TargetName="underline" Property="Background" Value="{StaticResource Teal}"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsChecked" Value="False"/>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Foreground" Value="{StaticResource TextBody}"/>
+                        </MultiTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
@@ -440,48 +482,148 @@
         </Setter>
     </Style>
 
-    <!-- ===== Animated equalizer (R6): 4 bars with a staggered ScaleY loop ===== -->
+    <!-- ===== Animated equalizer (R6): 4 bars with a staggered ScaleY loop =====
+         Each bar animates ITSELF (self-targeted storyboard, no Storyboard.TargetName), so there
+         is no name-scope lookup to resolve. Name-based targeting inside a ControlTemplate can
+         fail with "'b1' cannot be found in the name scope" when the template is realized in some
+         hosts (e.g. a freshly-populated, style-driven ListBox row) — which crashes the process. -->
+    <Style x:Key="EqualizerBar" TargetType="Rectangle">
+        <Setter Property="Width" Value="2.6"/>
+        <Setter Property="Height" Value="13"/>
+        <Setter Property="Margin" Value="0,0,2.5,0"/>
+        <Setter Property="Fill" Value="{StaticResource Teal}"/>
+        <Setter Property="RadiusX" Value="2"/>
+        <Setter Property="RadiusY" Value="2"/>
+        <Setter Property="RenderTransformOrigin" Value="0.5,1"/>
+        <Setter Property="RenderTransform">
+            <Setter.Value><ScaleTransform/></Setter.Value>
+        </Setter>
+    </Style>
     <ControlTemplate x:Key="EqualizerTemplate">
         <StackPanel Orientation="Horizontal" Height="13" VerticalAlignment="Bottom">
-            <StackPanel.Resources>
-                <Style TargetType="Rectangle">
-                    <Setter Property="Width" Value="2.6"/>
-                    <Setter Property="Height" Value="13"/>
-                    <Setter Property="Margin" Value="0,0,2.5,0"/>
-                    <Setter Property="Fill" Value="{StaticResource Teal}"/>
-                    <Setter Property="RadiusX" Value="2"/>
-                    <Setter Property="RadiusY" Value="2"/>
-                    <Setter Property="RenderTransformOrigin" Value="0.5,1"/>
-                    <Setter Property="RenderTransform">
-                        <Setter.Value><ScaleTransform/></Setter.Value>
-                    </Setter>
-                </Style>
-            </StackPanel.Resources>
-            <Rectangle x:Name="b1"/>
-            <Rectangle x:Name="b2"/>
-            <Rectangle x:Name="b3"/>
-            <Rectangle x:Name="b4"/>
+            <Rectangle Style="{StaticResource EqualizerBar}">
+                <Rectangle.Triggers>
+                    <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                        <BeginStoryboard>
+                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                    From="0.25" To="1" Duration="0:0:0.45"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Rectangle.Triggers>
+            </Rectangle>
+            <Rectangle Style="{StaticResource EqualizerBar}">
+                <Rectangle.Triggers>
+                    <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                        <BeginStoryboard>
+                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                <DoubleAnimation BeginTime="0:0:0.14" Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                    From="0.25" To="1" Duration="0:0:0.45"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Rectangle.Triggers>
+            </Rectangle>
+            <Rectangle Style="{StaticResource EqualizerBar}">
+                <Rectangle.Triggers>
+                    <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                        <BeginStoryboard>
+                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                <DoubleAnimation BeginTime="0:0:0.28" Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                    From="0.25" To="1" Duration="0:0:0.45"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Rectangle.Triggers>
+            </Rectangle>
+            <Rectangle Style="{StaticResource EqualizerBar}">
+                <Rectangle.Triggers>
+                    <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                        <BeginStoryboard>
+                            <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                <DoubleAnimation BeginTime="0:0:0.40" Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                    From="0.25" To="1" Duration="0:0:0.45"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Rectangle.Triggers>
+            </Rectangle>
         </StackPanel>
-        <ControlTemplate.Triggers>
-            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
-                <BeginStoryboard>
-                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
-                        <DoubleAnimation Storyboard.TargetName="b1"
-                            Storyboard.TargetProperty="RenderTransform.ScaleY"
-                            From="0.25" To="1" Duration="0:0:0.45"/>
-                        <DoubleAnimation Storyboard.TargetName="b2" BeginTime="0:0:0.14"
-                            Storyboard.TargetProperty="RenderTransform.ScaleY"
-                            From="0.25" To="1" Duration="0:0:0.45"/>
-                        <DoubleAnimation Storyboard.TargetName="b3" BeginTime="0:0:0.28"
-                            Storyboard.TargetProperty="RenderTransform.ScaleY"
-                            From="0.25" To="1" Duration="0:0:0.45"/>
-                        <DoubleAnimation Storyboard.TargetName="b4" BeginTime="0:0:0.40"
-                            Storyboard.TargetProperty="RenderTransform.ScaleY"
-                            From="0.25" To="1" Duration="0:0:0.45"/>
-                    </Storyboard>
-                </BeginStoryboard>
-            </EventTrigger>
-        </ControlTemplate.Triggers>
     </ControlTemplate>
+
+    <!-- ===== Themed scrollbars (thin, rounded thumb, no arrow buttons) =====
+         Implicit (unkeyed) so every ScrollViewer — the lists, the About reader, the dialogs —
+         picks it up and matches the app instead of showing native Windows chrome. -->
+    <Style x:Key="ScrollPageButton" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ScrollThumb" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="t" CornerRadius="3" Margin="2" Background="#2EFFFFFF"/>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="t" Property="Background" Value="#55FFFFFF"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="t" Property="Background" Value="{StaticResource Teal}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <!-- 8px track with a 2px thumb margin on each side gives a ~4px visual thumb (Shared
+             Framework Spec pin 8), while the track itself stays a comfortable drag/click target. -->
+        <Setter Property="Width" Value="8"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid Background="Transparent">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                            <Track.Thumb>
+                                <Thumb x:Name="thumb" Style="{StaticResource ScrollThumb}" MinHeight="28"/>
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource ScrollPageButton}"
+                                              Command="ScrollBar.PageDownCommand"/>
+                            </Track.IncreaseRepeatButton>
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource ScrollPageButton}"
+                                              Command="ScrollBar.PageUpCommand"/>
+                            </Track.DecreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Orientation" Value="Horizontal">
+                            <Setter Property="Width" Value="Auto"/>
+                            <Setter Property="Height" Value="10"/>
+                            <Setter TargetName="thumb" Property="MinHeight" Value="0"/>
+                            <Setter TargetName="thumb" Property="MinWidth" Value="28"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 
 </ResourceDictionary>

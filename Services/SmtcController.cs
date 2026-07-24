@@ -15,10 +15,14 @@ namespace RadioPlayer.Services;
 public sealed class SmtcController : IDisposable
 {
     private readonly SystemMediaTransportControls _smtc;
-    private readonly RadioEngine _engine;
     private readonly Dispatcher _dispatcher;
 
-    public SmtcController(IntPtr hwnd, RadioEngine engine)
+    // The engine SMTC currently drives. Swapped on mode change so the media keys / flyout
+    // control whatever is actually playing (radio or the local library player).
+    private IPlaybackEngine _engine;
+    private readonly EventHandler<PlaybackState> _stateHandler;
+
+    public SmtcController(IntPtr hwnd, IPlaybackEngine engine)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _dispatcher = Dispatcher.CurrentDispatcher;
@@ -32,9 +36,31 @@ public sealed class SmtcController : IDisposable
         _smtc.PlaybackStatus = MediaPlaybackStatus.Closed;
         _smtc.ButtonPressed += OnButtonPressed;
 
-        // Engine events are already marshalled to the UI thread by the engine.
-        _engine.StateChanged += (_, state) => UpdateStatus(state);
-        _engine.MetadataChanged += (_, meta) => UpdateDisplay(meta);
+        // Engine StateChanged is already marshalled to the UI thread by the engine.
+        _stateHandler = (_, state) => UpdateStatus(state);
+        _engine.StateChanged += _stateHandler;
+    }
+
+    /// <summary>Point SMTC at a different engine (on mode switch). Now-playing display is pushed
+    /// separately via <see cref="SetNowPlaying"/>.</summary>
+    public void SetActiveEngine(IPlaybackEngine engine)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
+        if (ReferenceEquals(engine, _engine)) return;
+        _engine.StateChanged -= _stateHandler;
+        _engine = engine;
+        _engine.StateChanged += _stateHandler;
+        UpdateStatus(_engine.State);
+    }
+
+    /// <summary>Push the current now-playing title/artist to the OS controls (both modes).</summary>
+    public void SetNowPlaying(string title, string artist)
+    {
+        var updater = _smtc.DisplayUpdater;
+        updater.Type = MediaPlaybackType.Music;
+        updater.MusicProperties.Title = title ?? string.Empty;
+        updater.MusicProperties.Artist = artist ?? string.Empty;
+        updater.Update();
     }
 
     /// <summary>
@@ -82,18 +108,10 @@ public sealed class SmtcController : IDisposable
         };
     }
 
-    private void UpdateDisplay(TrackMetadata meta)
-    {
-        var updater = _smtc.DisplayUpdater;
-        updater.Type = MediaPlaybackType.Music;
-        updater.MusicProperties.Title = meta.Title ?? string.Empty;
-        updater.MusicProperties.Artist = meta.Artist ?? meta.StationName ?? string.Empty;
-        updater.Update();
-    }
-
     public void Dispose()
     {
         _smtc.ButtonPressed -= OnButtonPressed;
+        _engine.StateChanged -= _stateHandler;
         _smtc.IsEnabled = false;
     }
 }

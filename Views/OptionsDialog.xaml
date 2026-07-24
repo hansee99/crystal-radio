@@ -41,7 +41,6 @@
         </Style>
     </Window.Resources>
 
-    <!-- One section for now. Future settings: add another labelled field below this block. -->
     <StackPanel Margin="20,16,20,20">
         <TextBlock Style="{StaticResource SectionHeader}" Text="AI-assisted search"/>
         <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,0"
@@ -54,6 +53,16 @@
 
         <TextBlock Style="{StaticResource Hint}"
                    Text="Your key is stored securely on this PC. Get one at console.anthropic.com."/>
+
+        <TextBlock Style="{StaticResource SectionHeader}" Text="Saved songs" Margin="0,20,0,2"/>
+        <TextBlock Style="{StaticResource FieldLabel}" Text="Library folder"/>
+        <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Browse…" Click="BrowseLibrary_Click"/>
+            <TextBox x:Name="LibraryFolderBox"/>
+        </DockPanel>
+        <TextBlock Style="{StaticResource Hint}"
+                   Text="Songs you save from the history land here, named &quot;Artist - Title&quot;. For personal use only — respect the stations' terms."/>
+
         <TextBlock Style="{StaticResource Hint}" Foreground="#FFB9A36A"
                    Text="Restart the app to apply changes."/>
 

@@ -8,8 +8,8 @@
         xmlns:mvvm="clr-namespace:RadioPlayer.Mvvm"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
-        Title="Crystal Radio" Height="600" Width="920"
-        MinWidth="760" MinHeight="520"
+        Title="Crystal Radio" Height="760" Width="1000"
+        MinWidth="760" MinHeight="560"
         Icon="/Assets/app.ico"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="True"
@@ -28,6 +28,41 @@
 
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <mvvm:UrlIsPlayingMultiConverter x:Key="UrlIsPlayingConverter"/>
+
+        <!-- Save (download→check) + About (sparkle) row actions for anything that carries a
+             SongHistoryEntry — History rows and "Recently on this station" (Shared Framework
+             Spec pin 3: "the download→check pair ... now labeled", reused everywhere it appears).
+             AncestorType=Window (not ListBox/ItemsControl) so the same template works regardless
+             of which control hosts the row. -->
+        <DataTemplate x:Key="SaveAndAboutActions">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Margin="0,0,6,0"
+                        Command="{Binding DataContext.SaveSongCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"
+                        Visibility="{Binding HasSegment, Converter={StaticResource BoolToVis}}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource GhostSquareButton}">
+                            <Setter Property="Content" Value="{StaticResource SaveGeometry}"/>
+                            <Setter Property="ToolTip" Value="Save to library"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsSaved}" Value="True">
+                                    <Setter Property="Content" Value="{StaticResource CheckGeometry}"/>
+                                    <Setter Property="ToolTip" Value="Saved to library"/>
+                                    <Setter Property="IsHitTestVisible" Value="False"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Style="{StaticResource GhostSquareButton}"
+                        Content="{StaticResource SparkleGeometry}"
+                        ToolTip="About this song"
+                        Command="{Binding DataContext.OpenAboutForEntryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        CommandParameter="{Binding}"
+                        Visibility="{Binding DataContext.IsAboutAvailable, RelativeSource={RelativeSource AncestorType=Window},
+                                     Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </DataTemplate>
 
         <!-- Monochrome glyphs for the taskbar thumbnail buttons (these need an
              ImageSource, not a font glyph). -->
@@ -213,8 +248,8 @@
             <Border Grid.Column="0" Background="{StaticResource PanelBg}"
                     BorderBrush="{StaticResource Hairline}" BorderThickness="0,0,1,0">
                 <DockPanel Margin="14,16,14,14">
-                    <!-- Segmented pill tabs -->
-                    <Border DockPanel.Dock="Top" Margin="0,0,0,12" CornerRadius="11" Padding="3"
+                    <!-- Mode switch: internet Radio ⟷ local Library player (either/or) -->
+                    <Border DockPanel.Dock="Top" Margin="0,0,0,10" CornerRadius="11" Padding="3"
                             Background="{StaticResource FillSubtle}"
                             BorderBrush="{StaticResource Hairline}" BorderThickness="1">
                         <Grid>
@@ -222,12 +257,30 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <RadioButton x:Name="StationsTab" Grid.Column="0" GroupName="leftTab"
-                                         IsChecked="True" Style="{StaticResource PillTab}" Content="Stations"/>
-                            <RadioButton x:Name="SearchTab" Grid.Column="1" GroupName="leftTab"
-                                         Style="{StaticResource PillTab}" Content="Search"/>
+                            <RadioButton Grid.Column="0" GroupName="playerMode" Style="{StaticResource PillTab}"
+                                         Content="Radio" IsChecked="{Binding IsRadioMode, Mode=OneWay}"
+                                         Command="{Binding SwitchToRadioCommand}"/>
+                            <RadioButton Grid.Column="1" GroupName="playerMode" Style="{StaticResource PillTab}"
+                                         Content="Library" IsChecked="{Binding IsLibraryMode, Mode=OneWay}"
+                                         Command="{Binding SwitchToLibraryCommand}"/>
                         </Grid>
                     </Border>
+
+                    <!-- Mode content: the radio panel and the library panel share this area -->
+                    <Grid>
+                    <!-- ================= RADIO panel (Stations / Search / History) ================= -->
+                    <DockPanel Visibility="{Binding ShowRadioPanel, Converter={StaticResource BoolToVis}}">
+                    <!-- Underlined sub-nav (matches the Library side); the segmented pill is
+                         reserved for the Radio/Library mode toggle above, so the two nav levels
+                         stay visually distinct. -->
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,14">
+                        <RadioButton x:Name="StationsTab" GroupName="leftTab" IsChecked="True"
+                                     Style="{StaticResource UnderlineTab}" Content="Stations"/>
+                        <RadioButton x:Name="SearchTab" GroupName="leftTab"
+                                     Style="{StaticResource UnderlineTab}" Content="Search"/>
+                        <RadioButton x:Name="HistoryTab" GroupName="leftTab"
+                                     Style="{StaticResource UnderlineTab}" Content="History"/>
+                    </StackPanel>
 
                     <Grid>
                         <!-- ===== Stations tab ===== -->
@@ -236,10 +289,6 @@
                             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button Style="{StaticResource ListToolButton}" Content="&#xE710;"
                                         Command="{Binding AddStationCommand}" ToolTip="Add station"/>
-                                <Button Style="{StaticResource ListToolButton}" Content="&#xE70F;"
-                                        Command="{Binding EditStationCommand}" ToolTip="Edit station"/>
-                                <Button Style="{StaticResource ListToolButton}" Content="&#xE74D;"
-                                        Command="{Binding DeleteStationCommand}" ToolTip="Delete station"/>
                             </StackPanel>
                             <ListBox ItemsSource="{Binding Stations}"
                                      SelectedItem="{Binding SelectedStation, Mode=TwoWay}"
@@ -253,8 +302,10 @@
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="34"/>
                                                 <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                    VerticalAlignment="Top"
                                                     Background="{StaticResource FillSubtle}"
                                                     BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
                                                 <Grid>
@@ -284,12 +335,13 @@
                                                     </ContentControl>
                                                 </Grid>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
                                                 <TextBlock Text="{Binding Name}" FontSize="13.5" FontWeight="Medium"
                                                            Foreground="{StaticResource TextBody}"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
                                                 <TextBlock Text="{Binding Description}" FontSize="11.5" Margin="0,2,0,0"
                                                            Foreground="{StaticResource TextMuted}"
+                                                           TextWrapping="Wrap" MaxHeight="30"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Description}">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
@@ -301,6 +353,37 @@
                                                         </Style>
                                                     </TextBlock.Style>
                                                 </TextBlock>
+                                            </StackPanel>
+                                            <!-- Per-row hover-menu: Edit + Delete (Add lives at the bottom).
+                                                 Hidden unless the mouse is over the row, so the list doesn't
+                                                 carry two icons on every row all the time (Shared Framework
+                                                 Spec §5). Hover only — NOT selection, or the buttons would
+                                                 stay stuck on the selected row after the mouse leaves. -->
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <StackPanel.Style>
+                                                    <Style TargetType="StackPanel">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Value="True">
+                                                                <DataTrigger.Binding>
+                                                                    <Binding Path="IsMouseOver"
+                                                                             RelativeSource="{RelativeSource AncestorType=ListBoxItem}"/>
+                                                                </DataTrigger.Binding>
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </StackPanel.Style>
+                                                <Button Style="{StaticResource GhostSquareButton}" Margin="0,0,6,0"
+                                                        Content="{StaticResource EditGeometry}" ToolTip="Edit station"
+                                                        Command="{Binding DataContext.EditStationCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                        CommandParameter="{Binding}"/>
+                                                <Button Style="{StaticResource GhostSquareButton}"
+                                                        Content="{StaticResource DeleteGeometry}" ToolTip="Delete station"
+                                                        Command="{Binding DataContext.DeleteStationCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                        CommandParameter="{Binding}"/>
                                             </StackPanel>
                                         </Grid>
                                     </DataTemplate>
@@ -398,6 +481,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                    VerticalAlignment="Top"
                                                     Background="{StaticResource FillSubtle}"
                                                     BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
                                                 <Grid>
@@ -427,12 +511,13 @@
                                                     </ContentControl>
                                                 </Grid>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
                                                 <TextBlock Text="{Binding DisplayName}" FontSize="13.5" FontWeight="Medium"
                                                            Foreground="{StaticResource TextBody}"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}"/>
                                                 <TextBlock Text="{Binding Reason}" FontSize="11.5" Margin="0,2,0,0"
                                                            Foreground="{StaticResource TextMuted}"
+                                                           TextWrapping="Wrap" MaxHeight="30"
                                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding Reason}">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
@@ -468,6 +553,335 @@
                                 </ListBox.ItemTemplate>
                             </ListBox>
                         </DockPanel>
+
+                        <!-- ===== History tab (Phase A: songs heard, About per row) ===== -->
+                        <Grid Visibility="{Binding IsChecked, ElementName=HistoryTab,
+                              Converter={StaticResource BoolToVis}}">
+                            <ListBox ItemsSource="{Binding History}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ItemContainerStyle="{StaticResource StationRowItem}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="34"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                    VerticalAlignment="Top"
+                                                    Background="{StaticResource FillSubtle}"
+                                                    BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
+                                                <Path Data="{StaticResource NoteGeometry}" Stretch="Uniform"
+                                                      Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
+                                                <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
+                                                           Foreground="{StaticResource TextBody}"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                                                <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
+                                                           Foreground="{StaticResource TextMuted}"
+                                                           TextWrapping="Wrap" MaxHeight="30"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                            </StackPanel>
+                                            <ContentControl Grid.Column="2" Content="{Binding}"
+                                                             ContentTemplate="{StaticResource SaveAndAboutActions}"
+                                                             VerticalAlignment="Center" Focusable="False"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <!-- Empty state -->
+                            <TextBlock Text="Songs you hear will show up here."
+                                       FontSize="12.5" Foreground="{StaticResource TextMuted}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding History.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </Grid>
+                    </DockPanel>
+                    <!-- ================= end RADIO panel ================= -->
+
+                    <!-- ================= LIBRARY panel (AI-curated local player) ================= -->
+                    <DockPanel Visibility="{Binding ShowLibraryPanel, Converter={StaticResource BoolToVis}}">
+                        <!-- Sub-nav: mirrors Radio's Stations/Search/History with the Library
+                             equivalents (Shared Framework Spec pin 1) — underlined, not a
+                             segmented pill, so it reads as a different nav level than the
+                             Radio/Library mode toggle above it. -->
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,14">
+                            <RadioButton x:Name="CurateTab" GroupName="libraryTab" IsChecked="True"
+                                         Style="{StaticResource UnderlineTab}" Content="Curate"/>
+                            <RadioButton x:Name="SongsTab" GroupName="libraryTab"
+                                         Style="{StaticResource UnderlineTab}" Content="Songs"/>
+                        </StackPanel>
+
+                        <Grid>
+                        <!-- ===== Curate tab ===== -->
+                        <DockPanel Visibility="{Binding IsChecked, ElementName=CurateTab,
+                                   Converter={StaticResource BoolToVis}}">
+                        <!-- Prompt (Enter curates a playlist from your saved songs) -->
+                        <Border DockPanel.Dock="Top" Height="40" CornerRadius="10" Margin="0,0,0,10"
+                                Background="{StaticResource FillSubtle}"
+                                BorderBrush="{StaticResource Hairline}" BorderThickness="1" Padding="12,0">
+                            <DockPanel>
+                                <Path DockPanel.Dock="Left" Data="{StaticResource SparkleGeometry}"
+                                      Stretch="Uniform" Width="15" Height="15" Fill="#FF62A59B"
+                                      VerticalAlignment="Center" Margin="0,0,9,0"/>
+                                <Grid>
+                                    <TextBox x:Name="LibraryPromptBox" Background="Transparent" BorderThickness="0"
+                                             VerticalContentAlignment="Center" Foreground="{StaticResource TextBody}"
+                                             CaretBrush="{StaticResource Teal}" FontSize="13"
+                                             Text="{Binding LibraryPrompt, UpdateSourceTrigger=PropertyChanged}">
+                                        <TextBox.InputBindings>
+                                            <KeyBinding Key="Return" Command="{Binding CurateCommand}"/>
+                                        </TextBox.InputBindings>
+                                    </TextBox>
+                                    <TextBlock IsHitTestVisible="False" VerticalAlignment="Center" FontSize="13"
+                                               Foreground="{StaticResource TextFaint}"
+                                               Text="Curate a playlist from your library…">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Text, ElementName=LibraryPromptBox}" Value="">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Status + curating spinner -->
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="2,0,0,8">
+                            <Grid Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center"
+                                  RenderTransformOrigin="0.5,0.5"
+                                  Visibility="{Binding IsCurating, Converter={StaticResource BoolToVis}}">
+                                <Grid.RenderTransform>
+                                    <RotateTransform/>
+                                </Grid.RenderTransform>
+                                <Grid.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation
+                                                    Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                    From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Grid.Triggers>
+                                <Ellipse Stroke="#33FFFFFF" StrokeThickness="2"/>
+                                <Path Stroke="{StaticResource Teal}" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                      Data="M 7,1 A 6,6 0 0 1 13,7"/>
+                            </Grid>
+                            <TextBlock Text="{Binding LibraryStatus}" FontSize="11.5"
+                                       Foreground="{StaticResource TextMuted}"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+
+                        <!-- Context card: "the thing I asked for" (query), distinct from "the
+                             songs it produced" (queue) below (Shared Framework Spec §3). -->
+                        <Border DockPanel.Dock="Top" Margin="0,0,0,12" CornerRadius="10" Padding="13,12"
+                                Background="{StaticResource TealTint16}" BorderBrush="#4756C7BA" BorderThickness="1"
+                                Visibility="{Binding HasCuratedPlaylist, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform"
+                                          Width="12" Height="12" Fill="{StaticResource TealBright}"
+                                          VerticalAlignment="Center"/>
+                                    <TextBlock Text="CURATED PLAYLIST" Margin="7,0,0,0" FontSize="10.5"
+                                               FontWeight="SemiBold" Foreground="{StaticResource TealText}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding CuratedPlaylistTitle}" FontSize="15" FontWeight="Medium"
+                                           Foreground="{StaticResource TextPrimary}" Margin="0,6,0,3"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock FontSize="11.5" Foreground="{StaticResource TextMuted}">
+                                    <Run Text="{Binding CuratedQueue.Count, Mode=OneWay}"/>
+                                    <Run Text=" songs · from your recordings"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Curated queue (double-click plays from that track) + empty state -->
+                        <Grid>
+                        <ListBox ItemsSource="{Binding CuratedQueue}"
+                                 MouseDoubleClick="Queue_DoubleClick"
+                                 Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ItemContainerStyle="{StaticResource StationRowItem}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="34"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                VerticalAlignment="Top"
+                                                Background="{StaticResource FillSubtle}"
+                                                BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
+                                            <Grid>
+                                                <Path Data="{StaticResource NoteGeometry}" Stretch="Uniform"
+                                                      Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                                    <Path.Style>
+                                                        <Style TargetType="Path">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Path.Style>
+                                                </Path>
+                                                <ContentControl Template="{StaticResource EqualizerTemplate}"
+                                                                Width="20" Height="13"
+                                                                HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <ContentControl.Style>
+                                                        <Style TargetType="ContentControl">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </ContentControl.Style>
+                                                </ContentControl>
+                                            </Grid>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
+                                            <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
+                                                       Foreground="{StaticResource TextBody}"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                                            <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
+                                                       Foreground="{StaticResource TextMuted}"
+                                                       TextWrapping="Wrap" MaxHeight="30"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <!-- Empty state -->
+                        <TextBlock Text="Describe a mood or vibe above to curate a playlist from your recordings."
+                                   FontSize="12.5" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CuratedQueue.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        </Grid>
+                        </DockPanel>
+                        <!-- ===== end Curate tab ===== -->
+
+                        <!-- ===== Songs tab: every song saved to the library ===== -->
+                        <Grid Visibility="{Binding IsChecked, ElementName=SongsTab,
+                              Converter={StaticResource BoolToVis}}">
+                            <ListBox ItemsSource="{Binding LibrarySongs}"
+                                     MouseDoubleClick="LibrarySong_DoubleClick"
+                                     Background="Transparent" BorderThickness="0"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ItemContainerStyle="{StaticResource StationRowItem}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="34"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                    VerticalAlignment="Top"
+                                                    Background="{StaticResource FillSubtle}"
+                                                    BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
+                                                <Grid>
+                                                    <Path Data="{StaticResource NoteGeometry}" Stretch="Uniform"
+                                                          Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
+                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                                        <Path.Style>
+                                                            <Style TargetType="Path">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Path.Style>
+                                                    </Path>
+                                                    <ContentControl Template="{StaticResource EqualizerTemplate}"
+                                                                    Width="20" Height="13"
+                                                                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <ContentControl.Style>
+                                                            <Style TargetType="ContentControl">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ContentControl.Style>
+                                                    </ContentControl>
+                                                </Grid>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
+                                                <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
+                                                           Foreground="{StaticResource TextBody}"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                                                <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
+                                                           Foreground="{StaticResource TextMuted}"
+                                                           TextWrapping="Wrap" MaxHeight="30"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <!-- Empty state -->
+                            <TextBlock Text="Songs you save from the radio will show up here."
+                                       FontSize="12.5" Foreground="{StaticResource TextMuted}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding LibrarySongs.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                        <!-- ===== end Songs tab ===== -->
+                        </Grid>
+                    </DockPanel>
+                    <!-- ================= end LIBRARY panel ================= -->
                     </Grid>
                 </DockPanel>
             </Border>
@@ -490,6 +904,30 @@
                                 Content="{StaticResource CopyGeometry}" ToolTip="Copy title &amp; artist"
                                 Width="24" Height="24" Margin="8,0,0,0" VerticalAlignment="Center"
                                 Visibility="{Binding HasTrackInfo, Converter={StaticResource BoolToVis}}"/>
+                        <!-- Save this song (download→check pair — same mark as everywhere else Save
+                             appears): marks it now, saved automatically once its recording
+                             completes at the next track change. -->
+                        <Button Command="{Binding MarkForSaveCommand}" Width="24" Height="24"
+                                Margin="4,0,0,0" VerticalAlignment="Center"
+                                Visibility="{Binding CanMarkForSave, Converter={StaticResource BoolToVis}}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource TitleIconButton}">
+                                    <Setter Property="Content" Value="{StaticResource SaveGeometry}"/>
+                                    <Setter Property="ToolTip" Value="Save this song when it finishes"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsCurrentSongMarked}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource TealBright}"/>
+                                            <Setter Property="ToolTip" Value="Marked to save — click to cancel"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsCurrentSongSaved}" Value="True">
+                                            <Setter Property="Content" Value="{StaticResource CheckGeometry}"/>
+                                            <Setter Property="ToolTip" Value="Saved to library"/>
+                                            <Setter Property="IsHitTestVisible" Value="False"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                     </StackPanel>
 
                     <TextBlock Text="{Binding NowPlayingTitle}" FontSize="44" FontWeight="Normal"
@@ -540,13 +978,13 @@
                             <TextBlock Text="{Binding StatusText}" FontSize="12"
                                        Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"/>
                         </StackPanel>
-                        <!-- Animated equalizer + LIVE badge while playing -->
+                        <!-- Animated equalizer + LIVE badge while a radio stream plays -->
                         <ContentControl Template="{StaticResource EqualizerTemplate}" Height="13"
                                         VerticalAlignment="Center" Margin="0,0,12,0"
-                                        Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVis}}"/>
+                                        Visibility="{Binding ShowLiveBadge, Converter={StaticResource BoolToVis}}"/>
                         <Border CornerRadius="7" Padding="9,3" Background="#1F56C7BA"
                                 BorderBrush="#4056C7BA" BorderThickness="1" VerticalAlignment="Center"
-                                Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding ShowLiveBadge, Converter={StaticResource BoolToVis}}">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="6" Height="6" Fill="{StaticResource TealBright}"
                                          VerticalAlignment="Center">
@@ -575,6 +1013,42 @@
                     <Button Style="{StaticResource AboutPillButton}" Content="About this track"
                             Command="{Binding OpenAboutCommand}" Margin="0,28,0,0"
                             Visibility="{Binding CanShowAbout, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- "Recently on this station" (Radio only) — the space Library uses for a
+                         scrubber has no seekable equivalent on a live stream, so it's used for
+                         this instead (Shared Framework Spec §4a, pin 2). -->
+                    <StackPanel Margin="0,28,0,0"
+                                Visibility="{Binding ShowRecentOnStation, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="RECENTLY ON THIS STATION" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="#FF6F8C87" Margin="0,0,0,12"/>
+                        <ItemsControl ItemsSource="{Binding RecentOnStation}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0">
+                                            <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="Medium"
+                                                       Foreground="{StaticResource TextBody}"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                                            <TextBlock FontSize="11" Margin="0,2,0,0"
+                                                       Foreground="{StaticResource TextMuted}"
+                                                       TextTrimming="CharacterEllipsis">
+                                                <Run Text="{Binding Artist, Mode=OneWay}"/>
+                                                <Run Text=" · "/>
+                                                <Run Text="{Binding RelativeTime, Mode=OneWay}"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <ContentControl Grid.Column="1" Content="{Binding}"
+                                                         ContentTemplate="{StaticResource SaveAndAboutActions}"
+                                                         VerticalAlignment="Center" Focusable="False"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- ===== About this track reading view (swaps with Now Playing) =====
@@ -759,6 +1233,21 @@
                         </StackPanel>
                     </ScrollViewer>
 
+                    <!-- Bottom fade: the scrolled text dissolves at the fold instead of clipping
+                         mid-line (Shared Framework Spec pin 8). Non-hit-testable so scrolling and
+                         the scrollbar underneath still work; sits above the ScrollViewer in
+                         z-order (later sibling) but only covers its own reserved band at the
+                         bottom of the scroll region. -->
+                    <Rectangle Grid.Row="1" Height="38" VerticalAlignment="Bottom" Margin="0,0,8,0"
+                               IsHitTestVisible="False">
+                        <Rectangle.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#00050D0C" Offset="0"/>
+                                <GradientStop Color="#F2050D0C" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Rectangle.Fill>
+                    </Rectangle>
+
                     <!-- Footer: regenerate (result/error) + disclaimer -->
                     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,14,0,0"
                                 Background="Transparent">
@@ -788,10 +1277,28 @@
 
                 <!-- ===== Transport + volume ===== -->
                 <StackPanel Grid.Row="1">
+                    <!-- Seek bar (library mode only; radio streams have no timeline) -->
+                    <Grid Margin="0,0,0,18" Width="440" HorizontalAlignment="Left"
+                          Visibility="{Binding HasDuration, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding PositionText}" FontSize="11.5"
+                                   Foreground="#FF8AA39E" VerticalAlignment="Center" MinWidth="34"/>
+                        <Slider x:Name="SeekSlider" Grid.Column="1" Style="{StaticResource VolumeSlider}"
+                                Margin="12,0" Minimum="0" Maximum="{Binding DurationSeconds}"
+                                Value="{Binding PositionSeconds, Mode=TwoWay}"/>
+                        <TextBlock Grid.Column="2" Text="{Binding DurationText}" FontSize="11.5"
+                                   Foreground="#FF8AA39E" VerticalAlignment="Center" MinWidth="34"
+                                   TextAlignment="Right"/>
+                    </Grid>
+
                     <StackPanel Orientation="Horizontal">
                         <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
                                 Command="{Binding PrevStationCommand}"
-                                Content="{StaticResource PrevGeometry}" ToolTip="Previous station"/>
+                                Content="{StaticResource PrevGeometry}" ToolTip="Previous"/>
                         <Button Command="{Binding PlayPauseCommand}" ToolTip="{Binding PlayPauseLabel}"
                                 VerticalAlignment="Center" Margin="16,0">
                             <Button.Style>
@@ -806,7 +1313,7 @@
                         </Button>
                         <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
                                 Command="{Binding NextStationCommand}"
-                                Content="{StaticResource NextGeometry}" ToolTip="Next station"/>
+                                Content="{StaticResource NextGeometry}" ToolTip="Next"/>
                         <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
                                 Command="{Binding StopCommand}" Margin="16,0,0,0"
                                 Content="{StaticResource StopGeometry}" ToolTip="Stop"/>

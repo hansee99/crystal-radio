@@ -16,9 +16,12 @@ namespace RadioPlayer;
 public partial class MainWindow : Window
 {
     private readonly RadioEngine _engine;
+    private readonly LocalPlaybackEngine _localEngine;
+    private readonly StreamRecorder _recorder;
     private readonly MainViewModel _viewModel;
     private readonly SettingsStore _settingsStore;
     private readonly EnrichmentStore _enrichmentStore;
+    private readonly LibraryStore _libraryStore;
     private readonly MiniLmEmbeddingProvider _embeddingProvider;
     private SmtcController? _smtc;
 
@@ -29,8 +32,10 @@ public partial class MainWindow : Window
         SizeChanged  += (_, _) => UpdateShellClip();
         StateChanged += (_, _) => UpdateShellClip();
 
-        _engine = new RadioEngine();
         _settingsStore = new SettingsStore();
+        _recorder = new StreamRecorder(_settingsStore.Load().CaptureBoundaryOffsetSeconds);
+        _engine = new RadioEngine(_recorder);
+        _localEngine = new LocalPlaybackEngine();
 
         // AI-assisted search services (raw HttpClient; key never committed). Prefer the key
         // saved in-app (DPAPI-encrypted), then fall back to the ANTHROPIC_API_KEY env var.
@@ -52,9 +57,17 @@ public partial class MainWindow : Window
         var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
         var trackInfo = new TrackInfoService(new HttpClient(), apiKey); // "About this track" briefings
 
+        // Phase C: local song-library index (metadata + AI description + local embedding on save).
+        _libraryStore = new LibraryStore();
+        var songLibrary = new SongLibraryService(new HttpClient(), _libraryStore, _embeddingProvider, apiKey);
+
+        // Phase D: prompt-driven curation over the library index (cosine recall + LLM ordering).
+        var curator = new SongCurator(new HttpClient(), _libraryStore, _embeddingProvider, apiKey);
+
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
+            new SongHistoryStore(), _recorder,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
-            semanticSearch, ranker, trackInfo);
+            semanticSearch, ranker, trackInfo, songLibrary, _localEngine, curator);
         DataContext = _viewModel;
 
         // Reset the About reading view to the top whenever fresh content loads (a new briefing
@@ -68,6 +81,13 @@ public partial class MainWindow : Window
             }
         };
 
+        // Seek slider: suspend the position timer while the user drags the thumb, so ticks
+        // don't fight the drag. Click-to-seek still flows through the Value TwoWay binding.
+        SeekSlider.AddHandler(System.Windows.Controls.Primitives.Thumb.DragStartedEvent,
+            new System.Windows.Controls.Primitives.DragStartedEventHandler((_, _) => _viewModel.BeginSeekDrag()));
+        SeekSlider.AddHandler(System.Windows.Controls.Primitives.Thumb.DragCompletedEvent,
+            new System.Windows.Controls.Primitives.DragCompletedEventHandler((_, _) => _viewModel.EndSeekDrag()));
+
         // One-time/background: embed any enriched rows lacking a current-model vector.
         enrichment.BackfillEmbeddingsInBackground();
     }
@@ -79,17 +99,24 @@ public partial class MainWindow : Window
         // SMTC must be obtained per-HWND, and the HWND only exists once the window is shown.
         var hwnd = new WindowInteropHelper(this).Handle;
         _smtc = new SmtcController(hwnd, _engine);
-        // Media-key / flyout "next track" → next station (logic lives in the view model).
+        // Media-key / flyout "next track" → next station / next queue track (VM decides per mode).
         _smtc.NextRequested += (_, _) => _viewModel.NextStationCommand.Execute(null);
+        // Mirror now-playing text to the OS controls in both modes, and repoint SMTC at the
+        // active engine when the player mode changes.
+        _viewModel.SetNowPlayingSink((title, artist) => _smtc.SetNowPlaying(title, artist));
+        _viewModel.ActiveEngineChanged += engine => _smtc.SetActiveEngine(engine);
     }
 
     protected override void OnClosed(EventArgs e)
     {
         _viewModel.SaveSettings();
         _smtc?.Dispose();
-        _engine.Dispose();
+        _localEngine.Dispose();  // free its stream before RadioEngine frees the shared BASS device
+        _engine.Dispose();       // ends the capture session and calls Bass.Free()
+        _recorder.Dispose();
         _embeddingProvider.Dispose();
         _enrichmentStore.Dispose();
+        _libraryStore.Dispose();
         base.OnClosed(e);
     }
 
@@ -148,6 +175,20 @@ public partial class MainWindow : Window
         // Double-click a station plays it — notably when stopped, where selecting alone won't.
         if (_viewModel.SelectedStation is not null)
             _viewModel.PlaySelectedStation();
+    }
+
+    private void Queue_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        // Double-click a curated queue row to play from that track.
+        if (sender is System.Windows.Controls.ListBox { SelectedItem: ViewModels.CuratedQueueItem item })
+            _viewModel.PlayQueueItemCommand.Execute(item);
+    }
+
+    private void LibrarySong_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        // Double-click a Songs-tab row to play the whole library starting from that track.
+        if (sender is System.Windows.Controls.ListBox { SelectedItem: ViewModels.LibrarySongItem item })
+            _viewModel.PlayLibrarySongCommand.Execute(item);
     }
 
     private void CopyNowPlaying_Click(object sender, RoutedEventArgs e)

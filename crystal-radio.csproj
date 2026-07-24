@@ -12,7 +12,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);tools\**</DefaultItemExcludes>
     <!-- App identity / versioning. Bump Version (SemVer MAJOR.MINOR.PATCH) per release;
          the SDK flows it into the assembly's File/Informational version automatically. -->
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <AssemblyName>crystal-radio</AssemblyName>
     <!-- Keep namespace RadioPlayer so no C# files need touching (shallow rename). -->
     <RootNamespace>RadioPlayer</RootNamespace>

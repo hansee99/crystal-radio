@@ -34,6 +34,11 @@ Architecture, AI search design, and project structure for contributors and devel
 | `Services/EnrichmentService.cs`, `EnrichmentStore.cs` | Phase 1 — distil + cache per-station descriptions in SQLite under `%LocalAppData%\RadioPlayer\`. |
 | `Services/SemanticSearchService.cs`, `MiniLmEmbeddingProvider.cs` | Phase 2 — local ONNX embeddings + brute-force cosine search. |
 | `Services/TrackInfoService.cs` | "About this track" — on-demand AI briefing about the now-playing song/artist via server-side web search (Sonnet); per-session cached. |
+| `Services/SongHistoryStore.cs`, `SongHistoryFilter.cs` | Song history — persists songs heard on a stream (JSON under `%AppData%\RadioPlayer\`) and filters out ads/jingles/idents before they're recorded. |
+| `Services/StreamRecorder.cs` | Rolling audio cache — cuts the raw stream bytes (via `RadioEngine`'s BASS download callback) into per-song segments at ICY title boundaries; only complete segments survive. |
+| `Services/LibraryStore.cs`, `SongLibraryService.cs` | The local song-library index (SQLite under `%LocalAppData%\RadioPlayer\`): saved-song metadata, AI-derived description/facets, and an embedding per song. |
+| `Services/IPlaybackEngine.cs`, `LocalPlaybackEngine.cs` | The shared playback-transport interface, and its local-file sibling to `RadioEngine` — adds seeking, a position timeline, and queue auto-advance for the Library player. |
+| `Services/ISongCurator.cs`, `SongCurator.cs` | Curates an ordered playlist from the local library for a free-text prompt — see "Offline AI-curated playlists" below. |
 | `ViewModels/MainViewModel.cs` | Playback state, commands, station list, now-playing, search orchestration. |
 | `Views/MainWindow.xaml(.cs)` | UI layout, taskbar thumb buttons, custom window chrome, HWND/SMTC bootstrap. |
 | `Views/Theme.xaml` | Crystal theme: brushes, icon geometries, all control styles. |
@@ -162,6 +167,70 @@ track" reading view (`AboutViewState`: Home → Loading → Result/Error); trans
 fixed. The view model cancels any in-flight generation when the user hits Back or the track
 changes, and the trigger pill only appears with a playing track and an API key. Because it
 relies on `web_search`, the same cost/enablement caveats as Pattern B apply.
+
+## Offline AI-curated playlists
+
+A second player mode — **Library** — plays songs saved from the radio side, curated into a
+playlist from a free-text prompt ("cumbia from Mexico", "late-night coding"), instead of a
+manually built playlist. It's the payoff of the song-library pipeline below.
+
+### How a song gets into the library
+
+1. **History** (`SongHistoryStore`) records every song heard on a stream, via the existing
+   ICY metadata events; `SongHistoryFilter` keeps ads/jingles/station idents out.
+2. **Rolling cache** (`StreamRecorder`) captures the raw stream bytes on the *same* connection
+   as playback (a BASS download callback — no re-encode) and cuts them into per-song segment
+   files at ICY title boundaries. Only segments that both start and end at a boundary within one
+   connection are kept — a segment joined mid-song, or cut short by a stop/reconnect, is
+   discarded. The cut is deliberately **deferred** by a configurable offset
+   (`CaptureBoundaryOffsetSeconds`, default 6s): a station's title change usually announces the
+   next song a few seconds before the audio catches up, so cutting immediately would give every
+   file the previous song's tail and cost it its own ending.
+3. **Save** copies a completed segment into the user's library folder (verbatim bytes, no
+   transcoding) and indexes it via `SongLibraryService.AddAndEnrich` — the entry point into the
+   library index below. The user can save proactively (History/"Recently on this station" row)
+   or mark the *currently playing* song to save automatically once its segment completes.
+4. **`LibraryStore`** (SQLite, `%LocalAppData%\RadioPlayer\library.db`) holds one row per saved
+   song: path, title, artist, source station, save time, plus (filled in asynchronously,
+   best-effort) an AI-derived description/facets and an embedding — the same enrichment shape as
+   the station-search side, reusing `IEmbeddingProvider` (MiniLM).
+
+### Curation pipeline (`SongCurator` / `ISongCurator`)
+
+Deliberately mirrors the station-search pipeline above ("AI-assisted station search"), so the
+mental model is the same on both sides of the app, with one difference: **the LLM's general
+knowledge of music is fine to use here.** The "the LLM is not the database" rule exists because
+the model can't be trusted to *name a playable stream URL* — but describing/arranging songs
+that are already verified, on-disk files carries none of that risk. Only the audio-sourcing
+step (stations from Radio Browser, songs from what the user actually saved) has to be
+hallucination-proof; judging vibe and mood doesn't.
+
+1. **Recall** — embed the prompt, brute-force cosine top-K (40) over the library's stored
+   vectors (same in-memory approach as Phase 2 semantic station search).
+2. **Arrange** — hand the shortlist (title, artist, description) to a cheap model
+   (`claude-haiku-4-5`), which both **chooses** which songs genuinely fit and **orders** them
+   into a sensible mood/energy arc — not just relevance order — with a short reason per pick.
+   This is the one place curation goes beyond a plain re-rank: a playlist is a sequence, so the
+   model is asked for an arc, not just a filtered set.
+3. **Degrade gracefully** at each layer: no API key → cosine order with no per-track reasons; no
+   embeddings yet (a fresh or tiny library) → most-recently-saved songs, so the feature is never
+   a dead end even at zero/near-zero library size.
+
+The curated result is ephemeral (an in-memory queue, `MainViewModel.CuratedQueue`) — there is
+deliberately no persisted "named playlist" concept yet; re-running the same prompt re-curates
+rather than reloading a save.
+
+### Two playback engines, one seam
+
+`IPlaybackEngine` is the transport surface (`State`, `Volume`, play/pause/stop,
+`StateChanged`/`ErrorOccurred`) that the view model and `SmtcController` drive without caring
+which engine is behind it. `RadioEngine` implements it unchanged; `LocalPlaybackEngine` is the
+sibling for local files — same BASS output, but adds what an endless radio stream doesn't need:
+seeking, a position timeline, and auto-advance through a queue.
+
+Radio and Library are **either/or** — one BASS device, one now-playing identity. Switching
+modes stops the inactive engine and repoints `SmtcController.SetActiveEngine` so hardware media
+keys and the Win11 flyout always control whichever is actually playing.
 
 ## Key gotchas
 
