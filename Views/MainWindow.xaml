@@ -270,24 +270,17 @@
                     <Grid>
                     <!-- ================= RADIO panel (Stations / Search / History) ================= -->
                     <DockPanel Visibility="{Binding ShowRadioPanel, Converter={StaticResource BoolToVis}}">
-                    <!-- Segmented pill tabs -->
-                    <Border DockPanel.Dock="Top" Margin="0,0,0,12" CornerRadius="11" Padding="3"
-                            Background="{StaticResource FillSubtle}"
-                            BorderBrush="{StaticResource Hairline}" BorderThickness="1">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <RadioButton x:Name="StationsTab" Grid.Column="0" GroupName="leftTab"
-                                         IsChecked="True" Style="{StaticResource PillTab}" Content="Stations"/>
-                            <RadioButton x:Name="SearchTab" Grid.Column="1" GroupName="leftTab"
-                                         Style="{StaticResource PillTab}" Content="Search"/>
-                            <RadioButton x:Name="HistoryTab" Grid.Column="2" GroupName="leftTab"
-                                         Style="{StaticResource PillTab}" Content="History"/>
-                        </Grid>
-                    </Border>
+                    <!-- Underlined sub-nav (matches the Library side); the segmented pill is
+                         reserved for the Radio/Library mode toggle above, so the two nav levels
+                         stay visually distinct. -->
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,14">
+                        <RadioButton x:Name="StationsTab" GroupName="leftTab" IsChecked="True"
+                                     Style="{StaticResource UnderlineTab}" Content="Stations"/>
+                        <RadioButton x:Name="SearchTab" GroupName="leftTab"
+                                     Style="{StaticResource UnderlineTab}" Content="Search"/>
+                        <RadioButton x:Name="HistoryTab" GroupName="leftTab"
+                                     Style="{StaticResource UnderlineTab}" Content="History"/>
+                    </StackPanel>
 
                     <Grid>
                         <!-- ===== Stations tab ===== -->
