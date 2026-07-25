@@ -37,32 +37,25 @@ internal sealed class MusicDetector
     private const double WindowSeconds = 1.0;     // 1 s decision window
     private const double WindowHopSeconds = 0.5;  // 50% overlap
 
-    // Confidence rule (music = 1). A speech score is a weighted sum of normalized features;
-    // music confidence = 1 - sigmoid(score - Bias). Higher on speechy features → lower music
-    // confidence.
-    //
-    // Scales are centered on a real harvested-music corpus (11.7k windows) so a typical music
-    // window normalizes each feature to ≈1; weights then lean on the cleanest discriminator,
-    // low-energy-frame ratio (speech has inter-word pauses, music is sustained). These are still
-    // provisional — verified to classify MUSIC correctly, but the speech/talk side of the
-    // boundary needs labelled non-music clips (or a logistic fit on the CSV) to confirm.
-    private const double W_Mod4Hz = 1.2;
-    private const double W_ZcrVar = 0.6;
-    private const double W_LowEnergy = 2.2;
-    private const double W_FluxVar = 0.3;
-    private const double W_CentroidVar = 0.4;
-    private const double W_Flatness = 0.4;
-    private const double Bias = 4.0;              // higher → more readily called music
+    // Music confidence = sigmoid(bias + Σ wᵢ·featureᵢ). A logistic regression fitted to a
+    // labelled corpus of harvested clips (26 music + 43 non-music: ads, DJ talk, jingles;
+    // ~22k windows) replaces the original hand-tuned rule. The fit found spectral flux mean/var
+    // to be the strongest discriminators, ahead of the classic 4 Hz-modulation term.
+    // Honest, file-grouped hold-out accuracy: ~86% overall (music ~92%, non-music ~82%).
+    // Re-fit with tools/DjDetector's CSV output → the fit_logreg helper when the corpus grows.
     private const double MusicThreshold = 0.5;    // confidence ≥ this ⇒ music
 
-    // Normalization scales — the observed music-corpus means (lowEnergy widened so ordinary
-    // quiet music passages don't trip the speech side; only genuine pause-heavy windows do).
-    private const double S_Mod4Hz = 0.15;
-    private const double S_ZcrVar = 1.5e6;
-    private const double S_LowEnergy = 0.15;
-    private const double S_FluxVar = 0.010;
-    private const double S_CentroidVar = 6.0e5;
-    private const double S_Flatness = 0.015;
+    private const double LrBias = 7.6313147;
+    private const double Lr_Mod4Hz = -0.34930274;
+    private const double Lr_ZcrMean = 0.0011769138;
+    private const double Lr_ZcrVar = -3.9741867e-08;
+    private const double Lr_LowEnergyRatio = -2.6969956;
+    private const double Lr_FluxMean = -26.701023;
+    private const double Lr_FluxVar = 20.754694;
+    private const double Lr_CentroidMean = -0.00016698626;
+    private const double Lr_CentroidVar = -1.6771577e-06;
+    private const double Lr_RolloffMean = -0.00040613901;
+    private const double Lr_Flatness = 5.3527911e-09;
 
     public FileResult Analyze(float[] mono, int sampleRate)
     {
@@ -153,7 +146,7 @@ internal sealed class MusicDetector
             var (rMean, _) = MeanVar(rolloff, lo, hi);
             var (flMean, _) = MeanVar(flatness, lo, hi);
 
-            var confidence = Confidence(mod4, zVar, lowE, fVar, cVar, flMean);
+            var confidence = Confidence(mod4, zMean, zVar, lowE, fMean, fVar, cMean, cVar, rMean, flMean);
             windows.Add(new WindowFeatures(
                 w * HopSeconds, mod4, zMean, zVar, lowE, fMean, fVar, cMean, cVar, rMean, flMean, confidence));
         }
@@ -208,17 +201,22 @@ internal sealed class MusicDetector
         return (mean, v);
     }
 
-    private static double Confidence(double mod4, double zVar, double lowE, double fVar, double cVar, double flatness)
+    private static double Confidence(double mod4Hz, double zcrMean, double zcrVar, double lowEnergyRatio,
+        double fluxMean, double fluxVar, double centroidMean, double centroidVar, double rolloffMean, double flatness)
     {
-        var speech =
-            W_Mod4Hz * (mod4 / S_Mod4Hz) +
-            W_ZcrVar * (zVar / S_ZcrVar) +
-            W_LowEnergy * (lowE / S_LowEnergy) +
-            W_FluxVar * (fVar / S_FluxVar) +
-            W_CentroidVar * (cVar / S_CentroidVar) +
-            W_Flatness * (flatness / S_Flatness) -
-            Bias;
-        return 1.0 - 1.0 / (1.0 + Math.Exp(-speech)); // music confidence
+        var logit =
+            LrBias +
+            Lr_Mod4Hz * mod4Hz +
+            Lr_ZcrMean * zcrMean +
+            Lr_ZcrVar * zcrVar +
+            Lr_LowEnergyRatio * lowEnergyRatio +
+            Lr_FluxMean * fluxMean +
+            Lr_FluxVar * fluxVar +
+            Lr_CentroidMean * centroidMean +
+            Lr_CentroidVar * centroidVar +
+            Lr_RolloffMean * rolloffMean +
+            Lr_Flatness * flatness;
+        return 1.0 / (1.0 + Math.Exp(-logit)); // music confidence
     }
 
     private static FileResult Summarize(List<WindowFeatures> windows)

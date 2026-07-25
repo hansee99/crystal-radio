@@ -60,9 +60,11 @@ Label inference: a file under a folder named `music` → *music*; under `talk` /
   (or `ads/`) folders and run against the parent. The tool prints per-window accuracy vs. the
   ≳ 90% target. If it clears that with no *sustained* misclassification, the detection risk is
   retired and the detector can move into the app for segment QC + edge-trim.
-- If accuracy is short, open the CSV: the weights/scales in `MusicDetector` are explicit
-  constants meant to be tuned (or fit a small logistic regression on the CSV, which is exactly
-  the training data the spec calls for).
+- The classifier is a **logistic regression** whose coefficients (`LrBias` / `Lr_*` in
+  `MusicDetector`) were fitted to a labelled corpus. To re-fit as your corpus grows, run
+  `python tools/DjDetector/fit_logreg.py djdetector-features.csv` and paste the printed
+  constants back into `MusicDetector.cs`. The fitter reports honest, file-grouped hold-out
+  accuracy (windows from one clip never split across train/test).
 
 ## Notes
 
