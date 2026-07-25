@@ -12,6 +12,14 @@ It reuses the app's real `StreamRecorder` — the same boundary-cut, deferred-of
 min-size, and `SongHistoryFilter` logic that the shipping "save this song" feature uses — so
 the segments it produces are exactly what the eventual harvest engine would queue.
 
+Each completed segment then passes through **segment QC** (the harvest design's
+`SegmentQualityChecker`, PoC form): it's decoded and classified by the shared
+[`MusicDetector`](../DjDetector/MusicDetector.cs). **Clear talk is rejected** (music fraction
+below `--qc-reject`, default 0.30) so ad/talk that slipped the ICY filter never reaches the
+folder; **kept songs** are copied out and their head/tail talk (**edge-trim seconds**) is
+recorded to `manifest.csv`. So the output folder is clean-by-construction *plus* a detector
+backstop, and the manifest tells you how much to trim off each song's edges at playback.
+
 ## How it works
 
 - Initializes BASS on the **"no sound" device (0)** and *plays* each station there. Playback
@@ -41,8 +49,9 @@ dotnet run --project tools/DjHarvest -- "http://host/stream|aac" "http://host/ot
 |---|---|---|
 | *(positional)* | 4 built-in stations | Station URLs, each `url` or `url\|aac` / `url\|mp3` |
 | `--seconds N` | 900 | How long to run before auto-stopping |
-| `--out <dir>` | `%TEMP%\DjHarvest` | Where kept segments are copied |
+| `--out <dir>` | `%TEMP%\DjHarvest` | Where kept segments (+ `manifest.csv`) go |
 | `--offset <sec>` | 6 | Boundary-cut offset (same meaning as `CaptureBoundaryOffsetSeconds`) |
+| `--qc-reject <frac>` | 0.30 | Reject a segment whose music fraction is below this (0 disables QC) |
 
 Ctrl+C stops early and prints the final summary. No API key needed — PoC 1 takes explicit
 station URLs; search-based seeding is a later phase.

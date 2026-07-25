@@ -1,29 +1,33 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
+using DjDetector;
 using ManagedBass;
 using ManagedBass.Aac;
 using RadioPlayer.Models;
 using RadioPlayer.Services;
 
-// Dj Mode (harvest) — PoC 1: concurrent headless harvesting + fill-rate measurement.
+// Dj Mode (harvest) — concurrent headless harvesting + segment QC + fill-rate measurement.
 //
 // Opens N decode-only connections to real stations, cuts complete songs at ICY title
-// boundaries using the app's real StreamRecorder, copies each kept segment to a scratch
-// folder for by-ear inspection, and reports the aggregate fill rate. No playback, no UI.
+// boundaries using the app's real StreamRecorder, then runs each completed segment through the
+// music/speech detector: clear talk is REJECTED, and kept songs get their head/tail talk
+// (edge-trim seconds) recorded to manifest.csv. Produces a clean harvest folder + fill rate.
 //
 //   dotnet run --project tools/DjHarvest
 //   dotnet run --project tools/DjHarvest -- --seconds 1800 --out C:\harvest
-//   dotnet run --project tools/DjHarvest -- "http://a/stream|aac" "http://b/stream|mp3"
+//   dotnet run --project tools/DjHarvest -- --qc-reject 0.3 "http://a/stream|aac"
 //
 // Each station arg is "url" (codec inferred from the URL) or "url|aac" / "url|mp3" explicit.
 
 var seconds = ArgInt("--seconds", 900);
 var offset = ArgDouble("--offset", 6.0);
+var qcReject = ArgDouble("--qc-reject", 0.30); // reject a segment below this music fraction
 var outDir = ArgStr("--out", null) ?? Path.Combine(Path.GetTempPath(), "DjHarvest");
 
 // Positional station specs = everything that isn't a flag or a flag's value.
-var valueFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "--seconds", "--offset", "--out" };
+var valueFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    { "--seconds", "--offset", "--out", "--qc-reject" };
 var stationArgs = new List<string>();
 for (var i = 0; i < args.Length; i++)
 {
@@ -48,6 +52,7 @@ if (stationArgs.Count == 0)
 }
 
 Directory.CreateDirectory(outDir);
+Qc.Configure(outDir, qcReject);
 
 // BASS on the "no sound" device (0): streams still download + fire metadata syncs at
 // real-time when played, but produce no audio and don't contend for a real output device.
@@ -69,7 +74,8 @@ foreach (var spec in stationArgs)
     harvesters.Add(new Harvester(label, url, format, outDir, offset, dispatcher));
 }
 
-Console.WriteLine($"Dj harvest PoC — {harvesters.Count} stations, {seconds}s, offset {offset}s");
+Console.WriteLine($"Dj harvest PoC — {harvesters.Count} stations, {seconds}s, offset {offset}s, " +
+                  $"QC reject < {qcReject:0.00} music");
 Console.WriteLine($"Segments → {outDir}");
 Console.WriteLine(new string('-', 60));
 
@@ -99,7 +105,10 @@ void Shutdown()
     stopTimer.Stop();
     foreach (var h in harvesters)
         h.Stop();
+    // Give any in-flight QC decodes a moment to finish before tearing down BASS.
+    Thread.Sleep(1500);
     PrintStatus(harvesters, runStart, final: true);
+    Qc.Close();
     Bass.Free();
     dispatcher.InvokeShutdown();
 }
@@ -110,18 +119,21 @@ static void PrintStatus(List<Harvester> harvesters, DateTime runStart, bool fina
     Console.WriteLine(new string('-', 60));
     Console.WriteLine($"{(final ? "FINAL" : "status")} @ {(DateTime.Now - runStart).TotalMinutes:0.0} min");
     var totalKept = 0;
+    var totalRejected = 0;
     foreach (var h in harvesters)
     {
         totalKept += h.Kept;
-        Console.WriteLine($"  {h.Label,-24} kept {h.Kept,3}  titles {h.Titles,3}  " +
+        totalRejected += h.Rejected;
+        Console.WriteLine($"  {h.Label,-24} kept {h.Kept,3}  rej {h.Rejected,2}  titles {h.Titles,3}  " +
                           $"{h.Kept / elapsedHr,5:0.0}/hr{(h.Dead ? "  [DEAD]" : "")}");
     }
+    // Fill rate is measured on QC-KEPT songs (the ones that reach the queue).
     var aggPerHr = totalKept / elapsedHr;
     // A single continuous playback consumes ~1 song per average song length (~3.5 min → ~17/hr).
     const double starvationLine = 17.0;
-    Console.WriteLine($"  {"AGGREGATE",-24} kept {totalKept,3}           {aggPerHr,5:0.0}/hr  " +
-                      $"(need > ~{starvationLine:0}/hr to sustain playback → " +
-                      $"{(aggPerHr > starvationLine ? "SUSTAINABLE" : "below line")})");
+    Console.WriteLine($"  {"AGGREGATE",-24} kept {totalKept,3}  rej {totalRejected,2}  " +
+                      $"     {aggPerHr,5:0.0}/hr  " +
+                      $"(need > ~{starvationLine:0}/hr → {(aggPerHr > starvationLine ? "SUSTAINABLE" : "below line")})");
     Console.WriteLine(new string('-', 60));
 }
 
@@ -174,6 +186,7 @@ sealed class Harvester
     private int _session;
     private int _titles;
     private int _kept;
+    private int _rejected;
     private int _reconnects;
     private volatile bool _dead;
     private const int MaxReconnects = 5;
@@ -181,6 +194,7 @@ sealed class Harvester
     public string Label { get; }
     public int Titles => Volatile.Read(ref _titles);
     public int Kept => Volatile.Read(ref _kept);
+    public int Rejected => Volatile.Read(ref _rejected);
     public bool Dead => _dead;
 
     public Harvester(string label, string url, StreamFormat format, string outDir, double offsetSeconds,
@@ -252,25 +266,17 @@ sealed class Harvester
     }
 
     // Raised on the dispatcher thread by StreamRecorder for each complete, song-like segment.
+    // QC (decode + classify) is offloaded so it never blocks the dispatcher / other harvesters.
     private void OnSegmentCompleted(object? sender, CompletedSegment seg)
     {
-        try
+        var src = StreamRecorder.PathFor(seg.FileName);
+        Task.Run(() =>
         {
-            var src = StreamRecorder.PathFor(seg.FileName);
-            var baseName = Sanitize($"{Label} · {seg.Artist} - {seg.Title}");
-            var ext = Path.GetExtension(seg.FileName);
-            var dst = Path.Combine(_outDir, baseName + ext);
-            for (var n = 2; File.Exists(dst); n++)
-                dst = Path.Combine(_outDir, $"{baseName} ({n}){ext}");
-            File.Copy(src, dst);
-            StreamRecorder.TryDelete(src); // don't pollute the app's real cache
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"  [{Label}] copy failed: {ex.Message}");
-        }
-        Interlocked.Increment(ref _kept);
-        Console.WriteLine($"  [{Label}] ♪ {seg.Artist} — {seg.Title}  ({seg.Bytes / 1024} KB)");
+            var (kept, note) = Qc.Evaluate(src, _outDir, Label, seg);
+            if (kept) Interlocked.Increment(ref _kept);
+            else Interlocked.Increment(ref _rejected);
+            Console.WriteLine($"  [{Label}] {note}");
+        });
     }
 
     private void OnEnd()
@@ -320,6 +326,121 @@ sealed class Harvester
         start += key.Length;
         var end = meta.IndexOf("';", start, StringComparison.Ordinal);
         return end < 0 ? meta[start..].TrimEnd('\'') : meta[start..end];
+    }
+}
+
+/// <summary>
+/// Segment quality control on completed harvest segments (the harvest design's SegmentQualityChecker,
+/// PoC form): decode the finished segment, classify it with the shared <see cref="MusicDetector"/>,
+/// REJECT clear talk (music fraction below the threshold), and for kept songs record the head/tail
+/// talk (edge-trim seconds) to manifest.csv. Runs on background threads; thread-safe.
+/// </summary>
+internal static class Qc
+{
+    private static readonly object _lock = new();
+    private static readonly MusicDetector _detector = new();
+    private static StreamWriter? _manifest;
+    private static double _rejectBelow = 0.30;
+
+    public static void Configure(string outDir, double rejectBelow)
+    {
+        _rejectBelow = rejectBelow;
+        Directory.CreateDirectory(outDir);
+        _manifest = new StreamWriter(Path.Combine(outDir, "manifest.csv")) { AutoFlush = true };
+        _manifest.WriteLine("station,artist,title,verdict,musicPct,leadTrimSec,tailTrimSec,keptFile");
+    }
+
+    public static void Close()
+    {
+        lock (_lock) { _manifest?.Flush(); _manifest?.Dispose(); _manifest = null; }
+    }
+
+    /// <summary>Decode + classify one completed segment; keep or reject it. Returns (kept, log note).</summary>
+    public static (bool Kept, string Note) Evaluate(string src, string outDir, string label, CompletedSegment seg)
+    {
+        try
+        {
+            var mono = DecodeMono(src, out var rate);
+            if (mono is null || mono.Length == 0)
+            {
+                StreamRecorder.TryDelete(src);
+                return (false, $"✗ decode failed: {seg.Artist} — {seg.Title}");
+            }
+
+            var res = _detector.Analyze(mono, rate);
+            var pct = res.MusicFraction * 100;
+
+            if (res.MusicFraction < _rejectBelow)
+            {
+                StreamRecorder.TryDelete(src); // clear talk — don't let it reach the queue
+                WriteManifest(label, seg, res, "");
+                return (false, $"✗ QC rejected {res.Verdict} {pct:0}%: {seg.Artist} — {seg.Title}");
+            }
+
+            var ext = Path.GetExtension(seg.FileName);
+            var baseName = Sanitize($"{label} · {seg.Artist} - {seg.Title}");
+            var dst = Path.Combine(outDir, baseName + ext);
+            for (var n = 2; File.Exists(dst); n++)
+                dst = Path.Combine(outDir, $"{baseName} ({n}){ext}");
+            File.Copy(src, dst);
+            StreamRecorder.TryDelete(src);
+            WriteManifest(label, seg, res, Path.GetFileName(dst));
+
+            var trim = res.LeadTalkSeconds > 0 || res.TailTalkSeconds > 0
+                ? $"  trim {res.LeadTalkSeconds:0.0}s/{res.TailTalkSeconds:0.0}s" : "";
+            return (true, $"♪ {res.Verdict} {pct:0}%: {seg.Artist} — {seg.Title}{trim}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"✗ QC error: {ex.Message}");
+        }
+    }
+
+    private static void WriteManifest(string label, CompletedSegment seg, FileResult res, string keptFile)
+    {
+        lock (_lock)
+            _manifest?.WriteLine(string.Join(',',
+                Csv(label), Csv(seg.Artist), Csv(seg.Title), res.Verdict,
+                (res.MusicFraction * 100).ToString("0"),
+                res.LeadTalkSeconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture),
+                res.TailTalkSeconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture),
+                Csv(keptFile)));
+    }
+
+    private static string Csv(string? s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
+
+    private static float[]? DecodeMono(string file, out int sampleRate)
+    {
+        sampleRate = 0;
+        var ext = Path.GetExtension(file).ToLowerInvariant();
+        var isAac = ext is ".aac" or ".m4a";
+        var h = isAac
+            ? BassAac.CreateStream(file, 0, 0, BassFlags.Decode | BassFlags.Float)
+            : Bass.CreateStream(file, 0, 0, BassFlags.Decode | BassFlags.Float);
+        if (h == 0) return null;
+        if (!Bass.ChannelGetInfo(h, out var info)) { Bass.StreamFree(h); return null; }
+        sampleRate = info.Frequency;
+        var ch = Math.Max(1, info.Channels);
+
+        var samples = new List<float>(1 << 20);
+        var buf = new float[16384];
+        while (true)
+        {
+            var bytes = Bass.ChannelGetData(h, buf, buf.Length * sizeof(float));
+            if (bytes <= 0) break;
+            var got = bytes / sizeof(float);
+            if (ch == 1)
+                for (var i = 0; i < got; i++) samples.Add(buf[i]);
+            else
+                for (var i = 0; i + ch <= got; i += ch)
+                {
+                    double s = 0;
+                    for (var c = 0; c < ch; c++) s += buf[i + c];
+                    samples.Add((float)(s / ch));
+                }
+        }
+        Bass.StreamFree(h);
+        return samples.ToArray();
     }
 
     private static string Sanitize(string name)

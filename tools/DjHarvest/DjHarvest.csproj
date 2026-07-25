@@ -19,6 +19,13 @@
     <ProjectReference Include="..\..\crystal-radio.csproj" />
   </ItemGroup>
 
+  <!-- Reuse the detector (segment QC + edge-trim) by linking its source. It moves to the app's
+       Services/ when the real harvest engine is built; for the PoC, share it in place. -->
+  <ItemGroup>
+    <Compile Include="..\DjDetector\Fft.cs" Link="Detector\Fft.cs" />
+    <Compile Include="..\DjDetector\MusicDetector.cs" Link="Detector\MusicDetector.cs" />
+  </ItemGroup>
+
   <!-- Native BASS DLLs (x64). Content doesn't flow across a ProjectReference, so link the
        app's copies next to this tool's exe. bass_aac is needed for AAC stations. -->
   <ItemGroup>
