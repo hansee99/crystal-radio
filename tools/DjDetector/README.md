@@ -49,6 +49,7 @@ dotnet run --project tools/DjDetector -- C:\clips           # music/…, talk/�
 | `--csv <path>` | Feature CSV output (default `djdetector-features.csv`) |
 | `--suspects-csv <path>` | Write the suspect-span report (see below) to CSV as well as console |
 | `--corrections <path>` | Confirmed ground-truth spans that override labels for real harvested files (see below) |
+| `--suspect-threshold <0-1>` | Music-confidence bar below which a window is "suspect" (default **0.30** — matches DjHarvest's `--qc-reject`, not `MusicDetector.MusicThreshold` (0.5). A window under 0.5 isn't necessarily a real QC concern; this keeps the report about "would this actually worry the harvest pipeline," not classification-boundary noise.) |
 
 Label inference: a file under a folder named `music` → *music*; under `talk` / `speech` /
 `ads` / `news` / `jingle` → *nonmusic*; otherwise unlabelled (analyzed, not scored).
@@ -109,6 +110,28 @@ symptom. Rename the thinned file to `corrections.csv` and use it as in the workf
 Merge `corrections-features.csv` with the original labelled-corpus CSV before re-fitting (or
 pass both to a small script) — each confirmed span is a few seconds of real, precisely-located
 production data, which is worth more per-window than another whole clip.
+
+**Watch the class balance when you do this.** Whole-file corrections add a lot of one label at
+once — 37 confirmed-clean songs added ~19.7k new "music" windows against the original corpus's
+10.1k "nonmusic" windows, a ~3:1 skew. `fit_logreg.py`'s plain (unweighted) gradient descent will
+happily trade non-music accuracy for music accuracy to minimize aggregate error under that skew
+— in one real run this dropped non-music accuracy from 82% to 64% while music climbed to 95%,
+a regression, not an improvement. `fit_logreg.py` now applies inverse-class-frequency weighting
+by default so classes contribute equally regardless of how many windows each has; the fitter
+also reports 5-fold (not single-split) cross-validation, since with a modest file count a single
+80/20 split can swing 10+ points on which "hard" files happen to land in the test fold.
+
+**What actually happened when 37 whole-genre-diverse songs were added this way:** 5-fold CV moved
+from 84.4%±4.9 to 85.4%±3.8 overall — comparable, not a clear win, but measurably more balanced
+across classes (non-music 81.9%→84.2%, music basically flat within noise). The suspect-span
+avalanche did **not** meaningfully shrink at the 0.5 threshold (961→899) — most of the remaining
+"talk" is really just quiet/sparse music the fit is still lukewarm on, sitting between 0.30 and
+0.5. That's exactly what `--suspect-threshold 0.30` (the new default) is for: at 0.30 the count
+drops to a genuinely QC-relevant number, because DjHarvest's QC decision (`--qc-reject`, also
+0.30 by default) works on the whole-file average — and every one of these problem tracks already
+clears that bar. **The lesson: whole-file "add more music" corrections are a real but limited
+lever.** The highest-value next addition is more **non-music** diversity (real talk/ads/jingle
+clips), not more music — that's the class that's actually behind on both count and accuracy.
 
 ## How to read it against the PoC-1 finding
 

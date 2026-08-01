@@ -43,36 +43,70 @@ X = np.array(X); y = np.array(y); groups = np.array(groups)
 print(f"inputs={len(paths)}: {', '.join(paths)}")
 print(f"rows={len(y)}  music={int(y.sum())}  nonmusic={int((1-y).sum())}  files={len(set(groups))}")
 
+def sigmoid(z):
+    # Numerically stable: avoids exp() overflow on large |z| (harmless with IEEE inf handling,
+    # but the RuntimeWarning noise isn't worth ignoring once real fits push logits far from 0).
+    out = np.empty_like(z, dtype=float)
+    pos = z >= 0
+    out[pos] = 1 / (1 + np.exp(-z[pos]))
+    ez = np.exp(z[~pos])
+    out[~pos] = ez / (1 + ez)
+    return out
+
+def class_weights(y):
+    # Inverse-frequency weights so each class contributes equally to the fit regardless of how
+    # many windows it has — otherwise a batch of new same-class data (e.g. adding a pile of
+    # correctly-labelled "music" windows with no matching non-music growth) skews the decision
+    # boundary toward the now-larger class, degrading the OTHER class's accuracy. Weights sum to
+    # n_pos*w_pos = n_neg*w_neg = n/2 each, so total weight == n (same overall scale as
+    # unweighted, so the existing lr/iters still apply).
+    n = len(y); n_pos = y.sum(); n_neg = n - n_pos
+    return np.where(y == 1, n / (2 * n_pos), n / (2 * n_neg))
+
 def fit(Xtr, ytr, iters=4000, lr=0.3, l2=1e-3):
     mu = Xtr.mean(0); sd = Xtr.std(0); sd[sd==0]=1
     Z = (Xtr-mu)/sd
     w = np.zeros(Z.shape[1]); b = 0.0
     n = len(ytr)
+    sw = class_weights(ytr)
     for _ in range(iters):
-        p = 1/(1+np.exp(-(Z@w+b)))
-        gw = Z.T@(p-ytr)/n + l2*w
-        gb = (p-ytr).mean()
+        p = sigmoid(Z@w+b)
+        err = (p-ytr) * sw
+        gw = Z.T@err/n + l2*w
+        gb = err.mean()
         w -= lr*gw; b -= lr*gb
     return w, b, mu, sd
 
 def acc(X_, y_, w, b, mu, sd):
-    p = 1/(1+np.exp(-(((X_-mu)/sd)@w+b)))
+    p = sigmoid(((X_-mu)/sd)@w+b)
     pred = (p>=0.5).astype(float)
     m = y_==1; nm = y_==0
     return (pred==y_).mean(), (pred[m]==1).mean(), (pred[nm]==0).mean()
 
-# Honest, file-grouped 80/20 split so correlated windows from one clip don't leak.
+# Honest, file-grouped K-FOLD cross-validation (not a single 80/20 split): with a modest file
+# count, one random split can land the "hard" files disproportionately in train or test, making a
+# single held-out number noisy/misleading (a 10+pt swing between two runs doesn't necessarily mean
+# either model is actually better). Averaging over K folds — each file always in exactly one test
+# fold — gives a much more trustworthy estimate of real-world (out-of-sample) accuracy.
+K = 5
 rng = np.random.default_rng(42)
 files = np.array(sorted(set(groups)))
 rng.shuffle(files)
-cut = int(len(files)*0.8)
-train_files = set(files[:cut]);
-tr = np.array([g in train_files for g in groups]); te = ~tr
-w,b,mu,sd = fit(X[tr], y[tr])
-o,m,nm = acc(X[te], y[te], w,b,mu,sd)
-print(f"HELD-OUT (20% of files): overall={o*100:.1f}%  music={m*100:.1f}%  nonmusic={nm*100:.1f}%")
-o2,m2,nm2 = acc(X[tr], y[tr], w,b,mu,sd)
-print(f"train:                    overall={o2*100:.1f}%  music={m2*100:.1f}%  nonmusic={nm2*100:.1f}%")
+folds = np.array_split(files, K)
+fold_accs = []
+for k in range(K):
+    test_files = set(folds[k])
+    te = np.array([g in test_files for g in groups]); tr = ~te
+    w,b,mu,sd = fit(X[tr], y[tr])
+    fold_accs.append(acc(X[te], y[te], w,b,mu,sd))
+fold_accs = np.array(fold_accs)
+mean, std = fold_accs.mean(0), fold_accs.std(0)
+print(f"{K}-FOLD CV (mean±std over folds, file-grouped):")
+print(f"  overall={mean[0]*100:.1f}%±{std[0]*100:.1f}  music={mean[1]*100:.1f}%±{std[1]*100:.1f}  "
+      f"nonmusic={mean[2]*100:.1f}%±{std[2]*100:.1f}")
+for k in range(K):
+    o,m,nm = fold_accs[k]
+    print(f"  fold {k+1}: overall={o*100:5.1f}%  music={m*100:5.1f}%  nonmusic={nm*100:5.1f}%")
 
 # Final model on ALL data → fold standardization into raw-feature weights for the C# detector.
 w,b,mu,sd = fit(X, y)

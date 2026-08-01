@@ -39,25 +39,31 @@ internal sealed class MusicDetector
     internal const double WindowSeconds = 1.0;    // 1 s decision window
     private const double WindowHopSeconds = 0.5;  // 50% overlap
 
-    // Music confidence = sigmoid(bias + Σ wᵢ·featureᵢ). A logistic regression fitted to a
-    // labelled corpus of harvested clips (26 music + 43 non-music: ads, DJ talk, jingles;
-    // ~22k windows) replaces the original hand-tuned rule. The fit found spectral flux mean/var
-    // to be the strongest discriminators, ahead of the classic 4 Hz-modulation term.
-    // Honest, file-grouped hold-out accuracy: ~86% overall (music ~92%, non-music ~82%).
-    // Re-fit with tools/DjDetector's CSV output → the fit_logreg helper when the corpus grows.
+    // Music confidence = sigmoid(bias + Σ wᵢ·featureᵢ). A class-weighted logistic regression
+    // fitted to a labelled corpus of 106 clips (~41.6k windows): the original 69-clip corpus
+    // (mainstream pop/rock/disco + ads/talk/jingles) plus 37 whole harvested songs across
+    // DroneZone/Groove Salad/indiepop/Radio Paradise, added specifically to close a genre gap —
+    // quiet/sparse downtempo and indie tracks were misread as speech-like by the first fit.
+    // Class weighting (inverse label frequency) keeps the now-3:1 music:nonmusic window ratio
+    // from skewing the boundary toward "music" by default.
+    // Honest estimate: 5-fold file-grouped CV, 85.4% overall ± 3.8 (music 85.3% ± 7.3, non-music
+    // 84.2% ± 7.5) — a small corpus (106 files) means real fold-to-fold variance; comparable to
+    // the prior fit (84.4% ± 4.9) but measurably more balanced across classes.
+    // Re-fit with tools/DjDetector's fit_logreg.py as the corpus grows (more nonmusic diversity
+    // — not just more music — is the highest-value next addition).
     internal const double MusicThreshold = 0.5;   // confidence ≥ this ⇒ music
 
-    private const double LrBias = 7.6313147;
-    private const double Lr_Mod4Hz = -0.34930274;
-    private const double Lr_ZcrMean = 0.0011769138;
-    private const double Lr_ZcrVar = -3.9741867e-08;
-    private const double Lr_LowEnergyRatio = -2.6969956;
-    private const double Lr_FluxMean = -26.701023;
-    private const double Lr_FluxVar = 20.754694;
-    private const double Lr_CentroidMean = -0.00016698626;
-    private const double Lr_CentroidVar = -1.6771577e-06;
-    private const double Lr_RolloffMean = -0.00040613901;
-    private const double Lr_Flatness = 5.3527911e-09;
+    private const double LrBias = 8.7579313;
+    private const double Lr_Mod4Hz = -0.91245206;
+    private const double Lr_ZcrMean = 0.0013854667;
+    private const double Lr_ZcrVar = -1.474332e-07;
+    private const double Lr_LowEnergyRatio = -5.0558876;
+    private const double Lr_FluxMean = -25.067923;
+    private const double Lr_FluxVar = -15.693825;
+    private const double Lr_CentroidMean = -0.0012438604;
+    private const double Lr_CentroidVar = -8.0104721e-07;
+    private const double Lr_RolloffMean = -0.00026307206;
+    private const double Lr_Flatness = 9.9606074e-09;
 
     public FileResult Analyze(float[] mono, int sampleRate)
     {

@@ -40,10 +40,17 @@ var csvPath = ArgStr("--csv") ?? "djdetector-features.csv";
 var correctionsPath = ArgStr("--corrections");
 var suspectsCsvPath = ArgStr("--suspects-csv");
 var templateCorrectionsPath = ArgStr("--template-corrections");
+// Separate from MusicDetector.MusicThreshold (0.5, the classification boundary) on purpose: a
+// window just under 0.5 in an otherwise-fine file isn't necessarily a real QC concern — the
+// harvest pipeline's actual accept/reject bar is --qc-reject (0.30 by default in DjHarvest), and
+// reporting suspects at 0.5 manufactures spans for genres that sit comfortably above 0.30 but
+// below 0.5 (quiet/sparse music the fit is still lukewarm on). Default this to the same 0.30 so
+// the report reflects "would this actually concern the harvest QC," not just "under 0.5".
+var suspectThreshold = ArgDouble("--suspect-threshold", 0.30);
 
 // Positional inputs = everything that isn't a flag or a flag's value.
 var valueFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "--label", "--csv", "--corrections", "--suspects-csv", "--template-corrections" };
+    { "--label", "--csv", "--corrections", "--suspects-csv", "--template-corrections", "--suspect-threshold" };
 var paths = new List<string>();
 for (var i = 0; i < args.Length; i++)
 {
@@ -160,7 +167,7 @@ foreach (var file in files.OrderBy(f => f))
     // Suspect spans: contiguous below-threshold runs — candidate talk to spot-check by ear and
     // turn into --corrections entries. "lead"/"tail" spans duplicate the trim readout above;
     // "interior" spans are the ones edge-trim can't see (mid-song talk-overs, DJ drop-ins).
-    foreach (var (start, end, kind, avgConf) in FindSuspectSpans(result))
+    foreach (var (start, end, kind, avgConf) in FindSuspectSpans(result, suspectThreshold))
     {
         Console.WriteLine($"      suspect  {start,6:0.0}s – {end,6:0.0}s  ({end - start:0.0}s, {kind}, conf {avgConf:0.00})");
         suspectsCsv?.WriteLine(string.Join(',', Csv(name), F(start), F(end), F(end - start), kind, F(avgConf)));
@@ -238,19 +245,23 @@ static string InferLabel(string file)
 }
 
 /// <summary>
-/// Finds contiguous below-threshold window runs — candidate talk spans to spot-check by ear.
-/// "lead"/"tail" spans touch the very first/last window (same thing the trim readout reports);
-/// "interior" spans are mid-file dips edge-trim can't see — the useful new information here.
+/// Finds contiguous below-<paramref name="threshold"/> window runs — candidate talk spans to
+/// spot-check by ear. "lead"/"tail" spans touch the very first/last window (same thing the trim
+/// readout reports); "interior" spans are mid-file dips edge-trim can't see — the useful new
+/// information here. Threshold is a parameter (not MusicDetector.MusicThreshold) because
+/// "worth a human glance" and "worth classifying as music" are different bars — see --suspect-
+/// threshold's default of 0.30 (matching DjHarvest's QC reject bar) above.
 /// </summary>
-static IEnumerable<(double Start, double End, string Kind, double AvgConfidence)> FindSuspectSpans(FileResult result)
+static IEnumerable<(double Start, double End, string Kind, double AvgConfidence)> FindSuspectSpans(
+    FileResult result, double threshold)
 {
     var w = result.Windows;
     var i = 0;
     while (i < w.Count)
     {
-        if (w[i].Confidence >= MusicDetector.MusicThreshold) { i++; continue; }
+        if (w[i].Confidence >= threshold) { i++; continue; }
         var start = i;
-        while (i < w.Count && w[i].Confidence < MusicDetector.MusicThreshold) i++;
+        while (i < w.Count && w[i].Confidence < threshold) i++;
         var end = i - 1;
         var kind = start == 0 ? "lead" : end == w.Count - 1 ? "tail" : "interior";
         var avg = 0.0;
@@ -261,9 +272,44 @@ static IEnumerable<(double Start, double End, string Kind, double AvgConfidence)
 }
 
 /// <summary>
+/// Minimal CSV line splitter that respects double-quoted fields (comma-inside-quotes is not a
+/// separator; "" inside a quoted field is an escaped quote). Needed because --template-corrections
+/// / --suspects-csv always quote the filename field (via <see cref="Csv"/>), and a spreadsheet
+/// editor re-saving the file will itself quote (only) fields that need it — e.g. a filename with
+/// a literal comma, like "Drums, The - What You Were.mp3" — producing a file with mixed quoted
+/// and unquoted rows. A naive Split(',') mis-splits the quoted-comma case.
+/// </summary>
+static List<string> SplitCsvLine(string line)
+{
+    var fields = new List<string>();
+    var sb = new System.Text.StringBuilder();
+    var inQuotes = false;
+    for (var i = 0; i < line.Length; i++)
+    {
+        var c = line[i];
+        if (inQuotes)
+        {
+            if (c == '"')
+            {
+                if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; }
+                else inQuotes = false;
+            }
+            else sb.Append(c);
+        }
+        else if (c == '"') inQuotes = true;
+        else if (c == ',') { fields.Add(sb.ToString()); sb.Clear(); }
+        else sb.Append(c);
+    }
+    fields.Add(sb.ToString());
+    return fields;
+}
+
+/// <summary>
 /// Loads confirmed ground-truth spans from a "file,startSec,endSec,label" CSV (label is
-/// music|nonmusic). Parsed right-anchored (last 3 fields), so filenames containing commas are
-/// still handled correctly, matching fit_logreg.py's convention. Missing/empty path → no corrections.
+/// music|nonmusic). Fields are split quote-aware (<see cref="SplitCsvLine"/>), then right-anchored
+/// (last 3 fields) so a filename containing an UNQUOTED comma is still handled — belt and braces,
+/// since either form can occur once a human has edited the file in a spreadsheet.
+/// Missing/empty path → no corrections.
 /// </summary>
 static Dictionary<string, List<(double Start, double End, string Label)>> LoadCorrections(string? path)
 {
@@ -274,13 +320,13 @@ static Dictionary<string, List<(double Start, double End, string Label)>> LoadCo
     foreach (var line in File.ReadLines(path).Skip(1)) // skip header
     {
         if (string.IsNullOrWhiteSpace(line)) continue;
-        var parts = line.Split(',');
-        if (parts.Length < 4) continue;
+        var parts = SplitCsvLine(line);
+        if (parts.Count < 4) continue;
         var label = parts[^1].Trim();
         if (label is not ("music" or "nonmusic")) continue;
         if (!double.TryParse(parts[^2], System.Globalization.CultureInfo.InvariantCulture, out var end)) continue;
         if (!double.TryParse(parts[^3], System.Globalization.CultureInfo.InvariantCulture, out var start)) continue;
-        var file = string.Join(',', parts[..^3]).Trim();
+        var file = string.Join(',', parts.Take(parts.Count - 3)).Trim();
         if (!byFile.TryGetValue(file, out var list))
             byFile[file] = list = [];
         list.Add((start, end, label));
@@ -296,3 +342,6 @@ string? ArgStr(string name)
     var i = Array.FindIndex(args, a => a.Equals(name, StringComparison.OrdinalIgnoreCase));
     return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
 }
+
+double ArgDouble(string name, double def) =>
+    double.TryParse(ArgStr(name), System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : def;
