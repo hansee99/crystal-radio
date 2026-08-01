@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- LocalPlaybackEngine/SongCurator marshal through a WPF Dispatcher; UseWPF brings in
+         WindowsBase (Dispatcher / DispatcherTimer), same reason as tools/DjHarvest. -->
+    <UseWPF>true</UseWPF>
+    <!-- Match the app: the referenced project is x64 (native BASS). -->
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\crystal-radio.csproj" />
+  </ItemGroup>
+
+  <!-- Native BASS DLLs (x64). Content doesn't flow across a ProjectReference, so link the
+       app's copies next to this tool's exe. bass_aac is needed for AAC library songs. -->
+  <ItemGroup>
+    <Content Include="..\..\native\x64\bass.dll" Link="bass.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\native\x64\bass_aac.dll" Link="bass_aac.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Local embedding model, needed by SongCurator's semantic recall over the library. Same
+       reason Content doesn't flow across the ProjectReference as above. -->
+  <ItemGroup>
+    <Content Include="..\..\MlAssets\all-MiniLM-L6-v2.onnx" Link="MlAssets\all-MiniLM-L6-v2.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\MlAssets\vocab.txt" Link="MlAssets\vocab.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

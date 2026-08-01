@@ -24,14 +24,16 @@ From those it derives a per-window **music confidence** (0 = speech/ad, 1 = musi
 suggestion: how many seconds of non-music sit at the head and tail of an otherwise-music
 segment. It also writes every window's raw features to CSV so the weights can be tuned/fitted.
 
-The detector (`MusicDetector`) and FFT (`Fft`) are dependency-free and operate on `float[]` PCM,
-so they lift straight into the app as `Services/MusicDetector.cs` later (live engine §6.4 and
-the harvest QC both reuse them).
+The detector (`MusicDetector`) and FFT (`Fft`) are dependency-free and operate on `float[]` PCM —
+promoted into the app as `Services/MusicDetector.cs`/`Services/Fft.cs` once DJ mode shipped
+(`Services/SegmentQualityChecker.cs` is the production QC/edge-trim backstop that uses them). This
+tool links the app's copies (`<Compile Include>`) rather than owning a duplicate, so tuning/
+re-fitting here applies directly to what ships.
 
 ## Usage
 
 ```sh
-# Analyze a folder of clips (recurses); writes djdetector-features.csv
+# Analyze a folder of clips (recurses); writes tools/DjDetector/corpus/djdetector-features.csv
 dotnet run --project tools/DjDetector -- C:\harvest
 
 # Explicit files, custom CSV
@@ -46,7 +48,7 @@ dotnet run --project tools/DjDetector -- C:\clips           # music/…, talk/�
 |---|---|
 | *(positional)* | Files and/or folders (folders recurse over `.mp3 .aac .m4a .wav .ogg`) |
 | `--label X` | Force a label for accuracy (`music` or anything else → `nonmusic`) |
-| `--csv <path>` | Feature CSV output (default `djdetector-features.csv`) |
+| `--csv <path>` | Feature CSV output (default `tools/DjDetector/corpus/djdetector-features.csv`) |
 | `--suspects-csv <path>` | Write the suspect-span report (see below) to CSV as well as console |
 | `--corrections <path>` | Confirmed ground-truth spans that override labels for real harvested files (see below) |
 | `--suspect-threshold <0-1>` | Music-confidence bar below which a window is "suspect" (default **0.30** — matches DjHarvest's `--qc-reject`, not `MusicDetector.MusicThreshold` (0.5). A window under 0.5 isn't necessarily a real QC concern; this keeps the report about "would this actually worry the harvest pipeline," not classification-boundary noise.) |
@@ -62,7 +64,8 @@ leaked talk, not where, and can't localize a mid-song DJ drop-in. Instead, the h
 ear instead of relistening to whole songs.
 
 ```sh
-# 1) Run over the harvested folder — suspect spans print to console and to the CSV.
+# 1) Run over the harvested folder — suspect spans print to console and to the CSV. The suspects
+#    CSV is a throwaway diagnostic report (not corpus data) — anywhere scratch is fine.
 dotnet run --project tools/DjDetector -- C:\harvest --suspects-csv suspects.csv
 
 #      suspect   12.0s – 18.5s  (6.5s, interior, conf 0.31)
@@ -75,7 +78,9 @@ dotnet run --project tools/DjDetector -- C:\harvest --suspects-csv suspects.csv
 
 # 3) Re-run with the corrections applied — only windows inside a confirmed span get that
 #    label in the feature CSV; the rest of the file stays unlabelled until you confirm it too.
-dotnet run --project tools/DjDetector -- C:\harvest --corrections corrections.csv --csv corrections-features.csv
+#    corrections.csv/corrections-features.csv ARE corpus data (fitter inputs) — keep them in
+#    tools/DjDetector/corpus/, not scratch.
+dotnet run --project tools/DjDetector -- C:\harvest --corrections tools/DjDetector/corpus/corrections.csv --csv tools/DjDetector/corpus/corrections-features.csv
 ```
 
 `kind` in the suspect report: **lead**/**tail** spans touch the very start/end (same thing the
@@ -98,7 +103,7 @@ The fix is cheap and doesn't require listening to hundreds of spans:
 
 ```sh
 # Generate one whole-file "music" row per analyzed file (0..duration).
-dotnet run --project tools/DjDetector -- C:\harvest --template-corrections corrections-template.csv
+dotnet run --project tools/DjDetector -- C:\harvest --template-corrections tools/DjDetector/corpus/corrections-template.csv
 ```
 
 Open the template, and **delete (or edit) only the rows for songs you know had real audible
@@ -144,9 +149,11 @@ clips), not more music — that's the class that's actually behind on both count
   retired and the detector can move into the app for segment QC + edge-trim.
 - The classifier is a **logistic regression** whose coefficients (`LrBias` / `Lr_*` in
   `MusicDetector`) were fitted to a labelled corpus. To re-fit as your corpus grows, run
-  `python tools/DjDetector/fit_logreg.py djdetector-features.csv` and paste the printed
-  constants back into `MusicDetector.cs`. The fitter reports honest, file-grouped hold-out
-  accuracy (windows from one clip never split across train/test).
+  `python tools/DjDetector/fit_logreg.py tools/DjDetector/corpus/djdetector-features.csv` (pass
+  `corrections-features.csv` alongside it too if you've added corrections) and paste the printed
+  constants back into `Services/MusicDetector.cs` (the app's copy — this tool links it, see
+  above). The fitter reports honest, file-grouped hold-out accuracy (windows from one clip never
+  split across train/test).
 
 ## Notes
 
@@ -154,3 +161,7 @@ clips), not more music — that's the class that's actually behind on both count
   later spike if ads-with-music-beds prove hard — not built here.
 - Decode uses the BASS "no sound" device; no audio is played.
 - Not part of `crystal-radio.sln`; an on-demand PoC / tuning / regression tool.
+- `corpus/` holds the actual fitter inputs (`djdetector-features.csv`, `corrections*.csv`) —
+  real, reusable training data, kept alongside the tool rather than scattered at the repo root.
+  Suspect-span reports (`--suspects-csv`) are throwaway diagnostic output, not corpus data —
+  fine anywhere scratch, safe to delete once you've acted on them.

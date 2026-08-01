@@ -16,5 +16,11 @@ public interface IAgenticSearchService
     /// <summary>True when the interpreter has what it needs to run (e.g. an API key).</summary>
     bool IsConfigured { get; }
 
-    Task<IReadOnlyList<RankedStation>> SearchAsync(string prompt, CancellationToken ct = default);
+    /// <summary>
+    /// Runs the two-tool discovery loop for the prompt. <paramref name="maxResults"/> caps how
+    /// many stations the model may return in its final answer — the visible search wants one
+    /// page (the default), DJ sourcing asks for enough to fill a harvester pool plus reserve.
+    /// </summary>
+    Task<IReadOnlyList<RankedStation>> SearchAsync(string prompt, int maxResults = 6,
+        CancellationToken ct = default);
 }

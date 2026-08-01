@@ -36,9 +36,16 @@ public sealed record CompletedSegment(
 /// </summary>
 public sealed class StreamRecorder : IDisposable
 {
+    /// <summary>Default cache directory — the live "Save Song"/RadioEngine recorder's own
+    /// scratch space. A <see cref="StreamRecorder"/> instance backing a headless harvester
+    /// passes its own directory to the constructor instead (see <see cref="_cacheDir"/>), so
+    /// concurrent instances (N harvesters, or a harvester alongside this live recorder) never
+    /// write into the same folder.</summary>
     public static readonly string CacheDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "RadioPlayer", "cache");
+
+    private readonly string _cacheDir;
 
     // A "complete" segment shorter than this is almost certainly a sweeper/ident that slipped
     // the title filter (~12s at 128 kbps), not a song worth offering to save.
@@ -78,14 +85,19 @@ public sealed class StreamRecorder : IDisposable
 
     /// <param name="boundaryOffsetSeconds">How far the stream's title changes lead its audio;
     /// cuts are delayed by this much. Station encoders differ — ~6s fits many.</param>
-    public StreamRecorder(double boundaryOffsetSeconds = 6.0)
+    /// <param name="cacheDir">Scratch directory for in-progress/completed segment files before
+    /// the caller copies a keeper elsewhere. Defaults to <see cref="CacheDir"/> (the live
+    /// recorder's shared space); pass a dedicated directory for a headless harvester instance
+    /// so concurrent recorders never collide.</param>
+    public StreamRecorder(double boundaryOffsetSeconds = 6.0, string? cacheDir = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         _boundaryOffsetSeconds = Math.Clamp(boundaryOffsetSeconds, 0.0, 30.0);
+        _cacheDir = cacheDir ?? CacheDir;
     }
 
-    /// <summary>Absolute path of a cached segment file.</summary>
-    public static string PathFor(string fileName) => Path.Combine(CacheDir, fileName);
+    /// <summary>Absolute path of one of this instance's cached segment files.</summary>
+    public string PathFor(string fileName) => Path.Combine(_cacheDir, fileName);
 
     /// <summary>
     /// Starts a capture session for a new stream connection. Returns the session id the engine
@@ -244,8 +256,12 @@ public sealed class StreamRecorder : IDisposable
 
         try
         {
-            Directory.CreateDirectory(CacheDir);
-            _currentPath = $"{DateTime.UtcNow.Ticks}{_extension}";
+            Directory.CreateDirectory(_cacheDir);
+            // Ticks alone risk collisions once several StreamRecorder instances (concurrent
+            // harvesters, or a harvester alongside the live recorder) cut segments within the
+            // same ~15ms clock-resolution window; the suffix makes that effectively impossible
+            // even though instances no longer share a directory anyway (belt and braces).
+            _currentPath = $"{DateTime.UtcNow.Ticks}-{Guid.NewGuid().ToString("N")[..8]}{_extension}";
             _current = new FileStream(PathFor(_currentPath), FileMode.Create, FileAccess.Write, FileShare.Read);
             _currentIsHead = !_seenBoundary; // first cut of the session opens a mid-song segment
             _pending = (_cutNext.Title, _cutNext.Artist, _cutNext.Station, DateTime.Now);

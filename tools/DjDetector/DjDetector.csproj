@@ -29,4 +29,12 @@
     </Content>
   </ItemGroup>
 
+  <!-- The detector was promoted into Services/ once DJ mode shipped it as the segment QC
+       backstop (SegmentQualityChecker); this tool links the app's copy rather than owning a
+       duplicate, same trick tools/DjHarvest already used to share it with this project. -->
+  <ItemGroup>
+    <Compile Include="..\..\Services\Fft.cs" Link="Fft.cs" />
+    <Compile Include="..\..\Services\MusicDetector.cs" Link="MusicDetector.cs" />
+  </ItemGroup>
+
 </Project>

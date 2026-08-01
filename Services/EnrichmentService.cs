@@ -19,9 +19,7 @@ namespace RadioPlayer.Services;
 /// </summary>
 public sealed partial class EnrichmentService : IEnrichmentService
 {
-    private const string Endpoint = "https://api.anthropic.com/v1/messages";
-    private const string AnthropicVersion = "2023-06-01";
-    private const string DefaultModel = "claude-haiku-4-5"; // summarization, not reasoning
+    private const string DefaultModel = AnthropicApi.HaikuModel; // summarization, not reasoning
 
     private const int MaxHomepageBytes = 200_000;   // size cap for untrusted fetch
     private const int MaxExtractedChars = 4_000;    // cap text sent to the model
@@ -285,18 +283,12 @@ public sealed partial class EnrichmentService : IEnrichmentService
             }
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint)
-        {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-        };
-        request.Headers.Add("x-api-key", _apiKey);
-        request.Headers.Add("anthropic-version", AnthropicVersion);
-
+        using var request = AnthropicApi.CreateRequest(_apiKey, body);
         using var response = await _llmHttp.SendAsync(request).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             return null;
 
-        var responseText = ExtractText(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        var responseText = AnthropicApi.ExtractText(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
         return ParseDistill(responseText);
     }
 
@@ -350,37 +342,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
         return new JsonObject { ["genres"] = genres, ["moods"] = new JsonArray() }.ToJsonString();
     }
 
-    // --- Shared JSON helpers --------------------------------------------------
-
-    private static string? ExtractText(string responseBody)
-    {
-        try
-        {
-            var node = JsonNode.Parse(responseBody);
-            if (node?["content"] is not JsonArray content) return null;
-            foreach (var block in content)
-                if (block?["type"]?.GetValue<string>() == "text")
-                    return block["text"]?.GetValue<string>();
-        }
-        catch (JsonException) { }
-        return null;
-    }
-
-    private static string? StripToJsonObject(string? text)
-    {
-        if (string.IsNullOrEmpty(text)) return null;
-        var trimmed = text.Trim();
-        if (trimmed.StartsWith("```", StringComparison.Ordinal))
-        {
-            var nl = trimmed.IndexOf('\n');
-            if (nl >= 0) trimmed = trimmed[(nl + 1)..];
-            var fence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-            if (fence >= 0) trimmed = trimmed[..fence];
-        }
-        var start = trimmed.IndexOf('{');
-        var end = trimmed.LastIndexOf('}');
-        return start < 0 || end <= start ? null : trimmed[start..(end + 1)];
-    }
+    private static string? StripToJsonObject(string? text) => AnthropicApi.StripToJsonObject(text);
 
     private sealed record DistillResult(string Description, string? FacetsJson);
 

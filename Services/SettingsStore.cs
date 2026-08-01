@@ -33,6 +33,23 @@ public sealed class AppSettings
     /// </summary>
     public double CaptureBoundaryOffsetSeconds { get; set; } = 6.0;
 
+    /// <summary>Concurrent DJ-mode harvesting connections. Cheaper per-stream than a live
+    /// standby (raw-byte capture, no continuous decode/FFT) — drives fill rate.</summary>
+    public int DjHarvesterCount { get; set; } = 4;
+
+    /// <summary>Validated station URLs held in reserve to replace a dead DJ-mode harvester
+    /// without another search round-trip.</summary>
+    public int DjHarvestReserveCount { get; set; } = 15;
+
+    /// <summary>Refill the DJ-mode queue (from the library) when it drops to this many
+    /// remaining songs, in case harvesting alone isn't keeping up.</summary>
+    public int DjQueueLowWatermark { get; set; } = 5;
+
+    /// <summary>Rolling-cache cap in megabytes for DJ-mode's harvested (unsaved) songs — a
+    /// separate cap from <see cref="CacheCapMb"/>, since harvested songs live in their own
+    /// folder, distinct from both the live-recording cache and the user's saved Library folder.</summary>
+    public int DjMaxHarvestCacheMb { get; set; } = 500;
+
     /// <summary>Resolved library folder (the stored value or the default).</summary>
     public string ResolveLibraryFolder() =>
         string.IsNullOrWhiteSpace(LibraryFolder)
@@ -66,6 +83,10 @@ public sealed class SettingsStore
                     settings.Volume = Math.Clamp(settings.Volume, 0.0, 1.0);
                     settings.CacheCapMb = Math.Clamp(settings.CacheCapMb, 20, 10_000);
                     settings.CaptureBoundaryOffsetSeconds = Math.Clamp(settings.CaptureBoundaryOffsetSeconds, 0.0, 30.0);
+                    settings.DjHarvesterCount = Math.Clamp(settings.DjHarvesterCount, 1, 16);
+                    settings.DjHarvestReserveCount = Math.Clamp(settings.DjHarvestReserveCount, 0, 100);
+                    settings.DjQueueLowWatermark = Math.Clamp(settings.DjQueueLowWatermark, 1, 50);
+                    settings.DjMaxHarvestCacheMb = Math.Clamp(settings.DjMaxHarvestCacheMb, 50, 20_000);
                     return settings;
                 }
             }

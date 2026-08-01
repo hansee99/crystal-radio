@@ -7,5 +7,9 @@ public enum PlayerMode
     Radio,
 
     /// <summary>The local, AI-curated library player.</summary>
-    Library
+    Library,
+
+    /// <summary>DJ mode: a self-refilling queue harvested live from several stations at once,
+    /// played back through the same local transport as Library mode.</summary>
+    Dj
 }

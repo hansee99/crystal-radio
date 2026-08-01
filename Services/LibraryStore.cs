@@ -4,6 +4,12 @@ using Microsoft.Data.Sqlite;
 
 namespace RadioPlayer.Services;
 
+/// <summary>Distinguishes songs the user explicitly saved from ones DJ-mode harvesting indexed
+/// on its own — the "Songs" library UI tab shows only <see cref="UserSaved"/>, while
+/// <see cref="SongCurator"/>'s semantic recall (warm-start, curated playlists) draws from both,
+/// so harvest history genuinely improves future curation without cluttering the user's list.</summary>
+public enum SongSource { UserSaved, Harvested }
+
 /// <summary>A song saved to the local library, with its AI-derived metadata (Phase C).</summary>
 public sealed record SavedSong(
     string Path,
@@ -13,7 +19,8 @@ public sealed record SavedSong(
     string Codec,
     DateTimeOffset SavedAt,
     string? Description = null,
-    string? FacetsJson = null);
+    string? FacetsJson = null,
+    SongSource Source = SongSource.UserSaved);
 
 /// <summary>One embedded library row for in-memory cosine search (Phase D).</summary>
 public sealed record SavedSongVector(string Path, string Title, string Artist, string? Description, float[] Vector);
@@ -27,7 +34,7 @@ public sealed record SavedSongVector(string Path, string Title, string Artist, s
 /// </summary>
 public sealed class LibraryStore : IDisposable
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
 
     private readonly object _lock = new();
     private readonly SqliteConnection _connection;
@@ -63,13 +70,14 @@ public sealed class LibraryStore : IDisposable
         {
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = """
-                INSERT INTO songs (path, title, artist, station, codec, saved_at, description, facets)
-                VALUES ($path, $title, $artist, $station, $codec, $at, $desc, $facets)
+                INSERT INTO songs (path, title, artist, station, codec, saved_at, description, facets, source)
+                VALUES ($path, $title, $artist, $station, $codec, $at, $desc, $facets, $source)
                 ON CONFLICT(path) DO UPDATE SET
                     title   = excluded.title,
                     artist  = excluded.artist,
                     station = excluded.station,
-                    codec   = excluded.codec;
+                    codec   = excluded.codec,
+                    source  = excluded.source;
                 """;
             cmd.Parameters.AddWithValue("$path", song.Path);
             cmd.Parameters.AddWithValue("$title", song.Title);
@@ -79,6 +87,7 @@ public sealed class LibraryStore : IDisposable
             cmd.Parameters.AddWithValue("$at", song.SavedAt.ToString("o", CultureInfo.InvariantCulture));
             cmd.Parameters.AddWithValue("$desc", (object?)song.Description ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$facets", (object?)song.FacetsJson ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$source", song.Source.ToString());
             cmd.ExecuteNonQuery();
         }
     }
@@ -121,7 +130,7 @@ public sealed class LibraryStore : IDisposable
         {
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = """
-                SELECT path, title, artist, station, codec, saved_at, description, facets
+                SELECT path, title, artist, station, codec, saved_at, description, facets, source
                 FROM songs WHERE path = $path;
                 """;
             cmd.Parameters.AddWithValue("$path", path);
@@ -130,16 +139,27 @@ public sealed class LibraryStore : IDisposable
         }
     }
 
-    /// <summary>All library rows, newest first (for reconciliation and the Phase D library view).</summary>
-    public IReadOnlyList<SavedSong> GetAll()
+    /// <summary>All library rows, newest first (for reconciliation and the Phase D library view).
+    /// Pass <paramref name="source"/> to restrict to user-saved or harvested rows only — the
+    /// default (null) draws from everything, which is what recall/curation and reconciliation
+    /// want; the "Songs" library UI tab passes <see cref="SongSource.UserSaved"/> so ephemeral
+    /// harvested songs don't clutter it.</summary>
+    public IReadOnlyList<SavedSong> GetAll(SongSource? source = null)
     {
         lock (_lock)
         {
             using var cmd = _connection.CreateCommand();
-            cmd.CommandText = """
-                SELECT path, title, artist, station, codec, saved_at, description, facets
-                FROM songs ORDER BY saved_at DESC;
-                """;
+            cmd.CommandText = source is null
+                ? """
+                  SELECT path, title, artist, station, codec, saved_at, description, facets, source
+                  FROM songs ORDER BY saved_at DESC;
+                  """
+                : """
+                  SELECT path, title, artist, station, codec, saved_at, description, facets, source
+                  FROM songs WHERE source = $source ORDER BY saved_at DESC;
+                  """;
+            if (source is not null)
+                cmd.Parameters.AddWithValue("$source", source.Value.ToString());
             var songs = new List<SavedSong>();
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -213,7 +233,8 @@ public sealed class LibraryStore : IDisposable
         r.GetString(4),
         DateTimeOffset.Parse(r.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
         r.IsDBNull(6) ? null : r.GetString(6),
-        r.IsDBNull(7) ? null : r.GetString(7));
+        r.IsDBNull(7) ? null : r.GetString(7),
+        Enum.Parse<SongSource>(r.GetString(8)));
 
     private void EnsureSchema()
     {
@@ -223,20 +244,31 @@ public sealed class LibraryStore : IDisposable
             if (version >= SchemaVersion)
                 return;
 
-            Execute("""
-                CREATE TABLE IF NOT EXISTS songs (
-                    path            TEXT PRIMARY KEY NOT NULL,
-                    title           TEXT NOT NULL,
-                    artist          TEXT NOT NULL,
-                    station         TEXT,
-                    codec           TEXT NOT NULL,
-                    saved_at        TEXT NOT NULL,
-                    description     TEXT,        -- AI-derived song/artist profile
-                    facets          TEXT,        -- JSON: genres/moods/era
-                    embedding       BLOB,        -- L2-normalized float32 vector
-                    embedding_model TEXT         -- model id the vector came from
-                );
-                """);
+            if (version == 0)
+            {
+                Execute("""
+                    CREATE TABLE IF NOT EXISTS songs (
+                        path            TEXT PRIMARY KEY NOT NULL,
+                        title           TEXT NOT NULL,
+                        artist          TEXT NOT NULL,
+                        station         TEXT,
+                        codec           TEXT NOT NULL,
+                        saved_at        TEXT NOT NULL,
+                        description     TEXT,        -- AI-derived song/artist profile
+                        facets          TEXT,        -- JSON: genres/moods/era
+                        embedding       BLOB,        -- L2-normalized float32 vector
+                        embedding_model TEXT,        -- model id the vector came from
+                        source          TEXT NOT NULL DEFAULT 'UserSaved' -- UserSaved | Harvested
+                    );
+                    """);
+            }
+            else if (version == 1)
+            {
+                // v1→v2: DJ-mode harvesting needs to tell apart songs the user explicitly saved
+                // from ones it indexed on its own, without touching any existing row's data —
+                // every pre-existing row is, by definition, something the user saved.
+                Execute("ALTER TABLE songs ADD COLUMN source TEXT NOT NULL DEFAULT 'UserSaved';");
+            }
             Execute($"PRAGMA user_version={SchemaVersion};");
         }
     }

@@ -1,5 +1,5 @@
 using System.IO;
-using DjDetector;
+using RadioPlayer.Services;
 using ManagedBass;
 using ManagedBass.Aac;
 
@@ -36,7 +36,7 @@ using ManagedBass.Aac;
 // directly injects the missing genre diversity as clean examples, which is the actual fix.
 
 var forcedLabel = ArgStr("--label");
-var csvPath = ArgStr("--csv") ?? "djdetector-features.csv";
+var csvPath = ArgStr("--csv") ?? Path.Combine("tools", "DjDetector", "corpus", "djdetector-features.csv");
 var correctionsPath = ArgStr("--corrections");
 var suspectsCsvPath = ArgStr("--suspects-csv");
 var templateCorrectionsPath = ArgStr("--template-corrections");
@@ -97,6 +97,8 @@ if (files.Count == 0)
 var corrections = LoadCorrections(correctionsPath);
 
 var detector = new MusicDetector();
+var csvDir = Path.GetDirectoryName(Path.GetFullPath(csvPath));
+if (!string.IsNullOrEmpty(csvDir)) Directory.CreateDirectory(csvDir);
 using var csv = new StreamWriter(csvPath);
 csv.WriteLine(MusicDetector.CsvHeader);
 using var suspectsCsv = suspectsCsvPath is null ? null : new StreamWriter(suspectsCsvPath);

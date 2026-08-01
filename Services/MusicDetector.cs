@@ -1,4 +1,4 @@
-namespace DjDetector;
+namespace RadioPlayer.Services;
 
 /// <summary>Per-analysis-window features + the derived music confidence (0 = speech/ad, 1 = music).</summary>
 internal sealed record WindowFeatures(
@@ -25,9 +25,10 @@ internal sealed record FileResult(
 
 /// <summary>
 /// Offline music/speech discriminator (Scheirer–Slaney lineage). Operates on mono float PCM —
-/// no BASS, no realtime constraint — so it's equally the harvest QC/edge-trim tool and, later,
-/// the core of the live engine's detector. Features and weights are intentionally explicit and
-/// tunable; the harness also dumps them to CSV so the weights below can be fitted to real data.
+/// no BASS, no realtime constraint — promoted from tools/DjDetector into the app as the DJ-mode
+/// segment QC + edge-trim backstop (<see cref="SegmentQualityChecker"/>). Features and weights
+/// are intentionally explicit and tunable; tools/DjDetector's harness still dumps them to CSV so
+/// the weights below can be re-fitted as the labelled corpus grows.
 /// </summary>
 internal sealed class MusicDetector
 {

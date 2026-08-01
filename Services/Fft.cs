@@ -1,9 +1,9 @@
-namespace DjDetector;
+namespace RadioPlayer.Services;
 
 /// <summary>
 /// Minimal in-place iterative radix-2 Cooley–Tukey FFT (power-of-two sizes only). Kept
-/// dependency-free and self-contained so the same code can move into the live engine later
-/// (DJ-MODE-SPEC §6.4 wants a managed FFT over the delay buffer, not BASS's consuming FFT).
+/// dependency-free and self-contained — promoted from tools/DjDetector once the music/speech
+/// detector moved into the app as the DJ-mode segment QC backstop (see MusicDetector.cs).
 /// </summary>
 internal static class Fft
 {

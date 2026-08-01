@@ -16,9 +16,22 @@ Each completed segment then passes through **segment QC** (the harvest design's
 `SegmentQualityChecker`, PoC form): it's decoded and classified by the shared
 [`MusicDetector`](../DjDetector/MusicDetector.cs). **Clear talk is rejected** (music fraction
 below `--qc-reject`, default 0.30) so ad/talk that slipped the ICY filter never reaches the
-folder; **kept songs** are copied out and their head/tail talk (**edge-trim seconds**) is
-recorded to `manifest.csv`. So the output folder is clean-by-construction *plus* a detector
-backstop, and the manifest tells you how much to trim off each song's edges at playback.
+folder; **kept songs** have the detector's head/tail talk measurement (**edge-trim seconds**)
+actually **applied** to the copied audio (byte-trimmed, not just logged) before they land in
+the output folder, and the seconds trimmed are still recorded to `manifest.csv` for visibility.
+
+This edge-trim is the real fix for "song starts abruptly / has talk (or the next song) bled
+into the tail": `StreamRecorder`'s capture-time `--offset` can only *delay* a boundary cut, so
+it can't correct a station whose ICY metadata genuinely lags its own audio (a negative true
+lead — confirmed on Radio Paradise: even `--offset 0` left 5s of talk at a song's tail).
+Byte-trimming after the fact fixes it regardless of the station's timing, because it uses the
+detector's own measurement of where content starts/ends rather than a fixed assumption about
+encoder lead time. Pass `--no-edge-trim` to fall back to the old copy-untrimmed behavior (e.g.
+to A/B compare, or if you suspect a bad trim).
+
+The cut isn't frame-boundary-exact (no MP3/ADTS frame parsing), so expect an occasional
+barely-audible micro-glitch right at the trim point — acceptable for this PoC; a production
+cut would snap to the nearest frame header.
 
 ## How it works
 
@@ -52,6 +65,7 @@ dotnet run --project tools/DjHarvest -- "http://host/stream|aac" "http://host/ot
 | `--out <dir>` | `%TEMP%\DjHarvest` | Where kept segments (+ `manifest.csv`) go |
 | `--offset <sec>` | 6 | Boundary-cut offset (same meaning as `CaptureBoundaryOffsetSeconds`) |
 | `--qc-reject <frac>` | 0.30 | Reject a segment whose music fraction is below this (0 disables QC) |
+| `--no-edge-trim` | off (trim ON) | Copy kept segments untrimmed — the old behavior, for comparison |
 
 Ctrl+C stops early and prints the final summary. No API key needed — PoC 1 takes explicit
 station URLs; search-based seeding is a later phase.

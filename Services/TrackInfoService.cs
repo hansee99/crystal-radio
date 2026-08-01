@@ -18,11 +18,8 @@ namespace RadioPlayer.Services;
 /// </summary>
 public sealed class TrackInfoService : ITrackInfoService
 {
-    private const string Endpoint = "https://api.anthropic.com/v1/messages";
-    private const string AnthropicVersion = "2023-06-01";
-
     // Sonnet: this is synthesis over multiple web sources, not a one-shot translation.
-    private const string DefaultModel = "claude-sonnet-4-6";
+    private const string DefaultModel = AnthropicApi.SonnetModel;
     private const int MaxIterations = 5;       // hard cap on messages.create round-trips
     private const int WebSearchMaxUses = 4;
     private const int CacheCap = 48;           // per-session, soft FIFO bound
@@ -150,17 +147,11 @@ public sealed class TrackInfoService : ITrackInfoService
             ["messages"] = msgArray
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint)
-        {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-        };
-        request.Headers.Add("x-api-key", _apiKey);
-        request.Headers.Add("anthropic-version", AnthropicVersion);
-
+        using var request = AnthropicApi.CreateRequest(_apiKey, body);
         using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         var responseBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Anthropic API returned {(int)response.StatusCode}: {Truncate(responseBody)}");
+            throw new HttpRequestException($"Anthropic API returned {(int)response.StatusCode}: {AnthropicApi.Truncate(responseBody)}");
 
         return JsonNode.Parse(responseBody) as JsonObject
                ?? throw new HttpRequestException("Anthropic API returned an unexpected response.");
@@ -205,33 +196,9 @@ public sealed class TrackInfoService : ITrackInfoService
     private static string CacheKey(string title, string? artist) =>
         $"{artist?.Trim().ToLowerInvariant()}|{title.Trim().ToLowerInvariant()}";
 
-    private static string ExtractText(JsonNode? content)
-    {
-        if (content is not JsonArray arr)
-            return string.Empty;
-        var sb = new StringBuilder();
-        foreach (var block in arr)
-            if (Str(block?["type"]) == "text")
-                sb.Append(Str(block?["text"]));
-        return sb.ToString();
-    }
+    private static string ExtractText(JsonNode? content) => AnthropicApi.ExtractText(content) ?? string.Empty;
 
-    private static string? StripToJsonObject(string text)
-    {
-        var trimmed = text.Trim();
-        if (trimmed.StartsWith("```", StringComparison.Ordinal))
-        {
-            var firstNewline = trimmed.IndexOf('\n');
-            if (firstNewline >= 0)
-                trimmed = trimmed[(firstNewline + 1)..];
-            var closingFence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-            if (closingFence >= 0)
-                trimmed = trimmed[..closingFence];
-        }
-        var start = trimmed.IndexOf('{');
-        var end = trimmed.LastIndexOf('}');
-        return start < 0 || end <= start ? null : trimmed[start..(end + 1)];
-    }
+    private static string? StripToJsonObject(string text) => AnthropicApi.StripToJsonObject(text);
 
     /// <summary>
     /// Normalize a model-produced string for display: strip any markup the web-search model
@@ -248,8 +215,5 @@ public sealed class TrackInfoService : ITrackInfoService
         return text.Trim();
     }
 
-    private static string? Str(JsonNode? n) =>
-        n is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
-
-    private static string Truncate(string s) => s.Length <= 300 ? s : s[..300] + "…";
+    private static string? Str(JsonNode? n) => AnthropicApi.Str(n);
 }

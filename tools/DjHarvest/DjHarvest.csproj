@@ -19,11 +19,13 @@
     <ProjectReference Include="..\..\crystal-radio.csproj" />
   </ItemGroup>
 
-  <!-- Reuse the detector (segment QC + edge-trim) by linking its source. It moves to the app's
-       Services/ when the real harvest engine is built; for the PoC, share it in place. -->
+  <!-- Reuse the detector (segment QC + edge-trim) by linking its source. It's `internal`, so a
+       plain ProjectReference wouldn't expose it across the assembly boundary — link the actual
+       Services/ source (now that DJ mode shipped it there as SegmentQualityChecker's backstop)
+       so it compiles directly into this tool's own assembly, same trick as before the promotion. -->
   <ItemGroup>
-    <Compile Include="..\DjDetector\Fft.cs" Link="Detector\Fft.cs" />
-    <Compile Include="..\DjDetector\MusicDetector.cs" Link="Detector\MusicDetector.cs" />
+    <Compile Include="..\..\Services\Fft.cs" Link="Detector\Fft.cs" />
+    <Compile Include="..\..\Services\MusicDetector.cs" Link="Detector\MusicDetector.cs" />
   </ItemGroup>
 
   <!-- Native BASS DLLs (x64). Content doesn't flow across a ProjectReference, so link the

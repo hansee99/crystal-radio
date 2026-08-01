@@ -6,7 +6,10 @@ using RadioPlayer.Models;
 namespace RadioPlayer.Services;
 
 /// <summary>A local audio file queued for the library player.</summary>
-public sealed record LocalTrack(string Path, string Title, string Artist, StreamFormat Format);
+/// <summary>One queued local track. <paramref name="Reason"/> is the curator's one-line "why
+/// this song" when the track came from a curated playlist (null for harvested/direct plays) —
+/// carried through so DJ mode's intro line can ground itself in the actual curation logic.</summary>
+public sealed record LocalTrack(string Path, string Title, string Artist, StreamFormat Format, string? Reason = null);
 
 /// <summary>
 /// Plays local audio files from an ordered queue — the offline/AI-curated side of the app. The
@@ -15,11 +18,26 @@ public sealed record LocalTrack(string Path, string Title, string Artist, Stream
 /// auto-advance to the next track. Deliberately separate from RadioEngine so neither carries the
 /// other's concerns (ICY/reconnection vs. queue/seek).
 ///
-/// UI-thread-affine: constructed on the UI thread; the end-of-track BASS sync marshals back via
-/// the dispatcher, and a dispatcher timer publishes position while playing.
+/// Auto-advance between tracks crossfades (volume-envelope only, no BASSmix needed — BASS mixes
+/// simultaneously-playing channels on one device natively): a couple of seconds before a track's
+/// natural end, the next track starts underneath it at zero volume, the two slide past each other
+/// over <see cref="FadeSeconds"/>, and the outgoing stream is freed once its fade-out completes.
+/// Manual transitions (<see cref="PlayAt"/>/<see cref="Next"/>/<see cref="Previous"/> called
+/// directly, e.g. from a skip button) stay an immediate hard cut — a deliberate skip shouldn't
+/// wait out a fade.
+///
+/// UI-thread-affine: constructed on the UI thread; BASS syncs marshal back via the dispatcher,
+/// and a dispatcher timer publishes position while playing.
 /// </summary>
-public sealed class LocalPlaybackEngine : IPlaybackEngine
+public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
 {
+    private const double FadeSeconds = 5.0;
+    private const int FadeMs = (int)(FadeSeconds * 1000);
+    // Require real headroom before the crossfade trigger point AND enough runway that a second
+    // crossfade can't plausibly fire before the first one's fade-out has finished (see the
+    // defensive FreeFadeOutStream() call in BeginCrossfade if it ever does).
+    private const double MinDurationForCrossfade = FadeSeconds * 2;
+
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _positionTimer;
 
@@ -31,7 +49,19 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine
     private int _index = -1;
 
     private SyncProcedure? _endSync;
+    private SyncProcedure? _fadeTriggerSync;
     private int _generation;
+
+    // The stream currently fading out (0 = none) — kept alive only long enough to finish its
+    // fade and get freed; Position/Duration/Pause/Seek/Volume never touch it, only `_stream` does.
+    private int _fadeOutStream;
+    private SyncProcedure? _fadeOutSlidedSync;
+    // Roots the outgoing stream's own end/fade-trigger delegates for as long as that stream is
+    // alive: BASS holds a native pointer to a sync callback until the channel is freed, and
+    // reassigning `_endSync`/`_fadeTriggerSync` to the incoming stream's delegates would otherwise
+    // leave the outgoing ones with no managed reference — eligible for GC while BASS could still
+    // invoke them.
+    private object?[] _fadeOutKeepAlive = [];
 
     public LocalPlaybackEngine()
     {
@@ -85,6 +115,25 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine
             return;
         }
         PlayAt(Math.Clamp(startIndex, 0, _queue.Count - 1));
+    }
+
+    /// <summary>Number of tracks in the queue (played + upcoming).</summary>
+    public int QueueCount => _queue.Count;
+
+    /// <summary>
+    /// Appends tracks to the end of the queue without disturbing playback — the self-refilling
+    /// queue's write side (a warm-start seed or an empty cold start both just keep growing via
+    /// this). If the queue was empty (nothing playing yet), starts playback immediately.
+    /// </summary>
+    public void Append(IReadOnlyList<LocalTrack> tracks)
+    {
+        ArgumentNullException.ThrowIfNull(tracks);
+        if (tracks.Count == 0)
+            return;
+        var wasEmpty = _queue.Count == 0;
+        _queue.AddRange(tracks);
+        if (wasEmpty)
+            PlayAt(0);
     }
 
     /// <summary>Play the queue entry at <paramref name="index"/>.</summary>
@@ -215,13 +264,101 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine
         SetState(PlaybackState.Playing);
         PublishPosition();
         _positionTimer.Start();
+        ArmCrossfadeTrigger(generation);
     }
 
     private void OnTrackEnded(int generation)
     {
         if (generation != _generation)
-            return; // superseded by a newer stream
+            return; // superseded by a newer stream (a crossfade already advanced us)
         Next();     // auto-advance (Next stops at the end of the queue)
+    }
+
+    /// <summary>
+    /// Schedules <see cref="BeginCrossfade"/> to fire <see cref="FadeSeconds"/> before the current
+    /// stream's natural end, if there's a next track and enough runway to make it worthwhile. Too
+    /// short a track (or the last one in the queue) just falls through to the existing
+    /// <see cref="SyncFlags.End"/>-driven hard stop/advance.
+    /// </summary>
+    private void ArmCrossfadeTrigger(int generation)
+    {
+        if (_stream == 0 || _index + 1 >= _queue.Count)
+            return;
+        var duration = DurationSeconds;
+        if (duration <= MinDurationForCrossfade)
+            return;
+
+        var triggerBytes = Bass.ChannelSeconds2Bytes(_stream, duration - FadeSeconds);
+        _fadeTriggerSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => BeginCrossfade(generation));
+        Bass.ChannelSetSync(_stream, SyncFlags.Position, triggerBytes, _fadeTriggerSync);
+    }
+
+    /// <summary>
+    /// Starts the next track underneath the current one and slides both past each other over
+    /// <see cref="FadeSeconds"/>: the outgoing stream fades to silence (freed once its slide
+    /// completes, via a <see cref="SyncFlags.Slided"/> sync — more trustworthy than trying to
+    /// time a manual cleanup ourselves), and the incoming one — which becomes "the" current
+    /// stream immediately, so Position/Duration/Pause/Seek all reflect it right away — fades in.
+    /// </summary>
+    private void BeginCrossfade(int generation)
+    {
+        if (generation != _generation || _stream == 0 || _index + 1 >= _queue.Count)
+            return; // superseded (manual skip/stop already happened) or nothing to crossfade into
+
+        var nextIndex = _index + 1;
+        var nextTrack = _queue[nextIndex];
+        var handle = nextTrack.Format == StreamFormat.Aac
+            ? BassAac.CreateStream(nextTrack.Path, 0, 0, BassFlags.Default)
+            : Bass.CreateStream(nextTrack.Path, 0, 0, BassFlags.Default);
+        if (handle == 0)
+        {
+            ErrorOccurred?.Invoke(this, $"Couldn't open \"{nextTrack.Title}\": {Bass.LastError}");
+            return; // let the outgoing track keep playing to its own natural End sync
+        }
+
+        // Shouldn't normally happen (see MinDurationForCrossfade), but if a previous fade-out
+        // hasn't finished yet, finish it now rather than risk two outgoing streams in flight.
+        FreeFadeOutStream();
+
+        var outgoing = _stream;
+        _fadeOutStream = outgoing;
+        _fadeOutKeepAlive = [_endSync, _fadeTriggerSync];
+        _fadeOutSlidedSync = (_, _, _, _) => _dispatcher.BeginInvoke(FreeFadeOutStream);
+        Bass.ChannelSetSync(outgoing, SyncFlags.Slided, 0, _fadeOutSlidedSync);
+        Bass.ChannelSlideAttribute(outgoing, ChannelAttribute.Volume, 0f, FadeMs);
+
+        var incomingGeneration = ++_generation;
+        _index = nextIndex;
+        _stream = handle;
+        Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, 0f);
+
+        _endSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => OnTrackEnded(incomingGeneration));
+        Bass.ChannelSetSync(_stream, SyncFlags.End, 0, _endSync);
+
+        if (!Bass.ChannelPlay(_stream))
+        {
+            // _stream still holds the failed handle here (not zeroed) so Stop()/FreeStream()
+            // frees it — same pattern as StartStream's own failure path.
+            ErrorOccurred?.Invoke(this, $"Couldn't play \"{nextTrack.Title}\": {Bass.LastError}");
+            Stop();
+            return;
+        }
+        Bass.ChannelSlideAttribute(_stream, ChannelAttribute.Volume, (float)_volume, FadeMs);
+
+        TrackChanged?.Invoke(this, (nextTrack, _index));
+        PublishPosition();
+        ArmCrossfadeTrigger(incomingGeneration);
+    }
+
+    private void FreeFadeOutStream()
+    {
+        if (_fadeOutStream != 0)
+        {
+            Bass.StreamFree(_fadeOutStream);
+            _fadeOutStream = 0;
+        }
+        _fadeOutSlidedSync = null;
+        _fadeOutKeepAlive = [];
     }
 
     private void FreeStream()
@@ -234,6 +371,8 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine
             _stream = 0;
         }
         _endSync = null;
+        _fadeTriggerSync = null;
+        FreeFadeOutStream();
     }
 
     private void PublishPosition()

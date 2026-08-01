@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text;
@@ -12,17 +13,26 @@ namespace RadioPlayer.Services;
 /// </summary>
 public sealed class StationSearchService : IStationSearchService
 {
-    // A single mirror is fine to start (CLAUDE.md). DNS-based discovery can come later.
-    private const string DefaultMirror = "https://de1.api.radio-browser.info";
+    // Known public mirrors, tried in order: a request that fails at the transport level
+    // (connect/timeout/5xx) advances to the next mirror and stays there — every AI feature
+    // depends on this one API, so a single dead hostname must not take them all down.
+    private static readonly string[] DefaultMirrors =
+    [
+        "https://de1.api.radio-browser.info",
+        "https://de2.api.radio-browser.info",
+        "https://at1.api.radio-browser.info",
+    ];
+
     private const int ResultLimit = 30;
 
     private readonly HttpClient _http;
-    private readonly string _mirror;
+    private readonly string[] _mirrors;
+    private int _mirrorIndex; // sticky: advanced on failure, so later calls start at a live one
 
-    public StationSearchService(HttpClient http, string mirror = DefaultMirror)
+    public StationSearchService(HttpClient http, string? mirror = null)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
-        _mirror = mirror.TrimEnd('/');
+        _mirrors = string.IsNullOrWhiteSpace(mirror) ? DefaultMirrors : [mirror.TrimEnd('/')];
 
         // The maintainers ask for a descriptive User-Agent for usage stats.
         if (!_http.DefaultRequestHeaders.UserAgent.Any())
@@ -35,10 +45,51 @@ public sealed class StationSearchService : IStationSearchService
         return candidates.Select(c => c.Station).ToList();
     }
 
-    public Task<IReadOnlyList<StationCandidate>> SearchCandidatesAsync(StationSearchQuery query, int offset = 0, CancellationToken ct = default)
+    /// <summary>
+    /// Structured search. Radio Browser's <c>tagList</c> is an AND filter (a station must carry
+    /// every tag), which quietly starves recall for multi-tag queries — "ambient,chillout" only
+    /// returns stations tagged with BOTH. So for multi-tag queries this also runs one query per
+    /// tag and unions the results: the precise AND matches come first, then each tag's own
+    /// matches. Recall is deliberately wide here — the LLM re-ranker downstream is the strict
+    /// relevance judge, so a loose union costs nothing in final quality.
+    /// </summary>
+    public async Task<IReadOnlyList<StationCandidate>> SearchCandidatesAsync(StationSearchQuery query, int offset = 0, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(query);
-        return QueryAsync(BuildQueryString(query, offset), ct);
+
+        var tags = query.Tags?.Where(t => !string.IsNullOrWhiteSpace(t)).ToArray() ?? [];
+        if (tags.Length <= 1)
+            return await QueryAsync(BuildQueryString(query, offset), ct);
+
+        // AND query first (most precise), then a query per tag, all in parallel.
+        var queries = new List<Task<IReadOnlyList<StationCandidate>>>
+        {
+            QueryAsync(BuildQueryString(query, offset), ct)
+        };
+        foreach (var tag in tags)
+        {
+            var single = new StationSearchQuery
+            {
+                Tags = [tag],
+                Name = query.Name,
+                Country = query.Country,
+                Language = query.Language,
+                BitrateMin = query.BitrateMin,
+                Order = query.Order
+            };
+            queries.Add(QueryAsync(BuildQueryString(single, offset), ct));
+        }
+
+        var pages = await Task.WhenAll(queries);
+
+        // Union preserving order: AND matches first, then per-tag pages; dedupe on uuid.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var union = new List<StationCandidate>();
+        foreach (var page in pages)
+            foreach (var c in page)
+                if (seen.Add(c.StationUuid))
+                    union.Add(c);
+        return union;
     }
 
     public Task<IReadOnlyList<StationCandidate>> SearchByNameAsync(string name, CancellationToken ct = default)
@@ -64,8 +115,7 @@ public sealed class StationSearchService : IStationSearchService
 
         // byuuid accepts a comma-separated list and still returns full station rows, so the
         // usual playable filter applies (re-validating codec/HLS/lastcheckok at resolve time).
-        var url = $"{_mirror}/json/stations/byuuid?uuids={Uri.EscapeDataString(string.Join(",", list))}";
-        return FetchAndMapAsync(url, ct);
+        return FetchAndMapAsync($"/json/stations/byuuid?uuids={Uri.EscapeDataString(string.Join(",", list))}", ct);
     }
 
     public async Task<IReadOnlyList<StationCandidate>> GetPopularAsync(int count, bool extendedInfoOnly,
@@ -92,7 +142,7 @@ public sealed class StationSearchService : IStationSearchService
             AppendParam(sb, "limit", pageSize.ToString());
             AppendParam(sb, "offset", offset.ToString());
 
-            var page = await FetchAndMapAsync($"{_mirror}/json/stations/search?{sb}", ct);
+            var page = await FetchAndMapAsync($"/json/stations/search?{sb}", ct);
             if (page.Count == 0)
                 break; // no more playable rows (likely end of the ranking)
 
@@ -111,14 +161,39 @@ public sealed class StationSearchService : IStationSearchService
 
     /// <summary>Runs a Radio Browser search query and maps the results.</summary>
     private Task<IReadOnlyList<StationCandidate>> QueryAsync(string queryString, CancellationToken ct) =>
-        FetchAndMapAsync($"{_mirror}/json/stations/search?{queryString}", ct);
+        FetchAndMapAsync($"/json/stations/search?{queryString}", ct);
 
-    /// <summary>Fetches a Radio Browser endpoint, filters to playable streams, maps to candidates.</summary>
-    private async Task<IReadOnlyList<StationCandidate>> FetchAndMapAsync(string url, CancellationToken ct)
+    /// <summary>
+    /// Fetches a Radio Browser endpoint (path + query, no host), filters to playable streams,
+    /// maps to candidates. On a transport-level failure it advances to the next mirror and
+    /// retries once per remaining mirror; only when every mirror fails does the exception
+    /// propagate to the caller's existing error handling.
+    /// </summary>
+    private async Task<IReadOnlyList<StationCandidate>> FetchAndMapAsync(string pathAndQuery, CancellationToken ct)
     {
-        var results = await _http.GetFromJsonAsync<List<RadioBrowserStation>>(url, ct)
-                      ?? new List<RadioBrowserStation>();
+        for (var attempt = 0; ; attempt++)
+        {
+            var mirror = _mirrors[_mirrorIndex % _mirrors.Length];
+            try
+            {
+                var results = await _http.GetFromJsonAsync<List<RadioBrowserStation>>(mirror + pathAndQuery, ct)
+                              ?? new List<RadioBrowserStation>();
+                return MapCandidates(results);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw; // caller cancelled — not a mirror problem
+            }
+            catch (Exception ex) when (attempt < _mirrors.Length - 1)
+            {
+                Debug.WriteLine($"[RadioBrowser] {mirror} failed ({ex.Message}) — trying next mirror");
+                _mirrorIndex++; // sticky failover: later calls start at the mirror that worked
+            }
+        }
+    }
 
+    private static IReadOnlyList<StationCandidate> MapCandidates(List<RadioBrowserStation> results)
+    {
         var candidates = new List<StationCandidate>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

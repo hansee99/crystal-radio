@@ -17,6 +17,10 @@ public interface ISongCurator
     /// Return up to <paramref name="max"/> library songs ordered as a playlist for the prompt.
     /// Falls back to semantic order (no reasons) when the LLM can't run, and to recency when
     /// there are no embeddings yet. Never throws; returns [] only when the library is empty.
+    /// <paramref name="excludeKeys"/> — optional case-insensitive "Artist|Title" keys to leave
+    /// out of recall entirely (songs the caller has already queued/played), so repeat calls
+    /// reach deeper into the library instead of returning the same top matches again.
     /// </summary>
-    Task<IReadOnlyList<CuratedSong>> CurateAsync(string prompt, int max = 20, CancellationToken ct = default);
+    Task<IReadOnlyList<CuratedSong>> CurateAsync(string prompt, int max = 20,
+        IReadOnlyCollection<string>? excludeKeys = null, CancellationToken ct = default);
 }

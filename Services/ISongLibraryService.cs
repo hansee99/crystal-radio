@@ -14,8 +14,9 @@ public interface ISongLibraryService
     /// </summary>
     void AddAndEnrich(SavedSong song);
 
-    /// <summary>All library rows, newest first.</summary>
-    IReadOnlyList<SavedSong> GetAll();
+    /// <summary>All library rows, newest first. Pass <paramref name="source"/> to restrict to
+    /// user-saved or harvested rows only; the default (null) draws from everything.</summary>
+    IReadOnlyList<SavedSong> GetAll(SongSource? source = null);
 
     /// <summary>Remove a song from the index (e.g. its file no longer exists).</summary>
     void Remove(string path);

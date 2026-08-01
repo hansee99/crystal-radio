@@ -16,16 +16,16 @@ namespace RadioPlayer.Services;
 /// </summary>
 public sealed class AgenticSearchService : IAgenticSearchService
 {
-    private const string Endpoint = "https://api.anthropic.com/v1/messages";
-    private const string AnthropicVersion = "2023-06-01";
-
     // Stronger model than Pattern A — this is multi-step reasoning over web + catalog.
-    private const string DefaultModel = "claude-sonnet-4-6";
+    private const string DefaultModel = AnthropicApi.SonnetModel;
     private const int MaxIterations = 6;   // hard cap on messages.create round-trips
     private const int WebSearchMaxUses = 3;
     private const int MaxCandidatesPerCall = 20;
+    private const int DefaultMaxResults = 6; // visible-search page size; DJ sourcing asks for more
 
-    private const string SystemPrompt = """
+    // {MAX} = max stations in the final answer — sized per caller (the visible search wants a
+    // page; DJ sourcing wants enough for a harvester pool + reserve).
+    private const string SystemPromptTemplate = """
         You help a user find REAL, PLAYABLE internet radio stations. You have two tools:
 
         1. web_search — discover station *names and descriptions* from blogs, forums, and
@@ -49,7 +49,7 @@ public sealed class AgenticSearchService : IAgenticSearchService
             { "stationuuid": "string", "reason": "one short sentence on why it fits" }
           ]
         }
-        Order best first, at most 6. Use only stationuuids returned by search_radio_browser.
+        Order best first, at most {MAX}. Use only stationuuids returned by search_radio_browser.
         If nothing suitable was found, return {"stations": []}.
         """;
 
@@ -71,12 +71,15 @@ public sealed class AgenticSearchService : IAgenticSearchService
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
 
-    public async Task<IReadOnlyList<RankedStation>> SearchAsync(string prompt, CancellationToken ct = default)
+    public async Task<IReadOnlyList<RankedStation>> SearchAsync(string prompt,
+        int maxResults = DefaultMaxResults, CancellationToken ct = default)
     {
         if (!IsConfigured)
             throw new InvalidOperationException("ANTHROPIC_API_KEY is not set.");
         if (string.IsNullOrWhiteSpace(prompt))
             return [];
+
+        var systemPrompt = SystemPromptTemplate.Replace("{MAX}", Math.Max(1, maxResults).ToString());
 
         // Everything search_radio_browser returned, keyed by stationuuid — the trust set.
         var fetched = new Dictionary<string, StationCandidate>(StringComparer.OrdinalIgnoreCase);
@@ -91,7 +94,7 @@ public sealed class AgenticSearchService : IAgenticSearchService
 
         for (var i = 0; i < MaxIterations; i++)
         {
-            var response = await CallApiAsync(messages, ct);
+            var response = await CallApiAsync(systemPrompt, messages, ct);
             var content = response["content"];
 
             // Echo the assistant turn back verbatim next round — including the encrypted
@@ -141,7 +144,7 @@ public sealed class AgenticSearchService : IAgenticSearchService
         return ranked;
     }
 
-    private async Task<JsonObject> CallApiAsync(List<JsonNode> messages, CancellationToken ct)
+    private async Task<JsonObject> CallApiAsync(string systemPrompt, List<JsonNode> messages, CancellationToken ct)
     {
         var msgArray = new JsonArray();
         foreach (var m in messages)
@@ -151,22 +154,16 @@ public sealed class AgenticSearchService : IAgenticSearchService
         {
             ["model"] = _model,
             ["max_tokens"] = 2048,
-            ["system"] = SystemPrompt,
+            ["system"] = systemPrompt,
             ["tools"] = BuildTools(),
             ["messages"] = msgArray
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint)
-        {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-        };
-        request.Headers.Add("x-api-key", _apiKey);
-        request.Headers.Add("anthropic-version", AnthropicVersion);
-
+        using var request = AnthropicApi.CreateRequest(_apiKey, body);
         using var response = await _http.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Anthropic API returned {(int)response.StatusCode}: {Truncate(responseBody)}");
+            throw new HttpRequestException($"Anthropic API returned {(int)response.StatusCode}: {AnthropicApi.Truncate(responseBody)}");
 
         return JsonNode.Parse(responseBody) as JsonObject
                ?? throw new HttpRequestException("Anthropic API returned an unexpected response.");
@@ -314,41 +311,14 @@ public sealed class AgenticSearchService : IAgenticSearchService
         return ranked;
     }
 
-    private static string ExtractText(JsonNode? content)
-    {
-        if (content is not JsonArray arr)
-            return string.Empty;
-        var sb = new StringBuilder();
-        foreach (var block in arr)
-            if (Str(block?["type"]) == "text")
-                sb.Append(Str(block?["text"]));
-        return sb.ToString();
-    }
+    private static string ExtractText(JsonNode? content) => AnthropicApi.ExtractText(content) ?? string.Empty;
 
-    private static string? StripToJsonObject(string text)
-    {
-        var trimmed = text.Trim();
-        if (trimmed.StartsWith("```", StringComparison.Ordinal))
-        {
-            var firstNewline = trimmed.IndexOf('\n');
-            if (firstNewline >= 0)
-                trimmed = trimmed[(firstNewline + 1)..];
-            var closingFence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-            if (closingFence >= 0)
-                trimmed = trimmed[..closingFence];
-        }
-        var start = trimmed.IndexOf('{');
-        var end = trimmed.LastIndexOf('}');
-        return start < 0 || end <= start ? null : trimmed[start..(end + 1)];
-    }
+    private static string? StripToJsonObject(string text) => AnthropicApi.StripToJsonObject(text);
 
-    private static string? Str(JsonNode? n) =>
-        n is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
+    private static string? Str(JsonNode? n) => AnthropicApi.Str(n);
 
     private static int Int(JsonNode? n) =>
         n is JsonValue v && v.TryGetValue<int>(out var i) ? i : 0;
-
-    private static string Truncate(string s) => s.Length <= 300 ? s : s[..300] + "…";
 
     private static string? FormatTags(string? tags)
     {

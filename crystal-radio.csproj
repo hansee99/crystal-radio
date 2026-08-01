@@ -7,9 +7,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <!-- The seed tool lives under tools/ (a separate project). Keep its sources/artifacts
-         out of this project's default **/*.cs and Content/Page globs. -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);tools\**</DefaultItemExcludes>
+    <!-- PoC tools and the test project live under tools/ and tests/ (separate projects). Keep
+         their sources/artifacts out of this project's default **/*.cs and Content/Page globs. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);tools\**;tests\**</DefaultItemExcludes>
     <!-- App identity / versioning. Bump Version (SemVer MAJOR.MINOR.PATCH) per release;
          the SDK flows it into the assembly's File/Informational version automatically. -->
     <Version>1.5.0</Version>

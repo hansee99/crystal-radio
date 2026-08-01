@@ -152,14 +152,19 @@ results). Every piece of real station data — name, URL, codec — comes from a
 ### Data source: Radio Browser API (`https://api.radio-browser.info`)
 
 - Free, community-maintained, **no authentication**.
-- **Server discovery:** resolve via DNS / `all.api.radio-browser.info` and retry the
-  next mirror on failure. To start, hardcoding a mirror (e.g.
-  `https://de1.api.radio-browser.info`) is fine.
+- **Server discovery:** `StationSearchService` holds a small hardcoded mirror list and
+  fails over to the next mirror on transport errors (sticky — later calls start at the
+  one that worked). Full DNS discovery via `all.api.radio-browser.info` remains a
+  possible later upgrade.
 - **Send a descriptive `User-Agent`** (e.g. `RadioPlayer/1.0`) — the maintainers ask
   for this and use it for usage stats.
 - Search endpoint: `GET /json/stations/search` with params such as `tag` / `tagList`,
   `name`, `country`, `countrycode`, `language`, `codec`, `bitrateMin`, `order`
   (`votes`, `clickcount`, …), `reverse`, `limit`, and `hidebroken=true`.
+- **`tagList` is an AND filter** — a station must carry *every* listed tag, which quietly
+  starves recall for multi-tag queries. `StationSearchService.SearchCandidatesAsync`
+  therefore also runs one query per tag and unions the results (AND matches first);
+  recall is deliberately wide because the LLM re-ranker downstream is the strict judge.
 
 ### Flow
 
@@ -491,7 +496,7 @@ On-demand AI briefing about the currently playing track, rendered inside the pla
 popup). Separate from station *search* — it explains what's already playing.
 
 - **`TrackInfoService` (`ITrackInfoService`)** — Anthropic Messages API with the server-side
-  `web_search` tool (Sonnet 4.6, no client tool, so the only loop is re-calling on
+  `web_search` tool (Sonnet-class model, no client tool, so the only loop is re-calling on
   `pause_turn`). Returns the fixed shape `TrackInfo { Song, Artist, Notable[] }`. The system
   prompt requires varied sources (not Wikipedia alone) and caps length so the panel doesn't
   scroll much. If the track can't be identified the model returns all-empty and the service
@@ -504,8 +509,14 @@ popup). Separate from station *search* — it explains what's already playing.
   in-flight generation (CancellationTokenSource); the trigger pill is gated on a playing track
   + an API key. Geometries `SparkleGeometry`/`BackGeometry` and the `AboutPillButton` /
   `AboutBackButton` / `AboutLinkButton` styles live in `Views/Theme.xaml`.
-- Same `web_search` cost/enablement caveats as Pattern B. The model id lives only in
-  `TrackInfoService`.
+- Same `web_search` cost/enablement caveats as Pattern B.
+- **Model ids live only in `Services/AnthropicApi.cs`** (the shared Messages-API helper —
+  endpoint/version constants, request construction, response-text extraction, JSON-fence
+  stripping). Two tiers: a Haiku-class model for one-shot translation/description/judging
+  (interpreter, ranker, enrichment, song descriptions, DJ intro lines) and a Sonnet-class
+  model for multi-step or listener-audible judgment (Pattern B agent loop, track briefings,
+  song curation). Verify current ids/pricing at https://docs.claude.com/en/api/overview
+  when bumping.
 
 ## Conventions
 
