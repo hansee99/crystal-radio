@@ -1,10 +1,10 @@
 using System.Reflection;
-using System.Windows;
+using RadioPlayer.Controls;
 
 namespace RadioPlayer;
 
 /// <summary>Minimal about box: name, version, short description.</summary>
-public partial class AboutDialog : Window
+public partial class AboutDialog : AppDialog
 {
     public AboutDialog()
     {

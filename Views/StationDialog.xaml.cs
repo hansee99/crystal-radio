@@ -1,10 +1,11 @@
 using System.Windows;
+using RadioPlayer.Controls;
 using RadioPlayer.Models;
 
 namespace RadioPlayer;
 
 /// <summary>Modal editor for a single station (name, stream URL, format).</summary>
-public partial class StationDialog : Window
+public partial class StationDialog : AppDialog
 {
     public Station? Result { get; private set; }
 

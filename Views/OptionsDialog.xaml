@@ -1,74 +1,43 @@
-<Window x:Class="RadioPlayer.OptionsDialog"
+<ctl:AppDialog x:Class="RadioPlayer.OptionsDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Options" Width="470" SizeToContent="Height"
-        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
-        ShowInTaskbar="False" Icon="/Assets/app.ico"
-        FontFamily="{StaticResource UiFont}" Background="#FF0A1513"
+        xmlns:ctl="clr-namespace:RadioPlayer.Controls"
+        Title="Options" Width="480" SizeToContent="Height"
+        Icon="/Assets/app.ico"
+        FontFamily="{StaticResource UiFont}"
         TextElement.Foreground="{StaticResource TextBody}">
 
-    <Window.Resources>
-        <Style x:Key="SectionHeader" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#FFFFFFFF"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Margin" Value="0,0,0,2"/>
-        </Style>
-        <Style x:Key="FieldLabel" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#FFC9D2DE"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Margin" Value="0,12,0,4"/>
-        </Style>
-        <Style x:Key="Hint" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#FF8C97A6"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="TextWrapping" Value="Wrap"/>
-            <Setter Property="Margin" Value="0,6,0,0"/>
-        </Style>
-        <Style TargetType="TextBox">
-            <Setter Property="Background" Value="#FF13201D"/>
-            <Setter Property="Foreground" Value="#FFFFFFFF"/>
-            <Setter Property="CaretBrush" Value="#FFFFFFFF"/>
-            <Setter Property="BorderBrush" Value="#FF26423D"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="8,6"/>
-            <Setter Property="FontSize" Value="13"/>
-        </Style>
-        <Style TargetType="Button">
-            <Setter Property="MinWidth" Value="84"/>
-            <Setter Property="Height" Value="30"/>
-            <Setter Property="Margin" Value="8,0,0,0"/>
-        </Style>
-    </Window.Resources>
-
-    <StackPanel Margin="20,16,20,20">
-        <TextBlock Style="{StaticResource SectionHeader}" Text="AI-assisted search"/>
-        <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,0"
+    <StackPanel Margin="24,4,24,24">
+        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="AI-assisted search"/>
+        <TextBlock Style="{StaticResource DialogHint}" Margin="0,2,0,0"
                    Text="Leave blank to turn it off — the player works fine without it."/>
 
-        <TextBlock Style="{StaticResource FieldLabel}" Text="Anthropic API key"/>
-        <TextBox x:Name="ApiKeyBox"/>
+        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Anthropic API key"/>
+        <TextBox x:Name="ApiKeyBox" Style="{StaticResource DialogTextBox}"/>
 
-        <TextBlock x:Name="EnvHintText" Style="{StaticResource Hint}" Visibility="Collapsed"/>
+        <TextBlock x:Name="EnvHintText" Style="{StaticResource DialogHint}" Visibility="Collapsed"/>
 
-        <TextBlock Style="{StaticResource Hint}"
+        <TextBlock Style="{StaticResource DialogHint}"
                    Text="Your key is stored securely on this PC. Get one at console.anthropic.com."/>
 
-        <TextBlock Style="{StaticResource SectionHeader}" Text="Saved songs" Margin="0,20,0,2"/>
-        <TextBlock Style="{StaticResource FieldLabel}" Text="Library folder"/>
+        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="Saved songs" Margin="0,24,0,2"/>
+        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Library folder"/>
         <DockPanel>
-            <Button DockPanel.Dock="Right" Content="Browse…" Click="BrowseLibrary_Click"/>
-            <TextBox x:Name="LibraryFolderBox"/>
+            <Button DockPanel.Dock="Right" Content="Browse…" Margin="8,0,0,0"
+                    Style="{StaticResource DialogGhostButton}" Click="BrowseLibrary_Click"/>
+            <TextBox x:Name="LibraryFolderBox" Style="{StaticResource DialogTextBox}"
+                     VerticalAlignment="Center"/>
         </DockPanel>
-        <TextBlock Style="{StaticResource Hint}"
-                   Text="Songs you save from the history land here, named &quot;Artist - Title&quot;. For personal use only — respect the stations' terms."/>
+        <TextBlock Style="{StaticResource DialogHint}"
+                   Text="Songs you save land here, named &quot;Artist - Title&quot;. For personal use only — respect the stations' terms."/>
 
-        <TextBlock Style="{StaticResource Hint}" Foreground="#FFB9A36A"
+        <TextBlock Style="{StaticResource DialogHint}" Foreground="#FFC7B486"
                    Text="Changes apply next time you start Crystal Radio."/>
 
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-            <Button Content="Cancel" IsCancel="True"/>
-            <Button Content="Save" IsDefault="True" Click="Save_Click"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+            <Button Content="Cancel" IsCancel="True" Style="{StaticResource DialogGhostButton}"/>
+            <Button Content="Save" IsDefault="True" Margin="10,0,0,0"
+                    Style="{StaticResource DialogPrimaryButton}" Click="Save_Click"/>
         </StackPanel>
     </StackPanel>
-</Window>
+</ctl:AppDialog>

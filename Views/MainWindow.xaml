@@ -38,24 +38,47 @@
              of which control hosts the row. -->
         <DataTemplate x:Key="SaveAndAboutActions">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Button Margin="0,0,6,0"
+                <!-- Save, as three legible states rather than two-plus-an-absence (UX audit).
+                     A song can only be saved if the rolling cache captured its audio while it
+                     played; rows that missed that window used to show NOTHING, which reads as a
+                     missing button rather than a state. Now the affordance is always there:
+                     enabled, dimmed-and-explained, or replaced by the saved mark. -->
+                <!-- IsEnabled binds CanSave rather than leaning on the command's CanExecute:
+                     RelayCommand only re-evaluates when RaiseCanExecuteChanged is called, and
+                     nothing calls it when a segment finishes recording, so the button would go
+                     stale. CanSave raises PropertyChanged, so this tracks live. -->
+                <Button Margin="0,0,6,0" ToolTipService.ShowOnDisabled="True"
+                        IsEnabled="{Binding CanSave}"
                         Command="{Binding DataContext.SaveSongCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                        CommandParameter="{Binding}"
-                        Visibility="{Binding HasSegment, Converter={StaticResource BoolToVis}}">
+                        CommandParameter="{Binding}">
                     <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource GhostSquareButton}">
-                            <Setter Property="Content" Value="{StaticResource SaveGeometry}"/>
-                            <Setter Property="ToolTip" Value="Save to library"/>
+                            <Setter Property="Content" Value="{StaticResource AddCircleGeometry}"/>
+                            <Setter Property="ToolTip" Value="Save to your library"/>
                             <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasSegment}" Value="False">
+                                    <Setter Property="ToolTip"
+                                            Value="Can't save this one — it wasn't recorded while it played"/>
+                                </DataTrigger>
+                                <!-- Saved: hand over to the teal mark beside it. -->
                                 <DataTrigger Binding="{Binding IsSaved}" Value="True">
-                                    <Setter Property="Content" Value="{StaticResource CheckGeometry}"/>
-                                    <Setter Property="ToolTip" Value="Saved to library"/>
-                                    <Setter Property="IsHitTestVisible" Value="False"/>
+                                    <Setter Property="Visibility" Value="Collapsed"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Button.Style>
                 </Button>
+                <!-- Saved mark. A plain glyph, not a button: it isn't an action, and as a
+                     disabled button it would render at the same faded opacity as "can't save",
+                     which is the opposite of the confirmation it's meant to be. -->
+                <Border Width="32" Height="32" Margin="0,0,6,0" Background="Transparent"
+                        ToolTip="In your library"
+                        Visibility="{Binding IsSaved, Converter={StaticResource BoolToVis}}">
+                    <Path Data="{StaticResource CheckCircleGeometry}" Stretch="Uniform"
+                          Width="15" Height="15" Stroke="{StaticResource TealBright}"
+                          StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
                 <Button Style="{StaticResource GhostSquareButton}"
                         Content="{StaticResource SparkleGeometry}"
                         ToolTip="About this song"
@@ -359,15 +382,11 @@
                                                 </Grid>
                                             </Border>
                                             <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                                <TextBlock Text="{Binding Name}" FontSize="13.5" FontWeight="Medium"
-                                                           Foreground="{StaticResource TextBody}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
-                                                <TextBlock Text="{Binding Description}" FontSize="11.5" Margin="0,2,0,0"
-                                                           Foreground="{StaticResource TextMuted}"
-                                                           TextWrapping="Wrap" MaxHeight="30"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Description}">
+                                                <TextBlock Style="{StaticResource RowTitleText}"
+                                                           Text="{Binding Name}" ToolTip="{Binding Name}"/>
+                                                <TextBlock Text="{Binding Description}" ToolTip="{Binding Description}">
                                                     <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource RowSubtitleDetailed}">
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding Description}" Value="{x:Null}">
                                                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -423,9 +442,12 @@
                                     Background="{StaticResource FillSubtle}"
                                     BorderBrush="{StaticResource Hairline}" BorderThickness="1" Padding="12,0">
                                 <DockPanel>
-                                    <Path DockPanel.Dock="Left" Data="{StaticResource SearchGeometry}"
-                                          Stretch="Uniform" Width="16" Height="16" Stroke="#FF62A59B"
-                                          StrokeThickness="1.6" VerticalAlignment="Center" Margin="0,0,9,0"/>
+                                    <!-- Sparkle, not a magnifier (UX audit): this is the app's
+                                         most AI-driven surface and now matches the Curate and DJ
+                                         prompts, so the glyph means one thing everywhere. -->
+                                    <Path DockPanel.Dock="Left" Data="{StaticResource SparkleGeometry}"
+                                          Stretch="Uniform" Width="15" Height="15" Fill="#FF62A59B"
+                                          VerticalAlignment="Center" Margin="0,0,9,0"/>
                                     <Grid>
                                         <TextBox x:Name="PromptBox" Background="Transparent" BorderThickness="0"
                                                  VerticalContentAlignment="Center" Foreground="{StaticResource TextBody}"
@@ -533,15 +555,11 @@
                                                 </Grid>
                                             </Border>
                                             <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                                <TextBlock Text="{Binding DisplayName}" FontSize="13.5" FontWeight="Medium"
-                                                           Foreground="{StaticResource TextBody}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}"/>
-                                                <TextBlock Text="{Binding Reason}" FontSize="11.5" Margin="0,2,0,0"
-                                                           Foreground="{StaticResource TextMuted}"
-                                                           TextWrapping="Wrap" MaxHeight="30"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Reason}">
+                                                <TextBlock Style="{StaticResource RowTitleText}"
+                                                           Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}"/>
+                                                <TextBlock Text="{Binding Reason}" ToolTip="{Binding Reason}">
                                                     <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource RowSubtitleDetailed}">
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding Reason}" Value="{x:Null}">
                                                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -602,14 +620,12 @@
                                                       Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
                                                       StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                                <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
-                                                           Foreground="{StaticResource TextBody}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-                                                <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
-                                                           Foreground="{StaticResource TextMuted}"
-                                                           TextWrapping="Wrap" MaxHeight="30"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                <!-- Compact row: Artist · Station · time on one line. -->
+                                                <TextBlock Style="{StaticResource RowTitleText}"
+                                                           Text="{Binding Title}" ToolTip="{Binding Title}"/>
+                                                <TextBlock Style="{StaticResource RowSubtitleCompact}"
+                                                           Text="{Binding Subtitle}" ToolTip="{Binding Subtitle}"/>
                                             </StackPanel>
                                             <ContentControl Grid.Column="2" Content="{Binding}"
                                                              ContentTemplate="{StaticResource SaveAndAboutActions}"
@@ -776,13 +792,11 @@
                                             </Grid>
                                         </Border>
                                         <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                            <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
-                                                       Foreground="{StaticResource TextBody}"
-                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-                                            <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
-                                                       Foreground="{StaticResource TextMuted}"
-                                                       TextWrapping="Wrap" MaxHeight="30"
-                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                            <!-- Detailed row: the curator's reason earns two lines. -->
+                                            <TextBlock Style="{StaticResource RowTitleText}"
+                                                       Text="{Binding Title}" ToolTip="{Binding Title}"/>
+                                            <TextBlock Style="{StaticResource RowSubtitleDetailed}"
+                                                       Text="{Binding Subtitle}" ToolTip="{Binding Subtitle}"/>
                                         </StackPanel>
                                     </Grid>
                                 </DataTemplate>
@@ -845,14 +859,13 @@
                                                     </ContentControl>
                                                 </Grid>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                                <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
-                                                           Foreground="{StaticResource TextBody}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-                                                <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
-                                                           Foreground="{StaticResource TextMuted}"
-                                                           TextWrapping="Wrap" MaxHeight="30"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                <!-- Compact row: uniform height across the whole
+                                                     library, so the list stays scannable. -->
+                                                <TextBlock Style="{StaticResource RowTitleText}"
+                                                           Text="{Binding Title}" ToolTip="{Binding Title}"/>
+                                                <TextBlock Style="{StaticResource RowSubtitleCompact}"
+                                                           Text="{Binding Subtitle}" ToolTip="{Binding Description}"/>
                                             </StackPanel>
                                         </Grid>
                                     </DataTemplate>
@@ -1016,12 +1029,10 @@
                                                     <Path Data="{StaticResource RadioGeometry}" Stretch="Uniform"
                                                           Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"/>
                                                 </Border>
-                                                <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                                    <TextBlock Text="{Binding Label}" FontSize="13.5" FontWeight="Medium"
-                                                               Foreground="{StaticResource TextBody}"
-                                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Label}"/>
-                                                    <TextBlock FontSize="11.5" Margin="0,2,0,0"
-                                                               Foreground="{StaticResource TextMuted}"
+                                                <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                    <TextBlock Style="{StaticResource RowTitleText}"
+                                                               Text="{Binding Label}" ToolTip="{Binding Label}"/>
+                                                    <TextBlock Style="{StaticResource RowSubtitleCompact}"
                                                                Text="{Binding StatusText}"/>
                                                 </StackPanel>
                                             </Grid>
@@ -1057,13 +1068,10 @@
                                                           Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
                                                           StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                                                 </Border>
-                                                <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                                    <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
-                                                               Foreground="{StaticResource TextBody}"
-                                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-                                                    <TextBlock FontSize="11.5" Margin="0,2,0,0"
-                                                               Foreground="{StaticResource TextMuted}"
-                                                               TextTrimming="CharacterEllipsis">
+                                                <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                    <TextBlock Style="{StaticResource RowTitleText}"
+                                                               Text="{Binding Title}" ToolTip="{Binding Title}"/>
+                                                    <TextBlock Style="{StaticResource RowSubtitleCompact}">
                                                         <Run Text="{Binding Artist, Mode=OneWay}"/>
                                                         <Run Text=" · "/>
                                                         <Run Text="{Binding RelativeTime, Mode=OneWay}"/>
@@ -1108,17 +1116,20 @@
                                 Margin="4,0,0,0" VerticalAlignment="Center"
                                 Visibility="{Binding CanMarkForSave, Converter={StaticResource BoolToVis}}">
                             <Button.Style>
+                                <!-- Same three-state save family as the history rows: plus →
+                                     teal plus (marked, saves when the song ends) → teal check. -->
                                 <Style TargetType="Button" BasedOn="{StaticResource TitleIconButton}">
-                                    <Setter Property="Content" Value="{StaticResource SaveGeometry}"/>
+                                    <Setter Property="Content" Value="{StaticResource AddCircleGeometry}"/>
                                     <Setter Property="ToolTip" Value="Save this song when it finishes"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsCurrentSongMarked}" Value="True">
                                             <Setter Property="Foreground" Value="{StaticResource TealBright}"/>
-                                            <Setter Property="ToolTip" Value="Marked to save — click to cancel"/>
+                                            <Setter Property="ToolTip" Value="Marked — saves when the song ends; click to cancel"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsCurrentSongSaved}" Value="True">
-                                            <Setter Property="Content" Value="{StaticResource CheckGeometry}"/>
-                                            <Setter Property="ToolTip" Value="Saved to library"/>
+                                            <Setter Property="Content" Value="{StaticResource CheckCircleGeometry}"/>
+                                            <Setter Property="Foreground" Value="{StaticResource TealBright}"/>
+                                            <Setter Property="ToolTip" Value="In your library"/>
                                             <Setter Property="IsHitTestVisible" Value="False"/>
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -1518,8 +1529,16 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- ===== Transport + volume ===== -->
-                <StackPanel Grid.Row="1">
+                <!-- ===== Transport + volume =====
+                     On a defined surface strip (UX audit): the artwork's bright diagonal runs
+                     straight through this area, and a gradient scrim alone still left the
+                     controls looking like they floated on it. Negative margins cancel the
+                     pane's padding so the strip reaches the window edges; Padding restores the
+                     inner spacing. -->
+                <Border Grid.Row="1" Margin="-44,0,-44,-30" Padding="44,18,44,30"
+                        Background="#B8040B0A" BorderBrush="{StaticResource HairlineSoft}"
+                        BorderThickness="0,1,0,0">
+                <StackPanel>
                     <!-- Seek bar (library mode only; radio streams have no timeline) -->
                     <Grid Margin="0,0,0,18" Width="440" HorizontalAlignment="Left"
                           Visibility="{Binding HasDuration, Converter={StaticResource BoolToVis}}">
@@ -1578,10 +1597,19 @@
                                    Foreground="#FF8AA39E" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
                 </StackPanel>
+                </Border>
             </Grid>
         </Grid>
 
             </Grid>
+
+            <!-- Scrim while a modal dialog is open (UX audit): without it the running app keeps
+                 competing for attention behind the dialog. Spans both rows so the title bar dims
+                 too; AppDialog sets the attached flag on its owner. -->
+            <Rectangle Grid.RowSpan="2" Panel.ZIndex="99" Fill="#99050D0C" IsHitTestVisible="False"
+                       Visibility="{Binding Path=(ctl:AppDialog.IsDimmed),
+                                    RelativeSource={RelativeSource AncestorType=Window},
+                                    Converter={StaticResource BoolToVis}}"/>
         </Grid>
     </Border>
 </Window>

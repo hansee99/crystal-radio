@@ -1,4 +1,5 @@
 using System.Windows;
+using RadioPlayer.Controls;
 using RadioPlayer.Services;
 
 namespace RadioPlayer;
@@ -8,7 +9,7 @@ namespace RadioPlayer;
 /// <see cref="SettingsStore"/> (DPAPI) — never written anywhere in plain text) and the
 /// library folder that saved songs are copied into.
 /// </summary>
-public partial class OptionsDialog : Window
+public partial class OptionsDialog : AppDialog
 {
     private readonly SettingsStore _store;
 

@@ -5,6 +5,24 @@ just enough context to pick back up later. Add new items at the top.
 
 ---
 
+## Save-ability expires silently as the rolling cache prunes
+
+**What:** a history row can only be saved while its captured audio is still in the rolling cache.
+`MainViewModel.PruneCacheToCap` drops the oldest segments whenever the cache exceeds
+`CacheCapMb`, so a row that was saveable this morning quietly isn't by the evening — the row
+stays in history, it just loses the affordance. Pass 4 made the *state* legible (the save button
+now dims with "Can't save this one — it wasn't recorded while it played" instead of vanishing),
+but there's still no way to see how much runway is left before something you might want gets
+evicted.
+
+**Possible shapes:** a "cache: 340 MB of 500 MB" line in Options; a subtle marker on rows whose
+segment is next in line for eviction; or an explicit "keep" pin that exempts a row from pruning.
+The last is probably the most useful and the most work — it needs a flag on `SongHistoryEntry`,
+persistence, and a rule for what happens when pinned segments alone exceed the cap.
+
+**Why deferred:** the confusing part (silent absence) is fixed; this is the "help me act before
+it's gone" refinement on top.
+
 ## UX audit Tier C: DJ session as a first-class object
 
 **What:** (from `doc/design-review/Crystal Radio UX Audit.dc.html`, "bigger ideas") a session
