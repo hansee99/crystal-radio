@@ -1,12 +1,16 @@
-# Fits a logistic-regression music/non-music classifier on the CSV that DjDetector writes,
+# Fits a logistic-regression music/non-music classifier on the CSV(s) that DjDetector writes,
 # then prints the coefficients folded into raw-feature space (ready to paste into
 # MusicDetector.cs). Re-run when the labelled corpus grows.
 #
 #   1) dotnet run --project tools/DjDetector -- C:\clips   # clips under music/ and talk|ads/…
-#   2) python tools/DjDetector/fit_logreg.py djdetector-features.csv
+#   2) python tools/DjDetector/fit_logreg.py djdetector-features.csv [more-features.csv ...]
 #   3) paste the printed LrBias / Lr_* constants into MusicDetector.cs
 #
-# Needs numpy (no sklearn). Parses the CSV right-anchored because some filenames contain commas.
+# Accepts multiple CSVs so the original labelled-clips corpus and a --corrections run over real
+# harvested songs can be combined in one fit without manually merging files first. Filenames are
+# assumed unique across all inputs (used for the file-grouped train/test split below).
+#
+# Needs numpy (no sklearn). Parses each CSV right-anchored because some filenames contain commas.
 import sys, numpy as np
 
 # Columns (right-anchored, because some filenames contain commas and the CSV is unquoted):
@@ -15,23 +19,28 @@ import sys, numpy as np
 FEAT_NAMES = ["mod4Hz","zcrMean","zcrVar","lowEnergyRatio","fluxMean","fluxVar",
               "centroidMean","centroidVar","rolloffMean","flatness"]
 
-path = sys.argv[1]
+paths = sys.argv[1:]
+if not paths:
+    sys.exit("usage: fit_logreg.py <features.csv> [more.csv ...]")
+
 X, y, groups = [], [], []
-with open(path, encoding="utf-8") as f:
-    next(f)  # header
-    for line in f:
-        p = line.rstrip("\n").split(",")
-        if len(p) < 14: continue
-        label = p[-13]
-        if label not in ("music","nonmusic"): continue
-        try:
-            feats = [float(p[i]) for i in (-11,-10,-9,-8,-7,-6,-5,-4,-3,-2)]
-        except ValueError:
-            continue
-        X.append(feats); y.append(1.0 if label=="music" else 0.0)
-        groups.append(",".join(p[:-13]))  # filename
+for path in paths:
+    with open(path, encoding="utf-8") as f:
+        next(f)  # header
+        for line in f:
+            p = line.rstrip("\n").split(",")
+            if len(p) < 14: continue
+            label = p[-13]
+            if label not in ("music","nonmusic"): continue
+            try:
+                feats = [float(p[i]) for i in (-11,-10,-9,-8,-7,-6,-5,-4,-3,-2)]
+            except ValueError:
+                continue
+            X.append(feats); y.append(1.0 if label=="music" else 0.0)
+            groups.append(",".join(p[:-13]))  # filename
 
 X = np.array(X); y = np.array(y); groups = np.array(groups)
+print(f"inputs={len(paths)}: {', '.join(paths)}")
 print(f"rows={len(y)}  music={int(y.sum())}  nonmusic={int((1-y).sum())}  files={len(set(groups))}")
 
 def fit(Xtr, ytr, iters=4000, lr=0.3, l2=1e-3):

@@ -34,7 +34,9 @@ internal sealed class MusicDetector
     // Framing.
     private const double FrameSeconds = 0.025;   // 25 ms analysis frame
     private const double HopSeconds = 0.010;      // 10 ms hop → ~100 frames/sec envelope
-    private const double WindowSeconds = 1.0;     // 1 s decision window
+    // Exposed (internal) so callers can turn WindowFeatures.TStart runs into real timestamps —
+    // e.g. the harness's suspect-span report.
+    internal const double WindowSeconds = 1.0;    // 1 s decision window
     private const double WindowHopSeconds = 0.5;  // 50% overlap
 
     // Music confidence = sigmoid(bias + Σ wᵢ·featureᵢ). A logistic regression fitted to a
@@ -43,7 +45,7 @@ internal sealed class MusicDetector
     // to be the strongest discriminators, ahead of the classic 4 Hz-modulation term.
     // Honest, file-grouped hold-out accuracy: ~86% overall (music ~92%, non-music ~82%).
     // Re-fit with tools/DjDetector's CSV output → the fit_logreg helper when the corpus grows.
-    private const double MusicThreshold = 0.5;    // confidence ≥ this ⇒ music
+    internal const double MusicThreshold = 0.5;   // confidence ≥ this ⇒ music
 
     private const double LrBias = 7.6313147;
     private const double Lr_Mod4Hz = -0.34930274;

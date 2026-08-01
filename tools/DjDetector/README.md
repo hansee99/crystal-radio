@@ -47,9 +47,43 @@ dotnet run --project tools/DjDetector -- C:\clips           # music/…, talk/�
 | *(positional)* | Files and/or folders (folders recurse over `.mp3 .aac .m4a .wav .ogg`) |
 | `--label X` | Force a label for accuracy (`music` or anything else → `nonmusic`) |
 | `--csv <path>` | Feature CSV output (default `djdetector-features.csv`) |
+| `--suspects-csv <path>` | Write the suspect-span report (see below) to CSV as well as console |
+| `--corrections <path>` | Confirmed ground-truth spans that override labels for real harvested files (see below) |
 
 Label inference: a file under a folder named `music` → *music*; under `talk` / `speech` /
 `ads` / `news` / `jingle` → *nonmusic*; otherwise unlabelled (analyzed, not scored).
+
+## Ground-truthing real harvested songs (no whole-file relabelling, no audio editing)
+
+A whole-file MUSIC/TALK pass over harvested songs is coarse: it tells you a file has *some*
+leaked talk, not where, and can't localize a mid-song DJ drop-in. Instead, the harness reports
+**suspect spans** — contiguous below-threshold runs — so you spot-check specific timestamps by
+ear instead of relistening to whole songs.
+
+```sh
+# 1) Run over the harvested folder — suspect spans print to console and to the CSV.
+dotnet run --project tools/DjDetector -- C:\harvest --suspects-csv suspects.csv
+
+#      suspect   12.0s – 18.5s  (6.5s, interior, conf 0.31)
+#      suspect  238.0s – 244.0s (6.0s, tail, conf 0.22)
+
+# 2) Seek to those timestamps in any player. For each you can actually confirm, add a line to
+#    corrections.csv:  file,startSec,endSec,label   (label is music or nonmusic)
+#    - Genuinely talk?              → nonmusic  (turns it into new hard-negative training data)
+#    - False alarm (quiet passage)? → music     (a hard-positive — just as valuable)
+
+# 3) Re-run with the corrections applied — only windows inside a confirmed span get that
+#    label in the feature CSV; the rest of the file stays unlabelled until you confirm it too.
+dotnet run --project tools/DjDetector -- C:\harvest --corrections corrections.csv --csv corrections-features.csv
+```
+
+`kind` in the suspect report: **lead**/**tail** spans touch the very start/end (same thing the
+edge-trim readout already shows); **interior** spans are mid-file dips edge-trim can't see —
+the new information worth checking first (a talk-over, a DJ drop-in mid-song).
+
+Merge `corrections-features.csv` with the original labelled-corpus CSV before re-fitting (or
+pass both to a small script) — each confirmed span is a few seconds of real, precisely-located
+production data, which is worth more per-window than another whole clip.
 
 ## How to read it against the PoC-1 finding
 

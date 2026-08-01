@@ -7,8 +7,9 @@ using ManagedBass.Aac;
 // harvest design as the segment QC + edge-trim detector).
 //
 // Decodes each audio file to mono PCM, slides a ~1 s window computing speech/music features,
-// and emits a per-window music-confidence, a whole-file verdict, an edge-trim suggestion, and a
-// CSV of every window's raw features for tuning. No realtime constraint, no UI.
+// and emits a per-window music-confidence, a whole-file verdict, an edge-trim suggestion, a
+// suspect-span report (candidate talk timestamps to spot-check by ear), and a CSV of every
+// window's raw features for tuning. No realtime constraint, no UI.
 //
 //   dotnet run --project tools/DjDetector -- <folder-or-files...>
 //   dotnet run --project tools/DjDetector -- C:\harvest --csv features.csv
@@ -16,12 +17,23 @@ using ManagedBass.Aac;
 //
 // Labelling (for the accuracy readout): pass --label, or drop files under a folder named
 // music / talk / ads / news / speech and the label is inferred from that folder.
+//
+// Ground-truthing a harvested, unlabelled folder efficiently (no whole-file relabelling, no
+// audio editing): run once to get the suspect spans printed/written to --suspects-csv, seek to
+// those timestamps in any player, then note confirmed spans in a --corrections CSV
+// (file,startSec,endSec,label — label is music|nonmusic) and re-run with --corrections applied.
+// Only windows inside a confirmed span get that label in the output feature CSV; the rest of
+// that file stays unlabelled (not assumed) until you confirm it too. Feed the resulting CSV rows
+// into fit_logreg.py alongside the original corpus to re-fit.
 
 var forcedLabel = ArgStr("--label");
 var csvPath = ArgStr("--csv") ?? "djdetector-features.csv";
+var correctionsPath = ArgStr("--corrections");
+var suspectsCsvPath = ArgStr("--suspects-csv");
 
 // Positional inputs = everything that isn't a flag or a flag's value.
-var valueFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "--label", "--csv" };
+var valueFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    { "--label", "--csv", "--corrections", "--suspects-csv" };
 var paths = new List<string>();
 for (var i = 0; i < args.Length; i++)
 {
@@ -64,20 +76,27 @@ if (files.Count == 0)
     return 1;
 }
 
+// file → confirmed [start,end) spans with a verified label, from --corrections.
+var corrections = LoadCorrections(correctionsPath);
+
 var detector = new MusicDetector();
 using var csv = new StreamWriter(csvPath);
 csv.WriteLine(MusicDetector.CsvHeader);
+using var suspectsCsv = suspectsCsvPath is null ? null : new StreamWriter(suspectsCsvPath);
+suspectsCsv?.WriteLine("file,startSec,endSec,durationSec,kind,avgConfidence");
 
 // Per-window accuracy tallies, keyed by label.
 var labelWindows = new Dictionary<string, (int correct, int total)>();
 
-Console.WriteLine($"Analyzing {files.Count} file(s)…  CSV → {csvPath}");
+Console.WriteLine($"Analyzing {files.Count} file(s)…  CSV → {csvPath}" +
+                  (suspectsCsvPath is null ? "" : $"  suspects → {suspectsCsvPath}"));
 Console.WriteLine(new string('-', 78));
 
 foreach (var file in files.OrderBy(f => f))
 {
     var name = Path.GetFileName(file);
-    var label = forcedLabel ?? InferLabel(file);
+    var fileLabel = forcedLabel ?? InferLabel(file);
+    var fileCorrections = corrections.GetValueOrDefault(name);
 
     var mono = DecodeMono(file, out var rate);
     if (mono is null || mono.Length == 0)
@@ -87,23 +106,45 @@ foreach (var file in files.OrderBy(f => f))
     }
 
     var result = detector.Analyze(mono, rate);
+
     foreach (var w in result.Windows)
-        csv.WriteLine(MusicDetector.CsvRow(name, label, w));
+    {
+        // A confirmed correction span overrides the whole-file label for windows inside it;
+        // windows in a corrected file but OUTSIDE any span are left unlabelled (unverified),
+        // never assumed to be the file's nominal label.
+        var rowLabel = fileLabel;
+        if (fileCorrections is not null)
+        {
+            rowLabel = "";
+            var mid = w.TStart + MusicDetector.WindowSeconds / 2;
+            foreach (var c in fileCorrections)
+                if (mid >= c.Start && mid < c.End) { rowLabel = c.Label; break; }
+        }
+        csv.WriteLine(MusicDetector.CsvRow(name, rowLabel, w));
+
+        if (rowLabel is "music" or "nonmusic")
+        {
+            var want = rowLabel == "music";
+            var correct = (w.Confidence >= MusicDetector.MusicThreshold) == want ? 1 : 0;
+            var t = labelWindows.GetValueOrDefault(rowLabel);
+            labelWindows[rowLabel] = (t.correct + correct, t.total + 1);
+        }
+    }
 
     // Edge-trim readout: how much talk sits at the head/tail of a mostly-music segment.
     var trim = result.Verdict == "MUSIC" && (result.LeadTalkSeconds > 0 || result.TailTalkSeconds > 0)
         ? $"  trim: {result.LeadTalkSeconds:0.0}s lead / {result.TailTalkSeconds:0.0}s tail"
         : "";
     Console.WriteLine($"  {name,-40} {result.Verdict,-6} music {result.MusicFraction * 100,3:0}%" +
-                      $"  ({result.Windows.Count}w){trim}{(label.Length > 0 ? $"  [{label}]" : "")}");
+                      $"  ({result.Windows.Count}w){trim}{(fileLabel.Length > 0 ? $"  [{fileLabel}]" : "")}");
 
-    // Accuracy: for a labelled clip, every window should match the label.
-    if (label is "music" or "nonmusic")
+    // Suspect spans: contiguous below-threshold runs — candidate talk to spot-check by ear and
+    // turn into --corrections entries. "lead"/"tail" spans duplicate the trim readout above;
+    // "interior" spans are the ones edge-trim can't see (mid-song talk-overs, DJ drop-ins).
+    foreach (var (start, end, kind, avgConf) in FindSuspectSpans(result))
     {
-        var want = label == "music";
-        var correct = result.Windows.Count(w => (w.Confidence >= 0.5) == want);
-        var t = labelWindows.GetValueOrDefault(label);
-        labelWindows[label] = (t.correct + correct, t.total + result.Windows.Count);
+        Console.WriteLine($"      suspect  {start,6:0.0}s – {end,6:0.0}s  ({end - start:0.0}s, {kind}, conf {avgConf:0.00})");
+        suspectsCsv?.WriteLine(string.Join(',', Csv(name), F(start), F(end), F(end - start), kind, F(avgConf)));
     }
 }
 
@@ -176,6 +217,60 @@ static string InferLabel(string file)
         _ => ""
     };
 }
+
+/// <summary>
+/// Finds contiguous below-threshold window runs — candidate talk spans to spot-check by ear.
+/// "lead"/"tail" spans touch the very first/last window (same thing the trim readout reports);
+/// "interior" spans are mid-file dips edge-trim can't see — the useful new information here.
+/// </summary>
+static IEnumerable<(double Start, double End, string Kind, double AvgConfidence)> FindSuspectSpans(FileResult result)
+{
+    var w = result.Windows;
+    var i = 0;
+    while (i < w.Count)
+    {
+        if (w[i].Confidence >= MusicDetector.MusicThreshold) { i++; continue; }
+        var start = i;
+        while (i < w.Count && w[i].Confidence < MusicDetector.MusicThreshold) i++;
+        var end = i - 1;
+        var kind = start == 0 ? "lead" : end == w.Count - 1 ? "tail" : "interior";
+        var avg = 0.0;
+        for (var k = start; k <= end; k++) avg += w[k].Confidence;
+        avg /= end - start + 1;
+        yield return (w[start].TStart, w[end].TStart + MusicDetector.WindowSeconds, kind, avg);
+    }
+}
+
+/// <summary>
+/// Loads confirmed ground-truth spans from a "file,startSec,endSec,label" CSV (label is
+/// music|nonmusic). Parsed right-anchored (last 3 fields), so filenames containing commas are
+/// still handled correctly, matching fit_logreg.py's convention. Missing/empty path → no corrections.
+/// </summary>
+static Dictionary<string, List<(double Start, double End, string Label)>> LoadCorrections(string? path)
+{
+    var byFile = new Dictionary<string, List<(double, double, string)>>(StringComparer.OrdinalIgnoreCase);
+    if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        return byFile;
+
+    foreach (var line in File.ReadLines(path).Skip(1)) // skip header
+    {
+        if (string.IsNullOrWhiteSpace(line)) continue;
+        var parts = line.Split(',');
+        if (parts.Length < 4) continue;
+        var label = parts[^1].Trim();
+        if (label is not ("music" or "nonmusic")) continue;
+        if (!double.TryParse(parts[^2], System.Globalization.CultureInfo.InvariantCulture, out var end)) continue;
+        if (!double.TryParse(parts[^3], System.Globalization.CultureInfo.InvariantCulture, out var start)) continue;
+        var file = string.Join(',', parts[..^3]).Trim();
+        if (!byFile.TryGetValue(file, out var list))
+            byFile[file] = list = [];
+        list.Add((start, end, label));
+    }
+    return byFile;
+}
+
+static string Csv(string s) => "\"" + s.Replace("\"", "\"\"") + "\"";
+static string F(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
 
 string? ArgStr(string name)
 {
