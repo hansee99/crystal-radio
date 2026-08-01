@@ -13,23 +13,31 @@ public sealed class FakeLocalQueuePlayer : ILocalQueuePlayer
     public List<IReadOnlyList<LocalTrack>> AppendCalls { get; } = new();
 
     public int QueueCount => _queue.Count;
+    public IReadOnlyList<LocalTrack> Queue => _queue;
+    public int CurrentIndex { get; private set; } = -1;
 
     public event EventHandler<(LocalTrack Track, int Index)>? TrackChanged;
+    public event EventHandler? QueueChanged;
 
     public void SetQueue(IReadOnlyList<LocalTrack> tracks, int startIndex = 0)
     {
         SetQueueCalls.Add(tracks);
         _queue.Clear();
         _queue.AddRange(tracks);
+        QueueChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void Append(IReadOnlyList<LocalTrack> tracks)
     {
         AppendCalls.Add(tracks);
         _queue.AddRange(tracks);
+        QueueChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Test hook: simulate the engine advancing to <paramref name="index"/>.</summary>
-    public void RaiseTrackChanged(int index) =>
+    public void RaiseTrackChanged(int index)
+    {
+        CurrentIndex = index;
         TrackChanged?.Invoke(this, (_queue[index], index));
+    }
 }

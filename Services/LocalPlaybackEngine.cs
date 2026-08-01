@@ -103,6 +103,17 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     public bool HasQueue => _queue.Count > 0;
     public int CurrentIndex => _index;
 
+    /// <summary>
+    /// The queue as it stands — played, current and upcoming, in order. Read-only: the engine
+    /// owns it. DJ mode's "Mix" list renders this directly, which is why it needs
+    /// <see cref="QueueChanged"/> as well as <see cref="TrackChanged"/>.
+    /// </summary>
+    public IReadOnlyList<LocalTrack> Queue => _queue;
+
+    /// <summary>Raised when the queue's CONTENTS change (replaced or appended) — as opposed to
+    /// <see cref="TrackChanged"/>, which fires when the position within it moves.</summary>
+    public event EventHandler? QueueChanged;
+
     /// <summary>Replace the queue and start playing from <paramref name="startIndex"/>.</summary>
     public void SetQueue(IReadOnlyList<LocalTrack> tracks, int startIndex = 0)
     {
@@ -112,8 +123,10 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         if (_queue.Count == 0)
         {
             Stop();
+            QueueChanged?.Invoke(this, EventArgs.Empty);
             return;
         }
+        QueueChanged?.Invoke(this, EventArgs.Empty);
         PlayAt(Math.Clamp(startIndex, 0, _queue.Count - 1));
     }
 
@@ -132,6 +145,7 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
             return;
         var wasEmpty = _queue.Count == 0;
         _queue.AddRange(tracks);
+        QueueChanged?.Invoke(this, EventArgs.Empty);
         if (wasEmpty)
             PlayAt(0);
     }

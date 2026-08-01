@@ -102,37 +102,9 @@
             </DrawingImage.Drawing>
         </DrawingImage>
 
-        <!-- Compact icon button for the station-management toolbar. -->
-        <Style x:Key="ListToolButton" TargetType="Button">
-            <Setter Property="Width" Value="30"/>
-            <Setter Property="Height" Value="28"/>
-            <Setter Property="Margin" Value="0,0,4,0"/>
-            <Setter Property="Background" Value="#22FFFFFF"/>
-            <Setter Property="Foreground" Value="#FFEDEDED"/>
-            <Setter Property="FontFamily" Value="{StaticResource FluentIcons}"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="6">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#3DFFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#55FFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="bd" Property="Opacity" Value="0.35"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- ListToolButton removed with the stranded bottom-left "+" (UX audit b10): the add
+             action now lives in the Stations list header and uses the app's GhostSquareButton,
+             so there's no separate button family and no Segoe-glyph dependency here. -->
 
     </Window.Resources>
 
@@ -329,12 +301,18 @@
                         <!-- ===== Stations tab ===== -->
                         <DockPanel Visibility="{Binding IsChecked, ElementName=StationsTab,
                                    Converter={StaticResource BoolToVis}}">
-                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
-                                <Button Style="{StaticResource ListToolButton}" Content="&#xE710;"
-                                        Command="{Binding AddStationCommand}" ToolTip="Add station"/>
-                            </StackPanel>
+                            <!-- List header with the add action (UX audit b10). It used to be
+                                 stranded ~500px below the list it adds to; it belongs on the
+                                 list it acts on. -->
+                            <DockPanel DockPanel.Dock="Top" Margin="2,0,0,8">
+                                <Button DockPanel.Dock="Right" Style="{StaticResource GhostSquareButton}"
+                                        Content="{StaticResource PlusGeometry}" ToolTip="Add a station"
+                                        Command="{Binding AddStationCommand}"/>
+                                <TextBlock Text="YOUR STATIONS" FontSize="10.5" FontWeight="SemiBold"
+                                           Foreground="#FF6F8C87" VerticalAlignment="Center"/>
+                            </DockPanel>
                             <ctl:StatePanel State="{Binding StationsPanelState}"
-                                            EmptyContent="No stations yet — add one below, or find some in Search."
+                                            EmptyContent="No stations yet — add one above, or find some in Search."
                                             EmptyContentTemplate="{StaticResource PanelMessage}">
                             <ListBox ItemsSource="{Binding Stations}"
                                      SelectedItem="{Binding SelectedStation, Mode=TwoWay}"
@@ -880,48 +858,16 @@
 
                     <!-- ================= DJ panel (harvest + self-refilling queue) ================= -->
                     <DockPanel Visibility="{Binding ShowDjPanel, Converter={StaticResource BoolToVis}}">
-                        <!-- Prompt (Enter starts a session harvesting live stations for the vibe) -->
-                        <Border DockPanel.Dock="Top" Height="40" CornerRadius="10" Margin="0,0,0,10"
-                                Background="{StaticResource FillSubtle}"
-                                BorderBrush="{StaticResource Hairline}" BorderThickness="1" Padding="12,0">
-                            <DockPanel>
-                                <Path DockPanel.Dock="Left" Data="{StaticResource SparkleGeometry}"
-                                      Stretch="Uniform" Width="15" Height="15" Fill="#FF62A59B"
-                                      VerticalAlignment="Center" Margin="0,0,9,0"/>
-                                <Grid>
-                                    <TextBox x:Name="DjPromptBox" Background="Transparent" BorderThickness="0"
-                                             VerticalContentAlignment="Center" Foreground="{StaticResource TextBody}"
-                                             CaretBrush="{StaticResource Teal}" FontSize="13"
-                                             Text="{Binding DjPrompt, UpdateSourceTrigger=PropertyChanged}">
-                                        <TextBox.InputBindings>
-                                            <KeyBinding Key="Return" Command="{Binding StartDjCommand}"/>
-                                        </TextBox.InputBindings>
-                                    </TextBox>
-                                    <TextBlock IsHitTestVisible="False" VerticalAlignment="Center" FontSize="13"
-                                               Foreground="{StaticResource TextFaint}"
-                                               Text="Describe a vibe…">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Text, ElementName=DjPromptBox}" Value="">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </Grid>
-                            </DockPanel>
-                        </Border>
+                        <!-- ===== Session block (UX audit b06) =====
+                             Five stacked control rows collapse to one. Idle: the prompt with
+                             Start inside it. Running: the same block becomes the session's
+                             record — vibe, state, counts — with End session as a quiet ghost
+                             that only exists while there IS something to end. -->
 
-                        <!-- What a session does — moved out of the (previously clipped) prompt
-                             placeholder into helper text (UX audit); hidden once a session runs. -->
-                        <TextBlock DockPanel.Dock="Top" Margin="2,0,0,10" FontSize="11.5"
-                                   Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"
-                                   Text="We'll find stations, record the good bits, and keep it playing.">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                        <!-- Idle -->
+                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
                                     <Setter Property="Visibility" Value="Visible"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsDjRunning}" Value="True">
@@ -929,78 +875,190 @@
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                            </StackPanel.Style>
 
-                        <!-- Start / End session. Start is the AI action (sparkle pill); End is a
-                             quiet ghost that only lights up while a session runs (UX audit:
-                             stopping is not an AI action and must not match Start's weight). -->
-                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
-                            <Button Style="{StaticResource AboutPillButton}" Margin="0,0,8,0"
-                                    Content="Start DJ session" Command="{Binding StartDjCommand}"/>
-                            <Button Style="{StaticResource GhostPillButton}"
-                                    Content="End session" Command="{Binding StopDjCommand}"/>
-                        </StackPanel>
+                            <Border Height="42" CornerRadius="10" Background="{StaticResource FillSubtle}"
+                                    BorderBrush="{StaticResource Hairline}" BorderThickness="1"
+                                    Padding="12,0,5,0">
+                                <DockPanel>
+                                    <Path DockPanel.Dock="Left" Data="{StaticResource SparkleGeometry}"
+                                          Stretch="Uniform" Width="15" Height="15" Fill="#FF62A59B"
+                                          VerticalAlignment="Center" Margin="0,0,9,0"/>
+                                    <!-- Start lives inside the field it acts on, instead of a
+                                         second full-width pill below it. -->
+                                    <Button DockPanel.Dock="Right" Content="Start"
+                                            Style="{StaticResource AboutPillButton}"
+                                            VerticalAlignment="Center" Margin="8,0,0,0"
+                                            Command="{Binding StartDjCommand}"/>
+                                    <Grid>
+                                        <TextBox x:Name="DjPromptBox" Background="Transparent" BorderThickness="0"
+                                                 VerticalContentAlignment="Center" Foreground="{StaticResource TextBody}"
+                                                 CaretBrush="{StaticResource Teal}" FontSize="13"
+                                                 Text="{Binding DjPrompt, UpdateSourceTrigger=PropertyChanged}">
+                                            <TextBox.InputBindings>
+                                                <KeyBinding Key="Return" Command="{Binding StartDjCommand}"/>
+                                            </TextBox.InputBindings>
+                                        </TextBox>
+                                        <TextBlock IsHitTestVisible="False" VerticalAlignment="Center" FontSize="13"
+                                                   Foreground="{StaticResource TextFaint}"
+                                                   Text="Describe a vibe…">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Text, ElementName=DjPromptBox}" Value="">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                </DockPanel>
+                            </Border>
 
-                        <!-- Status row. Spinner ONLY while genuinely waiting (session start /
-                             warm-up); once the mix is playing it becomes the pulsing live dot —
-                             a spinner that never stops means nothing (UX audit). -->
-                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="2,0,0,8">
-                            <Grid Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center"
-                                  RenderTransformOrigin="0.5,0.5"
-                                  Visibility="{Binding ShowDjSpinner, Converter={StaticResource BoolToVis}}">
-                                <Grid.RenderTransform>
-                                    <RotateTransform/>
-                                </Grid.RenderTransform>
-                                <Grid.Triggers>
-                                    <EventTrigger RoutedEvent="Loaded">
-                                        <BeginStoryboard>
-                                            <Storyboard>
-                                                <DoubleAnimation
-                                                    Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                    From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever"/>
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </EventTrigger>
-                                </Grid.Triggers>
-                                <Ellipse Stroke="#33FFFFFF" StrokeThickness="2"/>
-                                <Path Stroke="{StaticResource Teal}" StrokeThickness="2"
-                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                      Data="M 7,1 A 6,6 0 0 1 13,7"/>
-                            </Grid>
-                            <!-- Steady-state indicator: the same pulsing teal dot as the LIVE badge. -->
-                            <Ellipse Width="6" Height="6" Margin="0,0,8,0" VerticalAlignment="Center"
-                                     Fill="{StaticResource TealBright}"
-                                     Visibility="{Binding ShowDjLiveDot, Converter={StaticResource BoolToVis}}">
-                                <Ellipse.Triggers>
-                                    <EventTrigger RoutedEvent="Loaded">
-                                        <BeginStoryboard>
-                                            <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                    From="1" To="0.28" Duration="0:0:0.8"
-                                                    AutoReverse="True" RepeatBehavior="Forever"/>
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </EventTrigger>
-                                </Ellipse.Triggers>
-                            </Ellipse>
-                            <TextBlock Text="{Binding DjStatus}" FontSize="11.5"
+                            <TextBlock Margin="2,9,0,0" FontSize="11.5" TextWrapping="Wrap"
                                        Foreground="{StaticResource TextMuted}"
-                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                       Text="We'll find stations, record the good bits, and keep it playing."/>
                         </StackPanel>
 
-                        <!-- Sub-nav: which stations feed the mix vs. what's already played
-                             (Radio mode's Stations/History pattern, applied to DJ's own sources).
-                             "Sources", not "Harvesting" — noun standardization (UX audit):
-                             harvesting is internal vocabulary. -->
-                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,4,0,14">
-                            <RadioButton x:Name="DjSourcesTab" GroupName="djTab" IsChecked="True"
+                        <!-- Running: the session's record -->
+                        <Border DockPanel.Dock="Top" Margin="0,0,0,16" CornerRadius="10" Padding="13,11"
+                                Background="{StaticResource TealTint10}" BorderBrush="#3D56C7BA"
+                                BorderThickness="1"
+                                Visibility="{Binding IsDjRunning, Converter={StaticResource BoolToVis}}">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="End session"
+                                        Style="{StaticResource GhostPillButton}"
+                                        VerticalAlignment="Center" Margin="10,0,0,0"
+                                        Command="{Binding StopDjCommand}"/>
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                        <!-- Amber while bridging a live station, teal once the
+                                             mix itself is playing. -->
+                                        <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                                 Margin="0,0,7,0">
+                                            <Ellipse.Style>
+                                                <Style TargetType="Ellipse">
+                                                    <Setter Property="Fill" Value="{StaticResource TealBright}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsDjWarmingUp}" Value="True">
+                                                            <Setter Property="Fill" Value="#FFE6C88A"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Ellipse.Style>
+                                            <Ellipse.Triggers>
+                                                <EventTrigger RoutedEvent="Loaded">
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                From="1" To="0.3" Duration="0:0:0.9"
+                                                                AutoReverse="True" RepeatBehavior="Forever"/>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </EventTrigger>
+                                            </Ellipse.Triggers>
+                                        </Ellipse>
+                                        <TextBlock Text="THIS SESSION" FontSize="10.5" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TealText}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding DjSessionVibe}" FontSize="13.5" FontWeight="Medium"
+                                               Foreground="{StaticResource TextBody}" TextWrapping="Wrap"
+                                               MaxHeight="36" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding DjStatus}" FontSize="11.5" Margin="0,4,0,0"
+                                               Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Sub-nav (UX audit b08): content first, like Stations-then-Search and
+                             Songs-then-Curate. The mix is what the mode is FOR; the stations
+                             feeding it are the supporting detail. -->
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,14">
+                            <RadioButton x:Name="DjMixTab" GroupName="djTab" IsChecked="True"
+                                         Style="{StaticResource UnderlineTab}" Content="Mix"/>
+                            <RadioButton x:Name="DjSourcesTab" GroupName="djTab"
                                          Style="{StaticResource UnderlineTab}" Content="Sources"/>
-                            <RadioButton x:Name="DjHistoryTab" GroupName="djTab"
-                                         Style="{StaticResource UnderlineTab}" Content="History"/>
                         </StackPanel>
 
                         <Grid>
+                            <!-- ===== Mix tab: the session's queue — played, playing, upcoming.
+                                 During warm-up this is where the staged checklist lands, which is
+                                 the space that used to claim nothing was happening. ===== -->
+                            <DockPanel Visibility="{Binding IsChecked, ElementName=DjMixTab,
+                                       Converter={StaticResource BoolToVis}}">
+                                <ctl:StatePanel State="{Binding DjMixPanelState}"
+                                                EmptyContent="No mix yet — describe a vibe above and the DJ builds one from live radio, playing as it collects."
+                                                EmptyContentTemplate="{StaticResource PanelMessage}"
+                                                LoadingContent="{Binding DjProgress}"
+                                                LoadingContentTemplate="{StaticResource PanelProgress}"
+                                                ErrorContent="{Binding DjError}"
+                                                ErrorContentTemplate="{StaticResource PanelErrorMessage}">
+                                <ListBox ItemsSource="{Binding DjMix}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ItemContainerStyle="{StaticResource StationRowItem}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="34"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                        VerticalAlignment="Center"
+                                                        Background="{StaticResource FillSubtle}"
+                                                        BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
+                                                    <Grid>
+                                                        <Path Data="{StaticResource NoteGeometry}" Stretch="Uniform"
+                                                              Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
+                                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                                            <Path.Style>
+                                                                <Style TargetType="Path">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Path.Style>
+                                                        </Path>
+                                                        <ContentControl Template="{StaticResource EqualizerTemplate}"
+                                                                        Width="20" Height="13" Focusable="False"
+                                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                        Visibility="{Binding IsCurrent,
+                                                                                     Converter={StaticResource BoolToVis}}"/>
+                                                    </Grid>
+                                                </Border>
+                                                <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                    <!-- Played rows recede so what's still coming reads first. -->
+                                                    <TextBlock Text="{Binding Title}" ToolTip="{Binding Title}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource RowTitleText}">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasPlayed}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource TealText}"/>
+                                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Style="{StaticResource RowSubtitleCompact}"
+                                                               Text="{Binding Artist}" ToolTip="{Binding Artist}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                </ctl:StatePanel>
+                            </DockPanel>
+                            <!-- ===== end Mix tab ===== -->
+
                             <!-- ===== Sources tab: currently-connected stations ===== -->
                             <DockPanel Visibility="{Binding IsChecked, ElementName=DjSourcesTab,
                                        Converter={StaticResource BoolToVis}}">
@@ -1041,49 +1099,9 @@
                                 </ListBox>
                                 </ctl:StatePanel>
                             </DockPanel>
-                            <!-- ===== end Sources tab ===== -->
-
-                            <!-- ===== History tab: songs already played this session ===== -->
-                            <DockPanel Visibility="{Binding IsChecked, ElementName=DjHistoryTab,
-                                       Converter={StaticResource BoolToVis}}">
-                                <ctl:StatePanel State="{Binding DjHistoryPanelState}"
-                                                EmptyContent="Songs the DJ plays will show up here."
-                                                EmptyContentTemplate="{StaticResource PanelMessage}">
-                                <ListBox ItemsSource="{Binding DjHistory}"
-                                         Background="Transparent" BorderThickness="0"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         ItemContainerStyle="{StaticResource StationRowItem}">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="34"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
-                                                        VerticalAlignment="Top"
-                                                        Background="{StaticResource FillSubtle}"
-                                                        BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
-                                                    <Path Data="{StaticResource NoteGeometry}" Stretch="Uniform"
-                                                          Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
-                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                                                </Border>
-                                                <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
-                                                    <TextBlock Style="{StaticResource RowTitleText}"
-                                                               Text="{Binding Title}" ToolTip="{Binding Title}"/>
-                                                    <TextBlock Style="{StaticResource RowSubtitleCompact}">
-                                                        <Run Text="{Binding Artist, Mode=OneWay}"/>
-                                                        <Run Text=" · "/>
-                                                        <Run Text="{Binding RelativeTime, Mode=OneWay}"/>
-                                                    </TextBlock>
-                                                </StackPanel>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                                </ctl:StatePanel>
-                            </DockPanel>
-                            <!-- ===== end History tab ===== -->
+                            <!-- ===== end Sources tab =====
+                                 (There is no separate History tab any more: the queue keeps every
+                                 track it has played, so the Mix list above IS the session record.) -->
                         </Grid>
                     </DockPanel>
                     <!-- ================= end DJ panel ================= -->
@@ -1179,13 +1197,27 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- DJ Mode: a short "why this song" line from the DJ, quirky-professional tone -->
-                    <Border HorizontalAlignment="Left" Margin="0,16,0,0" CornerRadius="10"
-                            Padding="12,9" MaxWidth="420" Background="#0DFFFFFF"
-                            BorderBrush="#1756C7BA" BorderThickness="1"
+                    <!-- DJ Mode: the "why this song" line, promoted (UX audit b11). It's the
+                         mode's signature and was the hardest thing to read on the screen — 12.5px
+                         muted italic floating on artwork. Now 15px Secondary on a solid surface,
+                         attributed so it's clear who's talking. -->
+                    <Border HorizontalAlignment="Left" Margin="0,20,0,0" CornerRadius="10"
+                            Padding="14,12" MaxWidth="430" Background="#B8071614"
+                            BorderBrush="#2E56C7BA" BorderThickness="1"
                             Visibility="{Binding ShowDjIntro, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="{Binding DjIntroLine}" FontSize="12.5" FontStyle="Italic"
-                                   Foreground="#FFB9D6D1" TextWrapping="Wrap" LineHeight="18"/>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
+                                <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform"
+                                      Width="12" Height="12" Fill="{StaticResource TealBright}"
+                                      VerticalAlignment="Center"/>
+                                <TextBlock Text="YOUR DJ" Margin="7,0,0,0" FontSize="10.5"
+                                           FontWeight="SemiBold" Foreground="{StaticResource TealText}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding DjIntroLine}" FontSize="15" FontStyle="Italic"
+                                       Foreground="{StaticResource TextSecondary}"
+                                       TextWrapping="Wrap" LineHeight="22"/>
+                        </StackPanel>
                     </Border>
 
                     <!-- Status row: connecting spinner, otherwise LIVE badge + codec -->
@@ -1220,12 +1252,35 @@
                         <ContentControl Template="{StaticResource EqualizerTemplate}" Height="13"
                                         VerticalAlignment="Center" Margin="0,0,12,0"
                                         Visibility="{Binding ShowLiveBadge, Converter={StaticResource BoolToVis}}"/>
-                        <Border CornerRadius="7" Padding="9,3" Background="#1F56C7BA"
-                                BorderBrush="#4056C7BA" BorderThickness="1" VerticalAlignment="Center"
+                        <!-- LIVE, or BRIDGING in amber while DJ mode is playing a station to
+                             cover the gap until the mix fills — the two are genuinely different
+                             promises and shouldn't look identical. -->
+                        <Border CornerRadius="7" Padding="9,3" BorderThickness="1" VerticalAlignment="Center"
                                 Visibility="{Binding ShowLiveBadge, Converter={StaticResource BoolToVis}}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="#1F56C7BA"/>
+                                    <Setter Property="BorderBrush" Value="#4056C7BA"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDjWarmingUp}" Value="True">
+                                            <Setter Property="Background" Value="#24E6C88A"/>
+                                            <Setter Property="BorderBrush" Value="#66E6C88A"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                             <StackPanel Orientation="Horizontal">
-                                <Ellipse Width="6" Height="6" Fill="{StaticResource TealBright}"
-                                         VerticalAlignment="Center">
+                                <Ellipse Width="6" Height="6" VerticalAlignment="Center">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{StaticResource TealBright}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDjWarmingUp}" Value="True">
+                                                    <Setter Property="Fill" Value="#FFE6C88A"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
                                     <Ellipse.Triggers>
                                         <EventTrigger RoutedEvent="Loaded">
                                             <BeginStoryboard>
@@ -1238,8 +1293,20 @@
                                         </EventTrigger>
                                     </Ellipse.Triggers>
                                 </Ellipse>
-                                <TextBlock Text="LIVE" Margin="6,0,0,0" FontSize="10.5" FontWeight="SemiBold"
-                                           Foreground="#FF8FE0D4"/>
+                                <TextBlock Margin="6,0,0,0" FontSize="10.5" FontWeight="SemiBold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="LIVE"/>
+                                            <Setter Property="Foreground" Value="#FF8FE0D4"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDjWarmingUp}" Value="True">
+                                                    <Setter Property="Text" Value="BRIDGING"/>
+                                                    <Setter Property="Foreground" Value="#FFE6C88A"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
                         </Border>
                         <!-- Codec pairs with the LIVE badge ("LIVE · AAC" — UX audit: alone and
@@ -1596,6 +1663,17 @@
                         <TextBlock Grid.Column="2" Text="{Binding VolumePercent}" FontSize="12"
                                    Foreground="#FF8AA39E" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
+
+                    <!-- "Up next" (DJ mode): the thing a listener most often wants to know
+                         without switching panels. Only when there's actually a next track. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0"
+                                Visibility="{Binding HasUpNext, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="UP NEXT" FontSize="10" FontWeight="SemiBold"
+                                   Foreground="#FF6F8C87" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding UpNext}" Margin="9,0,0,0" FontSize="12"
+                                   Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
                 </StackPanel>
                 </Border>
             </Grid>

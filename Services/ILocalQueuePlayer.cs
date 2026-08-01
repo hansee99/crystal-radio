@@ -12,9 +12,20 @@ public interface ILocalQueuePlayer
     /// <summary>Number of tracks in the queue (played + upcoming).</summary>
     int QueueCount { get; }
 
+    /// <summary>The queue in order — played, current, upcoming. DJ mode's "Mix" list is a
+    /// direct view of this.</summary>
+    IReadOnlyList<LocalTrack> Queue { get; }
+
+    /// <summary>Index of the track currently playing, or -1.</summary>
+    int CurrentIndex { get; }
+
     void SetQueue(IReadOnlyList<LocalTrack> tracks, int startIndex = 0);
 
     void Append(IReadOnlyList<LocalTrack> tracks);
 
+    /// <summary>Position within the queue moved.</summary>
     event EventHandler<(LocalTrack Track, int Index)>? TrackChanged;
+
+    /// <summary>Queue contents changed (replaced or appended).</summary>
+    event EventHandler? QueueChanged;
 }

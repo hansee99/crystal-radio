@@ -217,7 +217,11 @@ public sealed class MainViewModel : ObservableObject
         WatchPanel(CuratedQueue, nameof(CuratePanelState));
         WatchPanel(LibrarySongs, nameof(LibrarySongsPanelState));
         WatchPanel(DjHarvesters, nameof(DjSourcesPanelState));
-        WatchPanel(DjHistory, nameof(DjHistoryPanelState));
+        WatchPanel(DjMix, nameof(DjMixPanelState));
+
+        // The Mix list is a view of the engine's queue, so it follows both "the queue changed"
+        // and "we moved within it".
+        _local.QueueChanged += (_, _) => SyncDjMix();
 
         // Show the selected station's preview from the very first frame instead of a bare
         // "Not playing" (Shared Framework Spec §4a) — SelectedStation was set on the backing
@@ -546,8 +550,14 @@ public sealed class MainViewModel : ObservableObject
         : DjHarvesters.Count == 0 ? PanelState.Loading
         : PanelState.Content;
 
-    public PanelState DjHistoryPanelState =>
-        DjHistory.Count == 0 ? PanelState.Empty : PanelState.Content;
+    /// <summary>Mix tab: the warm-up checklist lives here (it's the space that used to say
+    /// "nothing yet" while a session was demonstrably starting), so a running session with an
+    /// empty queue is Loading, not Empty.</summary>
+    public PanelState DjMixPanelState =>
+        DjMix.Count > 0 ? PanelState.Content
+        : DjError is not null ? PanelState.Error
+        : IsDjRunning ? PanelState.Loading
+        : PanelState.Empty;
 
     private string? _searchError;
     /// <summary>Non-null puts the Search panel in its Error state. Cleared when a search starts.</summary>
@@ -1639,7 +1649,9 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsBusy));
         OnPropertyChanged(nameof(ShowLiveBadge));
         OnPropertyChanged(nameof(HasDuration));
+        OnPropertyChanged(nameof(IsDjWarmingUp));
         RaiseDjIndicatorChanged();
+        RefreshDjSessionMeta();
     }
 
     /// <summary>Switch player modes. Either/or: the now-inactive engine is stopped and the
@@ -1832,11 +1844,68 @@ public sealed class MainViewModel : ObservableObject
     /// DjHarvestService.StatusChanged fires; dead harvesters are never in it (see DjHarvesterItem).</summary>
     public ObservableCollection<DjHarvesterItem> DjHarvesters { get; } = new();
 
-    /// <summary>Songs already played during the current DJ session (History tab), most-recent-first.
-    /// In-memory/session-only — unlike Radio mode's history, not persisted across app restarts.</summary>
-    public ObservableCollection<DjHistoryItem> DjHistory { get; } = new();
+    /// <summary>
+    /// The session's mix (Mix tab): the playback queue in order — played, playing, upcoming.
+    /// A direct view of <see cref="ILocalQueuePlayer.Queue"/>; the queue never drops played
+    /// tracks, so it doubles as the session record and there's no separate history list.
+    /// </summary>
+    public ObservableCollection<DjMixItem> DjMix { get; } = new();
 
-    private const int MaxDjHistory = 200; // bound session memory growth on a long-running session
+    /// <summary>The track after the current one, for the "Up next" line, or null at the end.</summary>
+    public string? UpNext
+    {
+        get
+        {
+            var next = _local.CurrentIndex + 1;
+            if (next <= 0 || next >= _local.Queue.Count) return null;
+            var track = _local.Queue[next];
+            return string.IsNullOrWhiteSpace(track.Artist) ? track.Title : $"{track.Title} — {track.Artist}";
+        }
+    }
+
+    public bool HasUpNext => IsDjMode && UpNext is not null;
+
+    /// <summary>
+    /// Rebuilds <see cref="DjMix"/> from the engine's queue. Appends in place when the existing
+    /// rows are still a prefix of the queue (the common case — a harvested song landing), so the
+    /// list doesn't reset its scroll position every time the mix grows.
+    /// </summary>
+    private void SyncDjMix()
+    {
+        // Library mode drives the same engine queue (curated playlists), so without this guard a
+        // curated set would show up as the DJ's "mix" the next time you opened the panel.
+        if (!IsDjMode) return;
+
+        var queue = _local.Queue;
+        if (DjMix.Count > queue.Count)
+            DjMix.Clear();
+
+        for (var i = 0; i < DjMix.Count; i++)
+        {
+            if (DjMix[i].Title == queue[i].Title && DjMix[i].Artist == queue[i].Artist)
+                continue;
+            DjMix.Clear(); // diverged — the queue was replaced, not appended to
+            break;
+        }
+
+        for (var i = DjMix.Count; i < queue.Count; i++)
+            DjMix.Add(new DjMixItem(queue[i].Title, queue[i].Artist));
+
+        MarkDjMixPosition();
+    }
+
+    /// <summary>Flags which mix row is playing and which are behind it.</summary>
+    private void MarkDjMixPosition()
+    {
+        var current = _local.CurrentIndex;
+        for (var i = 0; i < DjMix.Count; i++)
+        {
+            DjMix[i].IsCurrent = i == current;
+            DjMix[i].HasPlayed = current >= 0 && i < current;
+        }
+        OnPropertyChanged(nameof(UpNext));
+        OnPropertyChanged(nameof(HasUpNext));
+    }
 
     private string _djPrompt = string.Empty;
     public string DjPrompt
@@ -1872,6 +1941,10 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>True while a live station is bridging until the mix fills. Public so the session
+    /// card and the Now Playing badge can distinguish "bridging" from "live".</summary>
+    public bool IsDjWarmingUp => _djWarmingUp;
+
     /// <summary>Session running but nothing connected yet — the Sources panel shows the staged
     /// checklist for this phase, so the status row stays out of its way.</summary>
     private bool IsDjStartingUp => IsDjRunning && DjHarvesters.Count == 0;
@@ -1892,9 +1965,15 @@ public sealed class MainViewModel : ObservableObject
     }
 
     // The prompt/vibe the current DJ session was started with — frozen at session start (not
-    // read live from DjPrompt, which the user may edit while a session is running) and given to
-    // the intro service as context for every track.
+    // read live from DjPrompt) and given to the intro service as context for every track. Also
+    // what the session card shows, so the card records what was actually asked for.
     private string? _djSessionVibe;
+
+    public string? DjSessionVibe
+    {
+        get => _djSessionVibe;
+        private set => SetProperty(ref _djSessionVibe, value);
+    }
 
     private string? _djIntroLine;
     /// <summary>Short "why this song" DJ patter for the current DJ Mode track, shown in Now
@@ -1925,14 +2004,16 @@ public sealed class MainViewModel : ObservableObject
             return;
 
         var prompt = DjPrompt;
-        _djSessionVibe = prompt;
+        DjSessionVibe = prompt;
         DjHarvesters.Clear();
-        DjHistory.Clear();
+        DjMix.Clear();
         DjIntroLine = null;
         DjError = null; // a new attempt clears the previous failure
         DjSourcesEmptyMessage = DefaultDjSourcesEmptyMessage;
         DjProgress.Begin(DjStageFind, DjStageConnect, DjStageRecord);
+        _djLastStatus = null;
         IsDjRunning = true;
+        StartDjSessionClock();
         DjStatus = "Warming up the decks…";
 
         _djStartCts?.Cancel();
@@ -1995,7 +2076,10 @@ public sealed class MainViewModel : ObservableObject
         EndDjWarmupIfActive();
         _djIntroCts?.Cancel();
         DjIntroLine = null;
-        _djSessionVibe = null;
+        DjSessionVibe = null;
+        _djSessionTimer?.Stop();
+        _djLastStatus = null;
+        DjMix.Clear(); // the session's record ends with the session
         IsDjRunning = false;
         DjStatus = string.Empty;
     }
@@ -2035,16 +2119,71 @@ public sealed class MainViewModel : ObservableObject
     private void OnDjStatusChanged(HarvestStatus status)
     {
         if (!IsDjRunning) return;
-        var songs = $"{status.Kept} song{(status.Kept == 1 ? "" : "s")}";
-        DjStatus = _djWarmingUp
-            ? $"Live from {_djHarvest.TopStation?.Name} while the mix fills · {songs} so far"
-            : $"Tuned into {status.ActiveHarvesters} station{(status.ActiveHarvesters == 1 ? "" : "s")} · {songs} in the mix";
+        _djLastStatus = status;
+        RefreshDjSessionMeta();
 
         DjHarvesters.Clear();
         foreach (var h in status.Harvesters)
             DjHarvesters.Add(new DjHarvesterItem(h.Label, h.TitlesSeen));
         RaiseDjIndicatorChanged(); // harvester count feeds ShowDjSpinner/ShowDjLiveDot
     }
+
+    private HarvestStatus? _djLastStatus;
+    private DateTime _djSessionStarted;
+    private System.Windows.Threading.DispatcherTimer? _djSessionTimer;
+
+    /// <summary>
+    /// The session card's one-line summary. Rebuilt both when the harvest pool reports in and on
+    /// a slow timer — otherwise the elapsed figure would only move when a song happened to land,
+    /// which is exactly when it looks stale.
+    /// </summary>
+    private void RefreshDjSessionMeta()
+    {
+        if (!IsDjRunning)
+        {
+            DjStatus = string.Empty;
+            return;
+        }
+
+        if (_djWarmingUp)
+        {
+            var station = _djHarvest.TopStation?.Name;
+            DjStatus = station is null
+                ? "Bridging a live station until the mix fills"
+                : $"Bridging {station} until the mix fills";
+            return;
+        }
+
+        if (_djLastStatus is not { } status)
+        {
+            DjStatus = "Warming up the decks…";
+            return;
+        }
+
+        var stations = $"{status.ActiveHarvesters} station{(status.ActiveHarvesters == 1 ? "" : "s")}";
+        var songs = $"{status.Kept} song{(status.Kept == 1 ? "" : "s")} in the mix";
+        DjStatus = $"Tuned into {stations} · {songs} · {DescribeElapsed()}";
+    }
+
+    private string DescribeElapsed()
+    {
+        var minutes = (int)(DateTime.Now - _djSessionStarted).TotalMinutes;
+        return minutes < 1 ? "just started" : $"{minutes} min";
+    }
+
+    private void StartDjSessionClock()
+    {
+        _djSessionStarted = DateTime.Now;
+        _djSessionTimer ??= new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(30)
+        };
+        _djSessionTimer.Tick -= OnDjSessionTick;
+        _djSessionTimer.Tick += OnDjSessionTick;
+        _djSessionTimer.Start();
+    }
+
+    private void OnDjSessionTick(object? sender, EventArgs e) => RefreshDjSessionMeta();
 
     /// <summary>
     /// Cold-start bridge: plays DjHarvestService's top-ranked station live via RadioEngine — a
@@ -2174,10 +2313,7 @@ public sealed class MainViewModel : ObservableObject
 
         if (IsDjMode)
         {
-            DjHistory.Insert(0, new DjHistoryItem(track.Title, track.Artist, DateTime.Now));
-            while (DjHistory.Count > MaxDjHistory)
-                DjHistory.RemoveAt(DjHistory.Count - 1);
-
+            MarkDjMixPosition(); // move the equalizer down the mix and refresh "Up next"
             _ = GenerateDjIntroAsync(track.Title, track.Artist, track.Reason);
         }
 

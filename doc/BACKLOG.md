@@ -5,6 +5,24 @@ just enough context to pick back up later. Add new items at the top.
 
 ---
 
+## DJ mode: save songs out of the mix (and the list-header actions)
+
+**What:** the DJ-panel mockup (`doc/design-review/DJ Panel Restructure.dc.html`) shows a save
+glyph on every Mix row and a header action on each list — "save the whole mix to your library"
+on Mix, "add a station to the pool" on Sources. Pass 5 built the restructure around them but not
+the actions themselves, because all three need plumbing that doesn't exist yet.
+
+**Why it's more than a button:** harvested songs live in the harvest folder tagged
+`SongSource.Harvested`, on a size-capped rotation that deletes them. "Saving" one means copying
+it into the user's library folder and re-inserting it as `UserSaved` — a path
+`SongLibraryService` doesn't have (its only writer is `AddAndEnrich`, which indexes in place).
+Adding a station to a running pool means `DjHarvestService` growing a public "start one more
+harvester" entry point and deciding what that does to the reserve.
+
+**Why it matters:** without it, a song you love in the mix is on a countdown to eviction and
+there's nothing you can do about it. This is also half of the tier-C "one save model across all
+three modes" item — worth doing them together.
+
 ## Save-ability expires silently as the rolling cache prunes
 
 **What:** a history row can only be saved while its captured audio is still in the rolling cache.
