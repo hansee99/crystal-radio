@@ -25,15 +25,25 @@ using ManagedBass.Aac;
 // Only windows inside a confirmed span get that label in the output feature CSV; the rest of
 // that file stays unlabelled (not assumed) until you confirm it too. Feed the resulting CSV rows
 // into fit_logreg.py alongside the original corpus to re-fit.
+//
+// If a harvested folder produces a suspect-span AVALANCHE (hundreds of tiny "interior" spans,
+// often back-to-back into one long run) that's usually NOT real talk — it's a corpus gap: the
+// detector under-represents whatever genre those songs are (ambient/downtempo and sparse indie
+// are the classic case) and mistakes "quiet/sparse" for "speech-like". Span-by-span review
+// doesn't scale for that and isn't the right fix anyway. --template-corrections writes one
+// whole-file "music" row per analyzed file (0..duration) for you to thin out: delete/edit only
+// the rows for songs you know had real audible talk, then use the result as --corrections. That
+// directly injects the missing genre diversity as clean examples, which is the actual fix.
 
 var forcedLabel = ArgStr("--label");
 var csvPath = ArgStr("--csv") ?? "djdetector-features.csv";
 var correctionsPath = ArgStr("--corrections");
 var suspectsCsvPath = ArgStr("--suspects-csv");
+var templateCorrectionsPath = ArgStr("--template-corrections");
 
 // Positional inputs = everything that isn't a flag or a flag's value.
 var valueFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "--label", "--csv", "--corrections", "--suspects-csv" };
+    { "--label", "--csv", "--corrections", "--suspects-csv", "--template-corrections" };
 var paths = new List<string>();
 for (var i = 0; i < args.Length; i++)
 {
@@ -84,12 +94,15 @@ using var csv = new StreamWriter(csvPath);
 csv.WriteLine(MusicDetector.CsvHeader);
 using var suspectsCsv = suspectsCsvPath is null ? null : new StreamWriter(suspectsCsvPath);
 suspectsCsv?.WriteLine("file,startSec,endSec,durationSec,kind,avgConfidence");
+using var templateCsv = templateCorrectionsPath is null ? null : new StreamWriter(templateCorrectionsPath);
+templateCsv?.WriteLine("file,startSec,endSec,label");
 
 // Per-window accuracy tallies, keyed by label.
 var labelWindows = new Dictionary<string, (int correct, int total)>();
 
 Console.WriteLine($"Analyzing {files.Count} file(s)…  CSV → {csvPath}" +
-                  (suspectsCsvPath is null ? "" : $"  suspects → {suspectsCsvPath}"));
+                  (suspectsCsvPath is null ? "" : $"  suspects → {suspectsCsvPath}") +
+                  (templateCorrectionsPath is null ? "" : $"  template → {templateCorrectionsPath}"));
 Console.WriteLine(new string('-', 78));
 
 foreach (var file in files.OrderBy(f => f))
@@ -106,6 +119,12 @@ foreach (var file in files.OrderBy(f => f))
     }
 
     var result = detector.Analyze(mono, rate);
+
+    if (templateCsv is not null && result.Windows.Count > 0)
+    {
+        var duration = result.Windows[^1].TStart + MusicDetector.WindowSeconds;
+        templateCsv.WriteLine(string.Join(',', Csv(name), "0", F(duration), "music"));
+    }
 
     foreach (var w in result.Windows)
     {

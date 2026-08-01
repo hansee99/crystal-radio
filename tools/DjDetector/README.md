@@ -81,6 +81,31 @@ dotnet run --project tools/DjDetector -- C:\harvest --corrections corrections.cs
 edge-trim readout already shows); **interior** spans are mid-file dips edge-trim can't see —
 the new information worth checking first (a talk-over, a DJ drop-in mid-song).
 
+### When suspects avalanche (hundreds of tiny spans): it's a corpus gap, not a screening task
+
+If a harvested folder produces a suspect count wildly out of proportion to the song count
+(hundreds of spans across a few dozen songs), don't try to review them span-by-span — that's
+usually not real talk-in-music. Check whether the spans for one file are actually contiguous
+(a `--suspects-csv` sorted by file will show this): dozens of "interior" spans that run back-to
+-back for most of a song's length mean the detector's confidence is hovering near the threshold
+for a *sustained* stretch, which is a **corpus gap** — the detector under-represents whatever
+genre that song is (quiet/sparse indie and downtempo/chill electronic are the classic case,
+since the original training clips skewed toward energetic mainstream pop/rock/disco) and
+mistakes "quiet and sparse" for "speech-like."
+
+The fix is cheap and doesn't require listening to hundreds of spans:
+
+```sh
+# Generate one whole-file "music" row per analyzed file (0..duration).
+dotnet run --project tools/DjDetector -- C:\harvest --template-corrections corrections-template.csv
+```
+
+Open the template, and **delete (or edit) only the rows for songs you know had real audible
+talk** — everything else defaults to "clean, whole song." This inverts the effort from
+"confirm hundreds of spans" to "veto a handful," and it directly injects the missing genre
+diversity as clean training examples — which is the actual fix for the avalanche, not the
+symptom. Rename the thinned file to `corrections.csv` and use it as in the workflow above.
+
 Merge `corrections-features.csv` with the original labelled-corpus CSV before re-fitting (or
 pass both to a small script) — each confirmed span is a few seconds of real, precisely-located
 production data, which is worth more per-window than another whole clip.
