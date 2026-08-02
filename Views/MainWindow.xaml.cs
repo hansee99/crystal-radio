@@ -79,6 +79,7 @@ public partial class MainWindow : Window
             offsetSeconds: 0.0, trimEdges: true,
             rejectBelow: djSettings.DjMusicFractionFloor,   // 0 = off; see SegmentQualityChecker
             minSongSeconds: djSettings.DjMinSongSeconds,
+            stationIdleMinutes: djSettings.DjStationIdleMinutes,
             maxHarvestCacheBytes: djSettings.DjMaxHarvestCacheMb * 1024L * 1024L,
             maxRejectedCacheBytes: djSettings.DjRejectedCacheMb * 1024L * 1024L);
 

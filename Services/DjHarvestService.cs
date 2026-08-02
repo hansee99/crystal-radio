@@ -97,6 +97,12 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     /// support it. Generous: a station that only announces on change, connected mid-song, still
     /// gets a full long track to prove itself.</summary>
     private static readonly TimeSpan MetadataGrace = TimeSpan.FromMinutes(6);
+
+    /// <summary>How long a harvester may go without completing a segment before its slot goes to
+    /// a reserve station. Configurable because the right value is genre-dependent: the longest
+    /// real track measured so far was 10:04, but a station playing hour-long sets produces
+    /// nothing at all.</summary>
+    private readonly TimeSpan _idleLimit;
     private volatile bool _running;
     private int _kept;
     private int _rejected;
@@ -121,6 +127,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         double rejectBelow = 0,
         bool trimEdges = true,
         double minSongSeconds = 60,
+        double stationIdleMinutes = 15,
         long maxHarvestCacheBytes = 500L * 1024 * 1024,
         long maxRejectedCacheBytes = 250L * 1024 * 1024)
     {
@@ -138,6 +145,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         _offsetSeconds = offsetSeconds;
         _maxHarvestCacheBytes = maxHarvestCacheBytes;
         _maxRejectedCacheBytes = maxRejectedCacheBytes;
+        _idleLimit = TimeSpan.FromMinutes(stationIdleMinutes);
         _qc = new SegmentQualityChecker(rejectBelow, trimEdges, minSongSeconds);
     }
 
@@ -254,7 +262,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         {
             Interval = TimeSpan.FromSeconds(30)
         };
-        _watchdog.Tick += (_, _) => RetireSilentHarvesters();
+        _watchdog.Tick += (_, _) => RetireUnproductive();
         _watchdog.Start();
 
         ready.TrySetResult();
@@ -301,31 +309,66 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     }
 
     /// <summary>
-    /// Drops harvesters that have served no ICY metadata at all. Without title changes there are
-    /// no song boundaries, so such a station can never yield a segment however long it runs — it
-    /// just burns bandwidth and a pool slot. Measured sessions had one in four sourced stations
-    /// like this, silently producing nothing for half an hour.
+    /// Whether a harvester has earned its slot, and if not, why. Pure so the policy can be tested
+    /// without a live stream — it decides whether a station is dropped, and getting it wrong
+    /// either churns the pool needlessly or leaves dead weight in it.
     ///
-    /// Only zero titles counts. A station that has shown even one is alive and merely slow, and
-    /// the grace period is generous enough that a metadata-bearing station connected mid-song
-    /// will have announced the next one.
+    /// Two ways to fail:
+    /// <list type="bullet">
+    /// <item><b>No ICY metadata at all.</b> No title changes means no song boundaries, so the
+    /// station can never produce a segment however long it runs. Caught early — a shorter grace
+    /// than the idle rule, because this one is definitive rather than a judgement about rate.</item>
+    /// <item><b>No completed segment for a long time.</b> Most often a long DJ set or extended
+    /// mix: one ICY title announced for an hour, so no boundaries and nothing for the curator.
+    /// Also catches a stream that quietly stalled without erroring. Measured on SEGMENTS, not
+    /// title changes, because some stations re-announce the same title mid-track — "the title
+    /// changed" and "we got a song" are different questions.</item>
+    /// </list>
     /// </summary>
-    private void RetireSilentHarvesters()
+    internal static bool ShouldRetire(int titlesSeen, DateTime connectedAt, DateTime lastSegmentAt,
+        DateTime now, TimeSpan metadataGrace, TimeSpan idleLimit, out string reason)
+    {
+        if (titlesSeen == 0 && now - connectedAt > metadataGrace)
+        {
+            reason = "no metadata";
+            return true;
+        }
+
+        // Nothing produced yet? Measure from when we connected, not from MinValue.
+        var since = lastSegmentAt == default ? connectedAt : lastSegmentAt;
+        if (now - since > idleLimit)
+        {
+            reason = "no songs";
+            return true;
+        }
+
+        reason = "";
+        return false;
+    }
+
+    /// <summary>Drops harvesters that aren't contributing and promotes reserves in their place.</summary>
+    private void RetireUnproductive()
     {
         if (!_running)
             return;
 
-        List<StreamHarvester> silent;
+        var now = DateTime.UtcNow;
+        var unproductive = new List<(StreamHarvester Harvester, string Reason)>();
         lock (_activeLock)
-            silent = _active
-                .Where(h => h.TitlesSeen == 0 && DateTime.UtcNow - h.ConnectedAt > MetadataGrace)
-                .ToList();
-
-        foreach (var harvester in silent)
         {
-            AppLog.Info($"[Dj] dropping {harvester.Label}: no ICY metadata after "
-                        + $"{MetadataGrace.TotalMinutes:0} min — it can never produce a segment");
-            Retire(harvester, "no metadata");
+            foreach (var h in _active)
+                if (ShouldRetire(h.TitlesSeen, h.ConnectedAt, h.LastSegmentAt, now,
+                        MetadataGrace, _idleLimit, out var reason))
+                    unproductive.Add((h, reason));
+        }
+
+        foreach (var (harvester, reason) in unproductive)
+        {
+            AppLog.Info($"[Dj] dropping {harvester.Label}: {reason} — "
+                        + (reason == "no metadata"
+                            ? $"no ICY titles after {MetadataGrace.TotalMinutes:0} min, so it can never produce a segment"
+                            : $"nothing completed in {_idleLimit.TotalMinutes:0} min (long mix, or stalled)"));
+            Retire(harvester, reason);
         }
     }
 

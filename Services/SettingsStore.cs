@@ -69,6 +69,15 @@ public sealed class AppSettings
     public int DjMinSongSeconds { get; set; } = 60;
 
     /// <summary>
+    /// How long a DJ-mode harvester may go without completing a segment before its slot is given
+    /// to a reserve station. Catches stations playing long DJ sets or extended mixes — one ICY
+    /// title announced for an hour means no song boundaries and nothing for the curator — as well
+    /// as streams that quietly stall without erroring. Measured on segments rather than title
+    /// changes, since some stations re-announce the same title mid-track.
+    /// </summary>
+    public int DjStationIdleMinutes { get; set; } = 15;
+
+    /// <summary>
     /// Reject a segment whose whole-file music fraction is below this. <b>0 disables it, which is
     /// the current default.</b> Listening tests found confirmed-good deep house scoring 0.00 —
     /// the same as a confirmed ad break — so the two classes are not separable by this number and
@@ -116,6 +125,7 @@ public sealed class SettingsStore
                     settings.DjMaxHarvestCacheMb = Math.Clamp(settings.DjMaxHarvestCacheMb, 50, 20_000);
                     settings.DjRejectedCacheMb = Math.Clamp(settings.DjRejectedCacheMb, 0, 20_000);
                     settings.DjMinSongSeconds = Math.Clamp(settings.DjMinSongSeconds, 0, 600);
+                    settings.DjStationIdleMinutes = Math.Clamp(settings.DjStationIdleMinutes, 1, 240);
                     settings.DjMusicFractionFloor = Math.Clamp(settings.DjMusicFractionFloor, 0, 1);
                     return settings;
                 }

@@ -47,6 +47,17 @@ public sealed class StreamHarvester : IDisposable
     /// Deliberately not reset by reconnects — metadata support is a property of the station.</summary>
     public DateTime ConnectedAt { get; private set; }
 
+    /// <summary>
+    /// When this harvester last produced a completed segment, or <see cref="DateTime.MinValue"/>
+    /// if it never has. Together with <see cref="ConnectedAt"/> this is how the pool spots a
+    /// station that isn't contributing — most often one playing a long DJ set or extended mix,
+    /// which announces a single ICY title and therefore yields no song boundaries for as long as
+    /// it runs. Deliberately measured on segments rather than title changes: some stations
+    /// re-announce the same title mid-track, so "the title changed" is not the same question as
+    /// "did we get a song".
+    /// </summary>
+    public DateTime LastSegmentAt { get; private set; }
+
     /// <summary>Raised on the harvest dispatcher thread for each complete, song-like segment —
     /// unfiltered by QC (the caller decides reject/trim/keep).</summary>
     public event EventHandler<CompletedSegment>? SegmentCompleted;
@@ -70,7 +81,11 @@ public sealed class StreamHarvester : IDisposable
         _format = format;
         _dispatcher = dispatcher;
         _recorder = new StreamRecorder(offsetSeconds, cacheDir);
-        _recorder.SegmentCompleted += (_, seg) => SegmentCompleted?.Invoke(this, seg);
+        _recorder.SegmentCompleted += (_, seg) =>
+        {
+            LastSegmentAt = DateTime.UtcNow;
+            SegmentCompleted?.Invoke(this, seg);
+        };
         _dl = (buffer, length, _) => _recorder.Write(_session, buffer, length);
     }
 
