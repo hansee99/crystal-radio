@@ -25,11 +25,23 @@ public static class AppLog
     private static readonly object Gate = new();
     private static string? _path;
     private static bool _setupFailed;
+    private static bool _suppressed;
 
     /// <summary>The current log file, or null if logging couldn't be set up.</summary>
     public static string? FilePath
     {
         get { lock (Gate) return EnsureFile(); }
+    }
+
+    /// <summary>
+    /// Stops this process writing to the shared log file. For the test host: a test run otherwise
+    /// appends to the same %LocalAppData% file the real app uses, interleaving hundreds of lines
+    /// with a live session's diagnostics — precisely when someone is reading that file to work out
+    /// what a session did. Cannot be undone; nothing but a test host should ever call it.
+    /// </summary>
+    public static void Suppress()
+    {
+        lock (Gate) _suppressed = true;
     }
 
     public static void Debug(string message) => Write("DBG", message);
@@ -76,6 +88,8 @@ public static class AppLog
     /// <summary>Resolves (and on first use creates) today's log file. Caller holds the lock.</summary>
     private static string? EnsureFile()
     {
+        if (_suppressed)
+            return null;
         if (_path is not null || _setupFailed)
             return _path;
 

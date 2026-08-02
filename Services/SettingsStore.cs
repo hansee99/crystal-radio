@@ -74,8 +74,13 @@ public sealed class AppSettings
     /// title announced for an hour means no song boundaries and nothing for the curator — as well
     /// as streams that quietly stall without erroring. Measured on segments rather than title
     /// changes, since some stations re-announce the same title mid-track.
+    ///
+    /// <para>10 minutes rather than 15: the longest real track measured across five sessions was
+    /// 10:04, and a station whose tracks routinely run longer than that isn't a good fit for the
+    /// harvest-and-curate model anyway — the queue wants songs, not sets. Waiting longer only
+    /// delays giving the slot to a station that will actually produce.</para>
     /// </summary>
-    public int DjStationIdleMinutes { get; set; } = 15;
+    public int DjStationIdleMinutes { get; set; } = 10;
 
     /// <summary>
     /// Reject a segment whose whole-file music fraction is below this. <b>0 disables it, which is

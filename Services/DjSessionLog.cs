@@ -142,6 +142,51 @@ public sealed class DjSessionLog
         }
     }
 
+    /// <summary>
+    /// A boundary arrived but produced nothing. Without this the log can't tell a station that
+    /// announced no titles at all from one whose every announcement was filtered out — both look
+    /// like silence after the station+ line, and the two need entirely different fixes (drop the
+    /// station vs. loosen the filter). Diagnosed exactly this way on 2026-08-02: two harvesters
+    /// on the same stream, one logging a sliver the other silently dropped for carrying the
+    /// station's own name.
+    /// </summary>
+    public void BoundarySkipped(string station, DiscardReason reason, string? title, string? artist)
+    {
+        lock (_gate)
+        {
+            Tally(station).Skipped++;
+            var what = string.IsNullOrWhiteSpace(artist) ? title ?? "(untitled)" : $"{artist} - {title}";
+            Write("skipped", $"{station} · {what} ({Describe(reason)})");
+        }
+    }
+
+    /// <summary>
+    /// How many ICY titles a station has announced. The counterpart to
+    /// <see cref="BoundarySkipped"/>: a discard only happens when a segment gets CLOSED, which
+    /// takes a second boundary, so a station that announces one title and never changes it
+    /// (a long mix) produces no events at all. Only the title count separates that from a station
+    /// serving no metadata whatsoever. Pushed periodically and again on retirement, so a dropped
+    /// station keeps its final figure.
+    /// </summary>
+    public void TitlesSeen(string station, int count)
+    {
+        lock (_gate)
+        {
+            var tally = Tally(station);
+            if (count > tally.Titles)
+                tally.Titles = count;
+        }
+    }
+
+    private static string Describe(DiscardReason reason) => reason switch
+    {
+        DiscardReason.MidSongHead => "joined mid-song — first boundary",
+        DiscardReason.TooShort => "too short",
+        DiscardReason.NotSongLike => "not song-like: no artist, an ad marker, or the station's own name",
+        DiscardReason.WriteFailed => "capture file couldn't be closed",
+        _ => reason.ToString()
+    };
+
     /// <summary>A song started playing — the consumption side of the ratio.</summary>
     public void SongPlayed(string path, string title, string artist)
     {
@@ -214,10 +259,30 @@ public sealed class DjSessionLog
         foreach (var (name, t) in _stations.OrderByDescending(s => s.Value.Kept))
         {
             var done = t.Kept + t.Rejected;
-            sb.AppendLine($"  {Trim(name, 34),-34} kept {t.Kept,3}   rejected {t.Rejected,3}"
-                          + $"   {Pct(t.Kept, done, pad: false),-8} {t.Kept / minutes:0.00}/min"
+            sb.AppendLine($"  {Trim(name, 34),-34} titles {t.Titles,3}   kept {t.Kept,3}"
+                          + $"   rejected {t.Rejected,3}   {Pct(t.Kept, done, pad: false),-8}"
+                          + $" {t.Kept / minutes:0.00}/min"
+                          + (t.Skipped > 0 ? $"   skipped {t.Skipped}" : "")
                           + (t.Trimmed > 0 ? $"   trimmed {t.Trimmed}" : "")
                           + (t.Died > 0 ? $"   died {t.Died}x" : ""));
+        }
+
+        // Why a station produced nothing, in the terms that decide what to do about it. Titles vs
+        // segments is the whole diagnosis: no titles is a dead directory entry, one title is a
+        // long mix, and many titles with nothing kept is a filtering or QC problem — and only the
+        // last one is fixed by anything other than replacing the station.
+        var barren = _stations.Where(s => s.Value.Kept == 0).ToList();
+        if (barren.Count > 0)
+        {
+            sb.AppendLine().AppendLine("Produced nothing:");
+            foreach (var (name, t) in barren)
+                sb.AppendLine($"  {Trim(name, 34),-34} {(t.Titles, t.Rejected + t.Skipped) switch
+                {
+                    (0, _) => "no ICY metadata at all — can never produce a segment",
+                    (1, 0) => "announced one title and never changed it — a long mix, or no per-track metadata",
+                    (_, 0) => "announced titles but completed no segment — check for a stalled stream",
+                    var (_, dropped) => $"{dropped} boundary(s), all dropped — a filtering/QC problem, not the station"
+                }}");
         }
 
         return sb.ToString();
@@ -275,5 +340,7 @@ public sealed class DjSessionLog
         public int Kept;
         public int Rejected;
         public int Trimmed;
+        public int Skipped;   // boundaries that produced no segment at all
+        public int Titles;    // ICY titles announced, however they ended up
     }
 }

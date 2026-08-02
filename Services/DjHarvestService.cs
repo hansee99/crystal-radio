@@ -213,6 +213,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         // Finish here rather than only in the view model: closing the window disposes this
         // service directly, and a session log without its summary is the one case where the
         // measurement is lost exactly when the session was long enough to be interesting.
+        RecordTitleCounts();   // the watchdog's last tick can be 30s stale; the summary uses these
         SessionLog?.Finish();
 
         var dispatcher = _harvestDispatcher;
@@ -227,6 +228,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
                     foreach (var h in _active)
                     {
                         h.SegmentCompleted -= OnSegmentCompleted;
+                        h.SegmentDiscarded -= OnSegmentDiscarded;
                         h.Died -= OnHarvesterDied;
                         h.Dispose();
                     }
@@ -256,13 +258,20 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         foreach (var station in hot)
             StartHarvester(station);
 
-        // Watchdog for metadata-silent stations. Lives on this thread so its retire/replace path
-        // is the same single-threaded one every other harvester lifecycle call uses.
+        // Watchdog for slots that aren't earning their keep. Lives on this thread so its
+        // retire/replace path is the same single-threaded one every other harvester lifecycle
+        // call uses. Duplicates go first: that verdict is available as soon as icy-name is read,
+        // so there's no reason to make a redundant harvester wait out the idle limit.
         _watchdog = new DispatcherTimer(DispatcherPriority.Background, Dispatcher.CurrentDispatcher)
         {
             Interval = TimeSpan.FromSeconds(30)
         };
-        _watchdog.Tick += (_, _) => RetireUnproductive();
+        _watchdog.Tick += (_, _) =>
+        {
+            RecordTitleCounts();
+            RetireDuplicateStreams();
+            RetireUnproductive();
+        };
         _watchdog.Start();
 
         ready.TrySetResult();
@@ -274,6 +283,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         var harvester = new StreamHarvester(station.Name, station.Url, station.Format,
             _scratchDir, _offsetSeconds, _harvestDispatcher!);
         harvester.SegmentCompleted += OnSegmentCompleted;
+        harvester.SegmentDiscarded += OnSegmentDiscarded;
         harvester.Died += OnHarvesterDied;
         lock (_activeLock) _active.Add(harvester);
         SessionLog?.HarvesterStarted(station.Name);
@@ -293,12 +303,14 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     private void Retire(StreamHarvester harvester, string reason)
     {
         harvester.SegmentCompleted -= OnSegmentCompleted;
+        harvester.SegmentDiscarded -= OnSegmentDiscarded;
         harvester.Died -= OnHarvesterDied;
         lock (_activeLock)
         {
             if (!_active.Remove(harvester))
                 return; // already retired
         }
+        SessionLog?.TitlesSeen(harvester.Label, harvester.TitlesSeen); // final figure before it goes
         SessionLog?.HarvesterDied(harvester.Label, reason);
         harvester.Dispose();
 
@@ -346,6 +358,108 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         return false;
     }
 
+    /// <summary>
+    /// Pushes each live harvester's ICY title count into the session log. Cheap, and it's the
+    /// only way the log can tell "announced nothing" from "announced one title and sat on it" —
+    /// a station doing the latter never closes a segment, so it raises no events at all.
+    /// </summary>
+    private void RecordTitleCounts()
+    {
+        if (SessionLog is null)
+            return;
+        lock (_activeLock)
+        {
+            foreach (var h in _active)
+                SessionLog.TitlesSeen(h.Label, h.TitlesSeen);
+        }
+    }
+
+    /// <summary>One harvester's stream identity, for the duplicate check.</summary>
+    internal readonly record struct StreamIdentity(string? StreamName, DateTime ConnectedAt);
+
+    /// <summary>
+    /// Indices of harvesters listening to the same audio as another one, and so worth replacing.
+    /// The directory lists the same stream more than once under different names and different
+    /// URLs — pre-connect deduplication (resolved URL, cleaned name) can't see it, but the
+    /// stream's own <c>icy-name</c> can. Observed 2026-08-02: "Liquid DnB"
+    /// (<c>antares.dribbcast.com/proxy/dave1/</c>) and "DnB Liquified"
+    /// (<c>antares.dribbcast.com:5000</c>) held two of four slots on one stream for a whole
+    /// session. Duplicates are worth dropping even when productive — the queue dedupes on
+    /// artist+title, so the second copy is discarded after being harvested, enriched and embedded.
+    ///
+    /// Keeps the earliest-connected of each group (it has the most history) and never treats a
+    /// blank icy-name as matching anything.
+    /// </summary>
+    internal static List<int> FindDuplicateStreams(IReadOnlyList<StreamIdentity> harvesters)
+    {
+        var duplicates = new List<int>();
+        var keptPerName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < harvesters.Count; i++)
+        {
+            var name = harvesters[i].StreamName?.Trim();
+            if (string.IsNullOrEmpty(name))
+                continue; // no identity to compare — can't be judged a duplicate
+
+            if (!keptPerName.TryGetValue(name, out var incumbent))
+            {
+                keptPerName[name] = i;
+                continue;
+            }
+
+            // Later connection loses; on a tie the higher index does, so the result is stable.
+            if (harvesters[i].ConnectedAt < harvesters[incumbent].ConnectedAt)
+            {
+                keptPerName[name] = i;
+                duplicates.Add(incumbent);
+            }
+            else
+            {
+                duplicates.Add(i);
+            }
+        }
+
+        duplicates.Sort();
+        return duplicates;
+    }
+
+    /// <summary>Drops harvesters that turned out to be on a stream another one already has.</summary>
+    private void RetireDuplicateStreams()
+    {
+        if (!_running)
+            return;
+
+        var victims = new List<(StreamHarvester Harvester, string Of)>();
+        lock (_activeLock)
+        {
+            // Only reached from the watchdog, which runs on the harvest dispatcher thread — the
+            // one thread allowed to call BASS for these harvesters.
+            foreach (var h in _active)
+                h.RefreshStreamName();
+
+            var identities = _active.Select(h => new StreamIdentity(h.StreamName, h.ConnectedAt)).ToList();
+            var dropping = FindDuplicateStreams(identities);
+            foreach (var i in dropping)
+            {
+                // Name the one we're keeping in the log line: same stream name, not itself, and
+                // not another harvester we're about to drop (matters when three share a stream).
+                var keeper = _active.Where((h, j) => j != i && !dropping.Contains(j)
+                        && string.Equals(h.StreamName?.Trim(), _active[i].StreamName?.Trim(),
+                            StringComparison.OrdinalIgnoreCase))
+                    .Select(h => h.Label)
+                    .FirstOrDefault() ?? "another harvester";
+                victims.Add((_active[i], keeper));
+            }
+        }
+
+        foreach (var (harvester, of) in victims)
+        {
+            AppLog.Info($"[Dj] dropping {harvester.Label}: same stream as {of} "
+                        + $"(both serve icy-name \"{harvester.StreamName}\")");
+            Retire(harvester, $"duplicate of {of}");
+        }
+    }
+
     /// <summary>Drops harvesters that aren't contributing and promotes reserves in their place.</summary>
     private void RetireUnproductive()
     {
@@ -370,6 +484,16 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
                             : $"nothing completed in {_idleLimit.TotalMinutes:0} min (long mix, or stalled)"));
             Retire(harvester, reason);
         }
+    }
+
+    // A boundary that produced nothing. Recorded, not acted on: the pool's retirement policy
+    // deliberately measures completed segments, and a station whose boundaries all get filtered
+    // is just as unproductive as one with no boundaries at all. The log is where the difference
+    // matters, because the two need different fixes.
+    private void OnSegmentDiscarded(object? sender, DiscardedSegment discarded)
+    {
+        var label = ((StreamHarvester)sender!).Label;
+        SessionLog?.BoundarySkipped(label, discarded.Reason, discarded.Title, discarded.Artist);
     }
 
     // Runs the QC/index/evict pipeline for one completed segment. Not marshaled to the harvest

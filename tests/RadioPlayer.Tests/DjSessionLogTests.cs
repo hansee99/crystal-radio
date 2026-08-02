@@ -135,6 +135,87 @@ public sealed class DjSessionLogTests : IDisposable
         Assert.DoesNotContain("Edge-trimmed", Summary(log));
     }
 
+    // --- Why a station produced nothing -----------------------------------------------------
+    // The three cases below look identical in the event stream (silence after station+) but need
+    // completely different responses, so the summary has to name which one it was. Diagnosing the
+    // 2026-08-02 session took a live ICY probe for exactly this reason.
+
+    [Fact]
+    public void Summary_DistinguishesAStationServingNoMetadataAtAll()
+    {
+        var log = NewLog();
+        log.HarvesterStarted("Dutch Delite");
+        log.TitlesSeen("Dutch Delite", 0);
+
+        Assert.Contains("no ICY metadata at all", Summary(log));
+    }
+
+    [Fact]
+    public void Summary_DistinguishesALongMixFromASilentStation()
+    {
+        // One title, never changed — the long-mix case. It closes no segment, so it raises no
+        // events whatsoever; only the title count separates it from the case above.
+        var log = NewLog();
+        log.HarvesterStarted("Liquid DnB");
+        log.TitlesSeen("Liquid DnB", 1);
+
+        var summary = Summary(log);
+        Assert.Contains("announced one title and never changed it", summary);
+        Assert.DoesNotContain("no ICY metadata at all", summary);
+    }
+
+    [Fact]
+    public void Summary_DistinguishesAFilteringProblemFromADeadStation()
+    {
+        // Plenty of boundaries, all dropped — replacing this station changes nothing, which is
+        // the opposite of the advice the other two cases warrant.
+        var log = NewLog();
+        log.HarvesterStarted("DnB Liquified");
+        log.TitlesSeen("DnB Liquified", 9);
+        for (var i = 0; i < 8; i++)
+            log.BoundarySkipped("DnB Liquified", DiscardReason.NotSongLike, $"Track {i}", null);
+
+        var summary = Summary(log);
+        Assert.Contains("8 boundary(s), all dropped", summary);
+        Assert.Contains("a filtering/QC problem", summary);
+    }
+
+    [Fact]
+    public void Summary_LeavesAProductiveStationOutOfTheProducedNothingList()
+    {
+        var log = NewLog();
+        log.HarvesterStarted("DnBRadio.com");
+        log.TitlesSeen("DnBRadio.com", 7);
+        log.SegmentCompleted("DnBRadio.com", "Planet Smasher", kept: true, confidence: 0.31, seconds: 227);
+
+        Assert.DoesNotContain("Produced nothing", Summary(log));
+    }
+
+    [Fact]
+    public void TitlesSeen_KeepsTheHighestFigureSoARetiredStationDoesNotLoseIt()
+    {
+        // Pushed every 30s while live and again on retirement; a later, lower reading (a fresh
+        // harvester reusing the label after a reconnect) must not erase the history.
+        var log = NewLog();
+        log.HarvesterStarted("Radio A");
+        log.TitlesSeen("Radio A", 12);
+        log.TitlesSeen("Radio A", 3);
+
+        Assert.Contains("titles  12", Summary(log));
+    }
+
+    [Fact]
+    public void BoundarySkipped_RecordsTheTitleAndTheReason()
+    {
+        var log = NewLog();
+        log.BoundarySkipped("Radio A", DiscardReason.NotSongLike, "Radio A Anthem", "Some DJ");
+
+        var text = File.ReadAllText(log.FilePath);
+        Assert.Contains("skipped", text);
+        Assert.Contains("Some DJ - Radio A Anthem", text);
+        Assert.Contains("the station's own name", text);
+    }
+
     [Fact]
     public void Finish_IsIdempotent()
     {

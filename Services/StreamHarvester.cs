@@ -58,9 +58,28 @@ public sealed class StreamHarvester : IDisposable
     /// </summary>
     public DateTime LastSegmentAt { get; private set; }
 
+    /// <summary>
+    /// The stream's own <c>icy-name</c>, read on connect — the identity of the AUDIO, as opposed
+    /// to <see cref="Label"/>, which is the directory's name for one of possibly several entries
+    /// pointing at it. Two directory entries can carry different names and different URLs and
+    /// still be the same stream (observed: "Liquid DnB" at <c>antares.dribbcast.com/proxy/dave1/</c>
+    /// and "DnB Liquified" at <c>antares.dribbcast.com:5000</c> — same icy-name, byte-identical
+    /// StreamTitles), which no amount of pre-connect deduplication can catch. Null/blank when the
+    /// station serves no icy-name, in which case it simply can't be compared.
+    /// </summary>
+    public string? StreamName { get; private set; }
+
     /// <summary>Raised on the harvest dispatcher thread for each complete, song-like segment —
     /// unfiltered by QC (the caller decides reject/trim/keep).</summary>
     public event EventHandler<CompletedSegment>? SegmentCompleted;
+
+    /// <summary>
+    /// Raised when a real ICY boundary produced a segment we then threw away. Purely diagnostic,
+    /// but the diagnosis is one the session log otherwise can't make: a station that announces
+    /// nothing and a station whose every announcement is filtered out both look like silence
+    /// after the connect line.
+    /// </summary>
+    public event EventHandler<DiscardedSegment>? SegmentDiscarded;
 
     /// <summary>Raised once this harvester gives up after <see cref="MaxReconnects"/> failed
     /// attempts — the pool should drop it and promote a reserve station.</summary>
@@ -86,7 +105,20 @@ public sealed class StreamHarvester : IDisposable
             LastSegmentAt = DateTime.UtcNow;
             SegmentCompleted?.Invoke(this, seg);
         };
+        _recorder.SegmentDiscarded += (_, d) => SegmentDiscarded?.Invoke(this, d);
         _dl = (buffer, length, _) => _recorder.Write(_session, buffer, length);
+    }
+
+    /// <summary>
+    /// Re-reads <see cref="StreamName"/> if it isn't known yet. ICY headers normally arrive during
+    /// stream creation, but a slow server can leave the tags empty at that moment — and an
+    /// identity that never turns up means the duplicate check silently skips this harvester
+    /// forever. Must run on the harvest dispatcher thread (it calls BASS).
+    /// </summary>
+    public void RefreshStreamName()
+    {
+        if (StreamName is null && _handle != 0 && !_dead)
+            StreamName = ReadIcyName(_handle);
     }
 
     /// <summary>Connect and begin harvesting. Must run on the harvest dispatcher thread.</summary>
@@ -113,6 +145,7 @@ public sealed class StreamHarvester : IDisposable
 
         // Play to the no-sound device: drives download + metadata syncs at real-time, silently.
         Bass.ChannelPlay(_handle);
+        StreamName = ReadIcyName(_handle) ?? StreamName;  // keep the last known across reconnects
         if (ConnectedAt == default)
             ConnectedAt = DateTime.UtcNow;
         return true;
@@ -181,6 +214,30 @@ public sealed class StreamHarvester : IDisposable
     {
         var ptr = Bass.ChannelGetTags(handle, type);
         return ptr == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(ptr);
+    }
+
+    /// <summary>
+    /// Reads <c>icy-name</c> out of TagType.ICY, which BASS returns as a series of
+    /// null-terminated "key:value" strings ended by a double null (mirrors RadioEngine's
+    /// ReadMultiStringTags).
+    /// </summary>
+    private static string? ReadIcyName(int handle)
+    {
+        var ptr = Bass.ChannelGetTags(handle, TagType.ICY);
+        if (ptr == IntPtr.Zero) return null;
+
+        const string key = "icy-name:";
+        while (true)
+        {
+            var s = Marshal.PtrToStringUTF8(ptr);
+            if (string.IsNullOrEmpty(s)) return null;
+            if (s.StartsWith(key, StringComparison.OrdinalIgnoreCase))
+            {
+                var name = s[key.Length..].Trim();
+                return string.IsNullOrWhiteSpace(name) ? null : name;
+            }
+            ptr += System.Text.Encoding.UTF8.GetByteCount(s) + 1;
+        }
     }
 
     // ICY terminates StreamTitle with '; (apostrophe-semicolon) — match the app's parser so a

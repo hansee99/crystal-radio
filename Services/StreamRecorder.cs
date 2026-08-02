@@ -10,6 +10,28 @@ namespace RadioPlayer.Services;
 public sealed record CompletedSegment(
     string FileName, long Bytes, string Title, string? Artist, string? Station, DateTime StartedAt);
 
+/// <summary>Why a captured segment was dropped at its end boundary instead of being announced.</summary>
+public enum DiscardReason
+{
+    /// <summary>The session's first boundary closed a segment we joined mid-song. Expected once
+    /// per connection — and useful, because it proves the station announced a title at all.</summary>
+    MidSongHead,
+
+    /// <summary>Below the minimum size — a sweeper or ident, or two boundaries almost together
+    /// (a station re-announcing the same title mid-track leaves exactly this kind of sliver).</summary>
+    TooShort,
+
+    /// <summary>Rejected by <see cref="SongHistoryFilter"/>: no artist part, an ad marker, or a
+    /// title/artist containing the station's own name.</summary>
+    NotSongLike,
+
+    /// <summary>The capture file couldn't be closed cleanly, so its contents aren't trustworthy.</summary>
+    WriteFailed
+}
+
+/// <summary>A boundary that produced nothing, and why. Diagnostic only — nothing acts on it.</summary>
+public sealed record DiscardedSegment(DiscardReason Reason, string? Title, string? Artist, long Bytes);
+
 /// <summary>
 /// The rolling audio cache: receives the raw encoded bytes of the stream being played (via the
 /// engine's download callback — same connection as playback, no re-encode) and cuts them into
@@ -82,6 +104,14 @@ public sealed class StreamRecorder : IDisposable
 
     /// <summary>Raised on the UI thread when a song's segment finished capturing completely.</summary>
     public event EventHandler<CompletedSegment>? SegmentCompleted;
+
+    /// <summary>
+    /// Raised on the UI thread when a boundary arrived but its segment was dropped. Diagnostic
+    /// only — the live recorder ignores it; DJ mode logs it, because otherwise a station that
+    /// announces nothing and a station whose every announcement is filtered out are
+    /// indistinguishable in the session log.
+    /// </summary>
+    public event EventHandler<DiscardedSegment>? SegmentDiscarded;
 
     /// <param name="boundaryOffsetSeconds">How far the stream's title changes lead its audio;
     /// cuts are delayed by this much. Station encoders differ — ~6s fits many.</param>
@@ -302,6 +332,7 @@ public sealed class StreamRecorder : IDisposable
             return null;
 
         long bytes = 0;
+        var writeFailed = false;
         try
         {
             bytes = _current.Length;
@@ -309,7 +340,7 @@ public sealed class StreamRecorder : IDisposable
         }
         catch
         {
-            complete = false;
+            writeFailed = true;
         }
         var path = _currentPath!;
         var isHead = _currentIsHead;
@@ -319,12 +350,25 @@ public sealed class StreamRecorder : IDisposable
         _currentIsHead = false;
 
         var keep = complete
+                   && !writeFailed
                    && !isHead
                    && bytes >= MinSegmentBytes
                    && SongHistoryFilter.IsLikelySong(pending.Title, pending.Artist, pending.Station);
         if (!keep)
         {
             TryDelete(PathFor(path));
+            // Only announce discards at a real boundary. A partial tail (complete: false — stop,
+            // reconnect, superseded session) says nothing about the station and would just add
+            // noise. BeginInvoke never runs the handler inline, so raising under the lock is safe.
+            if (complete)
+            {
+                var reason = writeFailed ? DiscardReason.WriteFailed
+                    : isHead ? DiscardReason.MidSongHead
+                    : bytes < MinSegmentBytes ? DiscardReason.TooShort
+                    : DiscardReason.NotSongLike;
+                var discarded = new DiscardedSegment(reason, pending.Title, pending.Artist, bytes);
+                _dispatcher.BeginInvoke(() => SegmentDiscarded?.Invoke(this, discarded));
+            }
             return null;
         }
         return new CompletedSegment(path, bytes, pending.Title, pending.Artist, pending.Station, pending.StartedAt);
