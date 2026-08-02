@@ -41,6 +41,12 @@ public sealed class StreamHarvester : IDisposable
     public bool Dead => _dead;
     public int TitlesSeen => Volatile.Read(ref _titles);
 
+    /// <summary>When <see cref="Start"/> first connected. Paired with <see cref="TitlesSeen"/>
+    /// this is how the pool spots a station that serves no ICY metadata at all: no title changes
+    /// means no song boundaries, which means it can never produce a segment however long it runs.
+    /// Deliberately not reset by reconnects — metadata support is a property of the station.</summary>
+    public DateTime ConnectedAt { get; private set; }
+
     /// <summary>Raised on the harvest dispatcher thread for each complete, song-like segment —
     /// unfiltered by QC (the caller decides reject/trim/keep).</summary>
     public event EventHandler<CompletedSegment>? SegmentCompleted;
@@ -92,6 +98,8 @@ public sealed class StreamHarvester : IDisposable
 
         // Play to the no-sound device: drives download + metadata syncs at real-time, silently.
         Bass.ChannelPlay(_handle);
+        if (ConnectedAt == default)
+            ConnectedAt = DateTime.UtcNow;
         return true;
     }
 

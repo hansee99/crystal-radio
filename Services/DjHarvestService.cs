@@ -71,6 +71,12 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     private Queue<Station> _reserve = new();
     private Thread? _harvestThread;
     private Dispatcher? _harvestDispatcher;
+    private DispatcherTimer? _watchdog;
+
+    /// <summary>How long a harvester may serve no ICY metadata before it's assumed not to
+    /// support it. Generous: a station that only announces on change, connected mid-song, still
+    /// gets a full long track to prove itself.</summary>
+    private static readonly TimeSpan MetadataGrace = TimeSpan.FromMinutes(6);
     private volatile bool _running;
     private int _kept;
     private int _rejected;
@@ -184,6 +190,8 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         {
             dispatcher.BeginInvoke(() =>
             {
+                _watchdog?.Stop();
+                _watchdog = null;
                 lock (_activeLock)
                 {
                     foreach (var h in _active)
@@ -218,6 +226,15 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         foreach (var station in hot)
             StartHarvester(station);
 
+        // Watchdog for metadata-silent stations. Lives on this thread so its retire/replace path
+        // is the same single-threaded one every other harvester lifecycle call uses.
+        _watchdog = new DispatcherTimer(DispatcherPriority.Background, Dispatcher.CurrentDispatcher)
+        {
+            Interval = TimeSpan.FromSeconds(30)
+        };
+        _watchdog.Tick += (_, _) => RetireSilentHarvesters();
+        _watchdog.Start();
+
         ready.TrySetResult();
         Dispatcher.Run(); // returns once Stop()'s dispatched action calls InvokeShutdown
     }
@@ -238,19 +255,56 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         RaiseStatus();
     }
 
-    private void OnHarvesterDied(object? sender, EventArgs e)
+    private void OnHarvesterDied(object? sender, EventArgs e) =>
+        Retire((StreamHarvester)sender!, "died");
+
+    /// <summary>Drops a harvester and promotes a reserve station in its place. Runs on the
+    /// harvest dispatcher thread (both callers are on it).</summary>
+    private void Retire(StreamHarvester harvester, string reason)
     {
-        var harvester = (StreamHarvester)sender!;
         harvester.SegmentCompleted -= OnSegmentCompleted;
         harvester.Died -= OnHarvesterDied;
-        lock (_activeLock) _active.Remove(harvester);
-        SessionLog?.HarvesterDied(harvester.Label);
+        lock (_activeLock)
+        {
+            if (!_active.Remove(harvester))
+                return; // already retired
+        }
+        SessionLog?.HarvesterDied(harvester.Label, reason);
         harvester.Dispose();
 
         if (_running && _reserve.Count > 0)
             StartHarvester(_reserve.Dequeue());
         else
             RaiseStatus();
+    }
+
+    /// <summary>
+    /// Drops harvesters that have served no ICY metadata at all. Without title changes there are
+    /// no song boundaries, so such a station can never yield a segment however long it runs — it
+    /// just burns bandwidth and a pool slot. Measured sessions had one in four sourced stations
+    /// like this, silently producing nothing for half an hour.
+    ///
+    /// Only zero titles counts. A station that has shown even one is alive and merely slow, and
+    /// the grace period is generous enough that a metadata-bearing station connected mid-song
+    /// will have announced the next one.
+    /// </summary>
+    private void RetireSilentHarvesters()
+    {
+        if (!_running)
+            return;
+
+        List<StreamHarvester> silent;
+        lock (_activeLock)
+            silent = _active
+                .Where(h => h.TitlesSeen == 0 && DateTime.UtcNow - h.ConnectedAt > MetadataGrace)
+                .ToList();
+
+        foreach (var harvester in silent)
+        {
+            AppLog.Info($"[Dj] dropping {harvester.Label}: no ICY metadata after "
+                        + $"{MetadataGrace.TotalMinutes:0} min — it can never produce a segment");
+            Retire(harvester, "no metadata");
+        }
     }
 
     // Runs the QC/index/evict pipeline for one completed segment. Not marshaled to the harvest
@@ -513,11 +567,23 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         return new SourceCandidate(c.Station, description, c.Country);
     }
 
+    /// <summary>
+    /// Adds candidates the pool doesn't already have, by URL <b>and</b> by station identity.
+    /// The second check is what stops codec variants of one station — "… (128k MP3)" and
+    /// "… (128k AAC)" — from occupying two harvester slots and recording every song twice.
+    /// </summary>
     private static void AddUniqueCandidates(
         List<SourceCandidate> pool, HashSet<string> seen, IEnumerable<SourceCandidate> candidates)
     {
         foreach (var c in candidates)
-            if (seen.Add(c.Station.Url)) pool.Add(c);
+        {
+            // Both keys go in the same set; the prefixes keep a URL from ever colliding with a name.
+            if (!seen.Add("url:" + c.Station.Url))
+                continue;
+            if (!seen.Add("name:" + StationNameFormatter.Clean(c.Station.Name).ToLowerInvariant()))
+                continue;
+            pool.Add(c);
+        }
     }
 
     private static string Sanitize(string name)

@@ -85,12 +85,15 @@ public sealed class DjSessionLog
         }
     }
 
-    public void HarvesterDied(string station)
+    /// <summary>A harvester left the pool. <paramref name="reason"/> separates a connection that
+    /// failed from one dropped for serving no ICY metadata — the latter is a sourcing problem,
+    /// not a network one, and they need telling apart when reading a session back.</summary>
+    public void HarvesterDied(string station, string reason = "died")
     {
         lock (_gate)
         {
             Tally(station).Died++;
-            Write("station-", $"{station} (died)");
+            Write("station-", $"{station} ({reason})");
         }
     }
 
