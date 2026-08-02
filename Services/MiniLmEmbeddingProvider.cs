@@ -31,7 +31,7 @@ public sealed class MiniLmEmbeddingProvider : IEmbeddingProvider, IDisposable
         {
             if (!File.Exists(modelPath) || !File.Exists(vocabPath))
             {
-                Debug.WriteLine($"[Embed] model/vocab missing ({modelPath}); provider unavailable.");
+                AppLog.Debug($"[Embed] model/vocab missing ({modelPath}); provider unavailable.");
                 _inputNames = [];
                 return;
             }
@@ -43,7 +43,7 @@ public sealed class MiniLmEmbeddingProvider : IEmbeddingProvider, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Embed] failed to initialise: {ex.Message}");
+            AppLog.Debug($"[Embed] failed to initialise: {ex.Message}");
             _inputNames = [];
             IsAvailable = false;
         }

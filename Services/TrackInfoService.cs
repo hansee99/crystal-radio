@@ -111,7 +111,7 @@ public sealed class TrackInfoService : ITrackInfoService
             messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = content?.DeepClone() });
 
             var stop = Str(response["stop_reason"]);
-            Debug.WriteLine($"[TrackInfo] iter {i}: stop_reason={stop}");
+            AppLog.Debug($"[TrackInfo] iter {i}: stop_reason={stop}");
 
             if (stop == "pause_turn")
                 continue; // server-tool loop hit its cap; re-call to resume

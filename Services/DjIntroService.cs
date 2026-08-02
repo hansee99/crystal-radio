@@ -102,7 +102,7 @@ public sealed class DjIntroService : IDjIntroService
             var responseBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                Debug.WriteLine($"[DjIntro] API returned {(int)response.StatusCode}: {AnthropicApi.Truncate(responseBody)}");
+                AppLog.Debug($"[DjIntro] API returned {(int)response.StatusCode}: {AnthropicApi.Truncate(responseBody)}");
                 return null;
             }
 
@@ -114,7 +114,7 @@ public sealed class DjIntroService : IDjIntroService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DjIntro] generation failed: {ex.Message}");
+            AppLog.Debug($"[DjIntro] generation failed: {ex.Message}");
             return null;
         }
     }

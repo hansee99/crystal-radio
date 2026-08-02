@@ -98,7 +98,7 @@ public sealed class SongLibraryService : ISongLibraryService
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Library] backfill error: {ex.Message}");
+                AppLog.Debug($"[Library] backfill error: {ex.Message}");
             }
         });
     }
@@ -120,11 +120,11 @@ public sealed class SongLibraryService : ISongLibraryService
 
                 _store.SetEnrichment(path, description, distilled?.FacetsJson);
                 EmbedAndStore(path, description);
-                Debug.WriteLine($"[Library] enriched {title} — {artist}");
+                AppLog.Debug($"[Library] enriched {title} — {artist}");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Library] enrich failed for {path}: {ex.Message}");
+                AppLog.Debug($"[Library] enrich failed for {path}: {ex.Message}");
             }
             finally
             {
@@ -146,7 +146,7 @@ public sealed class SongLibraryService : ISongLibraryService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Library] embed failed for {path}: {ex.Message}");
+            AppLog.Debug($"[Library] embed failed for {path}: {ex.Message}");
         }
     }
 

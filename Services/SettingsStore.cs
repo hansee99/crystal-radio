@@ -50,6 +50,15 @@ public sealed class AppSettings
     /// folder, distinct from both the live-recording cache and the user's saved Library folder.</summary>
     public int DjMaxHarvestCacheMb { get; set; } = 500;
 
+    /// <summary>
+    /// Cap in megabytes for QC-rejected segments, kept in a <c>_rejected</c> subfolder instead of
+    /// being deleted. They are the only evidence of a misclassification: the music detector was
+    /// fitted on pop/rock/disco plus ambient/indie and has no electronic dance music in its
+    /// corpus at all, so whole genres can be rejected wholesale with nothing left to inspect.
+    /// Keeping them makes that diagnosable and feeds the corpus a re-fit needs. 0 disables.
+    /// </summary>
+    public int DjRejectedCacheMb { get; set; } = 250;
+
     /// <summary>Resolved library folder (the stored value or the default).</summary>
     public string ResolveLibraryFolder() =>
         string.IsNullOrWhiteSpace(LibraryFolder)
@@ -87,6 +96,7 @@ public sealed class SettingsStore
                     settings.DjHarvestReserveCount = Math.Clamp(settings.DjHarvestReserveCount, 0, 100);
                     settings.DjQueueLowWatermark = Math.Clamp(settings.DjQueueLowWatermark, 1, 50);
                     settings.DjMaxHarvestCacheMb = Math.Clamp(settings.DjMaxHarvestCacheMb, 50, 20_000);
+                    settings.DjRejectedCacheMb = Math.Clamp(settings.DjRejectedCacheMb, 0, 20_000);
                     return settings;
                 }
             }

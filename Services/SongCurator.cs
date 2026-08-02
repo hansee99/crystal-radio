@@ -183,7 +183,7 @@ public sealed class SongCurator : ISongCurator
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Curate] arrange failed: {ex.Message}");
+            AppLog.Debug($"[Curate] arrange failed: {ex.Message}");
             return null;
         }
     }

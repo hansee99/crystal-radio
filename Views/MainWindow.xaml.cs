@@ -77,7 +77,8 @@ public partial class MainWindow : Window
         _djHarvest = new DjHarvestService(searchService, interpreter, agenticSearch, ranker, enrichment, songLibrary, harvestDir,
             harvesterCount: djSettings.DjHarvesterCount, reserveCount: djSettings.DjHarvestReserveCount,
             offsetSeconds: 0.0, rejectBelow: 0.30, trimEdges: true,
-            maxHarvestCacheBytes: djSettings.DjMaxHarvestCacheMb * 1024L * 1024L);
+            maxHarvestCacheBytes: djSettings.DjMaxHarvestCacheMb * 1024L * 1024L,
+            maxRejectedCacheBytes: djSettings.DjRejectedCacheMb * 1024L * 1024L);
 
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new SongHistoryStore(), _recorder,

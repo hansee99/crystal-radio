@@ -103,7 +103,7 @@ public sealed class AgenticSearchService : IAgenticSearchService
 
             var stop = Str(response["stop_reason"]);
             var blockTypes = (content as JsonArray)?.Select(b => Str(b?["type"])).Where(t => t is not null);
-            Debug.WriteLine($"[PatternB] iter {i}: stop_reason={stop}; blocks=[{string.Join(", ", blockTypes ?? [])}]");
+            AppLog.Debug($"[PatternB] iter {i}: stop_reason={stop}; blocks=[{string.Join(", ", blockTypes ?? [])}]");
 
             if (stop == "tool_use")
             {
@@ -114,7 +114,7 @@ public sealed class AgenticSearchService : IAgenticSearchService
                         continue; // web_search is server-side; nothing to execute here
 
                     var id = Str(block?["id"]) ?? "";
-                    Debug.WriteLine($"[PatternB] -> search_radio_browser({block?["input"]?.ToJsonString()})");
+                    AppLog.Debug($"[PatternB] -> search_radio_browser({block?["input"]?.ToJsonString()})");
                     var resultJson = await ExecuteRadioBrowserAsync(block?["input"], fetched, ct);
                     toolResults.Add(new JsonObject
                     {
@@ -140,7 +140,7 @@ public sealed class AgenticSearchService : IAgenticSearchService
         }
 
         var ranked = ParseFinalAnswer(finalText, fetched);
-        Debug.WriteLine($"[PatternB] fetched {fetched.Count} candidate(s); validated {ranked.Count} for playback.");
+        AppLog.Debug($"[PatternB] fetched {fetched.Count} candidate(s); validated {ranked.Count} for playback.");
         return ranked;
     }
 
@@ -250,7 +250,7 @@ public sealed class AgenticSearchService : IAgenticSearchService
             return new JsonObject { ["error"] = ex.Message }.ToJsonString();
         }
 
-        Debug.WriteLine($"[PatternB]    <- {candidates.Count} playable candidate(s)");
+        AppLog.Debug($"[PatternB]    <- {candidates.Count} playable candidate(s)");
 
         // Lazily enrich these candidates in the background — never blocks this result.
         _enrichment.EnrichInBackground(candidates);

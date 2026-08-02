@@ -453,7 +453,7 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[Save] failed: {ex.Message}");
+            AppLog.Error("[Save] failed", ex);
             StatusText = "Couldn't save the song — check the library folder in Options.";
         }
     }
@@ -694,7 +694,7 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[Search] failed: {ex}");
+            AppLog.Error("[Search] failed", ex);
             SearchStatus = string.Empty;                      // the panel says it now
             SearchError = "The search hit a snag — please try again.";
         }
@@ -747,9 +747,9 @@ public sealed class MainViewModel : ObservableObject
         IReadOnlyList<StationCandidate> structured = [];
         IReadOnlyList<SemanticResult> semantic = [];
         try { structured = await structuredTask; }
-        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Search] structured failed: {ex.Message}"); }
+        catch (Exception ex) { AppLog.Debug($"[Search] structured failed: {ex.Message}"); }
         try { semantic = await semanticTask; }
-        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Search] semantic failed: {ex.Message}"); }
+        catch (Exception ex) { AppLog.Debug($"[Search] semantic failed: {ex.Message}"); }
 
         // Lazily enrich the structured finds (fire-and-forget) so the local side keeps growing.
         if (structured.Count > 0)
@@ -778,7 +778,7 @@ public sealed class MainViewModel : ObservableObject
             IReadOnlyList<RankedStation> web = [];
             try { web = await _agenticSearch.SearchAsync(prompt, MaxResults, ct); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Search] web failed: {ex.Message}"); }
+            catch (Exception ex) { AppLog.Debug($"[Search] web failed: {ex.Message}"); }
 
             foreach (var r in web)
                 if (seen.Add(r.Station.Url))
@@ -845,7 +845,7 @@ public sealed class MainViewModel : ObservableObject
             var verdicts = await _ranker.RankAsync(prompt, candidates, ResultsToValidate, ct);
             if (verdicts is not null) // null = ranker couldn't run → fall back to heuristic
             {
-                System.Diagnostics.Debug.WriteLine($"[Rank] pool={pool.Count} -> kept {verdicts.Count}");
+                AppLog.Debug($"[Rank] pool={pool.Count} -> kept {verdicts.Count}");
                 return verdicts.Select(v => pool[v.Id]).ToList();
             }
         }
@@ -1272,7 +1272,7 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[TrackInfo] generation failed: {ex.Message}");
+            AppLog.Debug($"[TrackInfo] generation failed: {ex.Message}");
             if (!cts.IsCancellationRequested)
             {
                 AboutError = "Couldn't generate notes right now.";
@@ -1827,7 +1827,7 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[Curate] failed: {ex}");
+            AppLog.Error("[Curate] failed", ex);
             LibraryStatus = string.Empty;
             CurateError = "Curation hit a snag — please try again.";
         }
@@ -2012,6 +2012,14 @@ public sealed class MainViewModel : ObservableObject
         DjSourcesEmptyMessage = DefaultDjSourcesEmptyMessage;
         DjProgress.Begin(DjStageFind, DjStageConnect, DjStageRecord);
         _djLastStatus = null;
+
+        // Per-session diagnostics: what the pool actually produced vs what playback consumed.
+        // Best-effort and optional — the harvest path doesn't depend on it.
+        var settings = _settingsStore.Load();
+        _djSessionLog = DjSessionLog.Start(prompt, settings.DjHarvesterCount,
+            settings.DjHarvestReserveCount, settings.DjMaxHarvestCacheMb * 1024L * 1024L);
+        _djHarvest.SessionLog = _djSessionLog;
+
         IsDjRunning = true;
         StartDjSessionClock();
         DjStatus = "Warming up the decks…";
@@ -2036,11 +2044,13 @@ public sealed class MainViewModel : ObservableObject
                 // No matching stations is Empty, not Error — the panel invites another try.
                 DjSourcesEmptyMessage = "Nothing out there matched that vibe — try a different prompt.";
                 DjStatus = string.Empty;
+                EndDjSessionLog(); // never started harvesting, so the service won't close it
                 IsDjRunning = false;
                 return;
             }
             DjProgress.Step(DjStageRecord);
             var seeded = await _djQueue.StartAsync(prompt, startCts.Token).ConfigureAwait(true);
+            AppLog.Info($"[Dj] session started · warm-start {(seeded ? "seeded the queue" : "was empty, bridging live")}");
             if (!seeded)
                 BeginDjWarmupLivePlayback();
             RaiseTransportCanExecute();
@@ -2052,14 +2062,16 @@ public sealed class MainViewModel : ObservableObject
             _djHarvest.Stop();
             DjStatus = string.Empty;
             DjSourcesEmptyMessage = DefaultDjSourcesEmptyMessage;
+            EndDjSessionLog();
             IsDjRunning = false;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[Dj] start failed: {ex}");
+            AppLog.Error("[Dj] start failed", ex);
             DjStatus = string.Empty;
             DjError = "DJ mode hit a snag starting up — please try again.";
             _djHarvest.Stop();
+            EndDjSessionLog();
             IsDjRunning = false;
         }
         finally
@@ -2080,8 +2092,19 @@ public sealed class MainViewModel : ObservableObject
         _djSessionTimer?.Stop();
         _djLastStatus = null;
         DjMix.Clear(); // the session's record ends with the session
+
+        EndDjSessionLog();
         IsDjRunning = false;
         DjStatus = string.Empty;
+    }
+
+    /// <summary>Closes the session log (idempotent — DjHarvestService.Stop may already have) and
+    /// unhooks it, so a stale log can't collect events from the next session.</summary>
+    private void EndDjSessionLog()
+    {
+        _djSessionLog?.Finish();
+        _djSessionLog = null;
+        _djHarvest.SessionLog = null;
     }
 
     /// <summary>Generates the "why this song" intro line for the track that just started, if the
@@ -2112,7 +2135,7 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[DjIntro] generation failed: {ex.Message}");
+            AppLog.Debug($"[DjIntro] generation failed: {ex.Message}");
         }
     }
 
@@ -2131,6 +2154,7 @@ public sealed class MainViewModel : ObservableObject
     private HarvestStatus? _djLastStatus;
     private DateTime _djSessionStarted;
     private System.Windows.Threading.DispatcherTimer? _djSessionTimer;
+    private DjSessionLog? _djSessionLog;
 
     /// <summary>
     /// The session card's one-line summary. Rebuilt both when the harvest pool reports in and on
@@ -2314,6 +2338,7 @@ public sealed class MainViewModel : ObservableObject
         if (IsDjMode)
         {
             MarkDjMixPosition(); // move the equalizer down the mix and refresh "Up next"
+            _djSessionLog?.SongPlayed(track.Path, track.Title, track.Artist);
             _ = GenerateDjIntroAsync(track.Title, track.Artist, track.Reason);
         }
 

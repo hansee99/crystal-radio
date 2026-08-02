@@ -81,7 +81,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[Enrich] {uuid} failed: {ex.Message}");
+                    AppLog.Debug($"[Enrich] {uuid} failed: {ex.Message}");
                 }
                 finally
                 {
@@ -120,7 +120,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Enrich] {candidate.StationUuid} failed: {ex.Message}");
+                AppLog.Debug($"[Enrich] {candidate.StationUuid} failed: {ex.Message}");
             }
             finally
             {
@@ -136,7 +136,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
     {
         var record = await BuildRecordAsync(candidate).ConfigureAwait(false);
         _store.Upsert(record);
-        Debug.WriteLine($"[Enrich] cached {candidate.Station.Name} (source={record.Source})");
+        AppLog.Debug($"[Enrich] cached {candidate.Station.Name} (source={record.Source})");
 
         // Phase 2: embed the fresh description right away (same path that backfill uses).
         EmbedAndStore(candidate.StationUuid, record.Description);
@@ -152,12 +152,12 @@ public sealed partial class EnrichmentService : IEnrichmentService
             if (vector is not null)
             {
                 _store.SetEmbedding(uuid, vector, _embeddings.ModelId);
-                Debug.WriteLine($"[Embed] stored vector for {uuid} (model={_embeddings.ModelId})");
+                AppLog.Debug($"[Embed] stored vector for {uuid} (model={_embeddings.ModelId})");
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Embed] {uuid} failed: {ex.Message}");
+            AppLog.Debug($"[Embed] {uuid} failed: {ex.Message}");
         }
     }
 
@@ -175,14 +175,14 @@ public sealed partial class EnrichmentService : IEnrichmentService
             try
             {
                 var rows = _store.GetRowsNeedingEmbedding(_embeddings.ModelId);
-                Debug.WriteLine($"[Embed] backfill: {rows.Count} row(s) need an embedding");
+                AppLog.Debug($"[Embed] backfill: {rows.Count} row(s) need an embedding");
                 foreach (var row in rows)
                     EmbedAndStore(row.StationUuid, row.Description);
-                Debug.WriteLine("[Embed] backfill complete");
+                AppLog.Debug("[Embed] backfill complete");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Embed] backfill error: {ex.Message}");
+                AppLog.Debug($"[Embed] backfill error: {ex.Message}");
             }
         });
     }
@@ -205,7 +205,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Enrich] homepage path failed for {c.Station.Name}: {ex.Message}");
+                AppLog.Debug($"[Enrich] homepage path failed for {c.Station.Name}: {ex.Message}");
             }
         }
 

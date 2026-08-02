@@ -56,10 +56,12 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     private readonly SegmentQualityChecker _qc;
     private readonly string _harvestDir;
     private readonly string _scratchDir;
+    private readonly string _rejectedDir;
     private readonly int _harvesterCount;
     private readonly int _reserveCount;
     private readonly double _offsetSeconds;
     private readonly long _maxHarvestCacheBytes;
+    private readonly long _maxRejectedCacheBytes;
 
     // Mutated only on the harvest dispatcher thread (StartHarvester/OnHarvesterDied/Stop), but
     // read from OnSegmentCompleted's background Task.Run continuation too (for RaiseStatus's
@@ -92,7 +94,8 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         double offsetSeconds = 0.0,
         double rejectBelow = 0.30,
         bool trimEdges = true,
-        long maxHarvestCacheBytes = 500L * 1024 * 1024)
+        long maxHarvestCacheBytes = 500L * 1024 * 1024,
+        long maxRejectedCacheBytes = 250L * 1024 * 1024)
     {
         _searchService = searchService;
         _interpreter = interpreter;
@@ -102,14 +105,23 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         _songLibrary = songLibrary;
         _harvestDir = harvestDir;
         _scratchDir = Path.Combine(harvestDir, "_scratch");
+        _rejectedDir = Path.Combine(harvestDir, "_rejected");
         _harvesterCount = harvesterCount;
         _reserveCount = reserveCount;
         _offsetSeconds = offsetSeconds;
         _maxHarvestCacheBytes = maxHarvestCacheBytes;
+        _maxRejectedCacheBytes = maxRejectedCacheBytes;
         _qc = new SegmentQualityChecker(rejectBelow, trimEdges);
     }
 
     public bool IsRunning => _running;
+
+    /// <summary>
+    /// Optional per-session diagnostics (see <see cref="DjSessionLog"/>). Set by the view model
+    /// around a session so harvester tuning can be measured rather than guessed; null disables
+    /// it entirely and nothing in the harvest path depends on it.
+    /// </summary>
+    public DjSessionLog? SessionLog { get; set; }
 
     /// <summary>The single best-ranked station from the most recent <see cref="StartAsync"/> —
     /// the one already-connected harvester most worth playing live during warm-up (see
@@ -162,6 +174,11 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             return;
         _running = false;
 
+        // Finish here rather than only in the view model: closing the window disposes this
+        // service directly, and a session log without its summary is the one case where the
+        // measurement is lost exactly when the session was long enough to be interesting.
+        SessionLog?.Finish();
+
         var dispatcher = _harvestDispatcher;
         if (dispatcher is not null)
         {
@@ -212,8 +229,12 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         harvester.SegmentCompleted += OnSegmentCompleted;
         harvester.Died += OnHarvesterDied;
         lock (_activeLock) _active.Add(harvester);
+        SessionLog?.HarvesterStarted(station.Name);
         if (!harvester.Start())
+        {
+            AppLog.Warn($"[Dj] harvester failed to connect: {station.Name} ({station.Url})");
             OnHarvesterDied(harvester, EventArgs.Empty);
+        }
         RaiseStatus();
     }
 
@@ -223,6 +244,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         harvester.SegmentCompleted -= OnSegmentCompleted;
         harvester.Died -= OnHarvesterDied;
         lock (_activeLock) _active.Remove(harvester);
+        SessionLog?.HarvesterDied(harvester.Label);
         harvester.Dispose();
 
         if (_running && _reserve.Count > 0)
@@ -248,7 +270,18 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
                 dest = Path.Combine(_harvestDir, $"{baseName} ({n}){ext}");
 
             var verdict = await _qc.EvaluateAsync(src, dest).ConfigureAwait(false);
+
+            // Keep rejects for inspection BEFORE the scratch copy goes — they're the only
+            // evidence that a rejection was wrong, and until now they were deleted unseen.
+            if (!verdict.Kept)
+                QuarantineRejected(src, label, seg, verdict);
+
             StreamRecorder.TryDelete(src); // scratch copy no longer needed either way
+
+            // Recording is real-time, so the wall-clock span the segment covered is its length.
+            SessionLog?.SegmentCompleted(label, seg.Title, verdict.Kept, verdict.MusicPercent,
+                (DateTime.Now - seg.StartedAt).TotalSeconds,
+                verdict.Verdict, verdict.LeadTrimSeconds, verdict.TailTrimSeconds);
 
             if (!verdict.Kept)
             {
@@ -266,6 +299,67 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
 
             EvictIfNeeded();
         });
+    }
+
+    /// <summary>
+    /// Copies a QC-rejected segment into <c>_rejected/</c> instead of dropping it. The score
+    /// leads the filename, zero-padded, so a plain name sort triages the folder: the 000s are
+    /// the ad breaks and station IDs the QC is supposed to catch, and anything scoring near the
+    /// threshold with a real title and a real duration is a misclassification worth listening to.
+    /// This is the corpus a detector re-fit needs — see tools/DjDetector.
+    /// </summary>
+    private void QuarantineRejected(string src, string label, CompletedSegment seg, SegmentVerdict verdict)
+    {
+        if (_maxRejectedCacheBytes <= 0)
+            return; // quarantine disabled
+
+        try
+        {
+            Directory.CreateDirectory(_rejectedDir);
+
+            var ext = Path.GetExtension(seg.FileName);
+            var baseName = Sanitize(
+                $"{verdict.MusicPercent:000} · {verdict.Verdict} · {label} · {seg.Artist} - {seg.Title}");
+            var dest = Path.Combine(_rejectedDir, baseName + ext);
+            for (var n = 2; File.Exists(dest); n++)
+                dest = Path.Combine(_rejectedDir, $"{baseName} ({n}){ext}");
+
+            File.Copy(src, dest);
+            EvictRejectedIfNeeded();
+        }
+        catch (Exception ex)
+        {
+            // Diagnostics must never break harvesting.
+            AppLog.Debug($"[Dj] couldn't quarantine a rejected segment: {ex.Message}");
+        }
+    }
+
+    /// <summary>Same oldest-first size cap as the harvest folder. These files were never indexed,
+    /// so unlike <see cref="EvictIfNeeded"/> there are no library rows to remove.</summary>
+    private void EvictRejectedIfNeeded()
+    {
+        try
+        {
+            if (!Directory.Exists(_rejectedDir))
+                return;
+
+            var files = new DirectoryInfo(_rejectedDir).GetFiles()
+                .OrderBy(f => f.LastWriteTimeUtc)
+                .ToList();
+            var totalBytes = files.Sum(f => f.Length);
+
+            foreach (var f in files)
+            {
+                if (totalBytes <= _maxRejectedCacheBytes)
+                    break;
+                totalBytes -= f.Length;
+                try { f.Delete(); } catch { /* best effort */ }
+            }
+        }
+        catch
+        {
+            // Best effort — eviction failing should never break harvesting.
+        }
     }
 
     /// <summary>Simple folder-size-cap eviction: delete the oldest harvested files once the
@@ -291,6 +385,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
                     break;
                 totalBytes -= f.Length;
                 _songLibrary.Remove(f.FullName);
+                SessionLog?.Evicted(f.FullName);
                 try { f.Delete(); } catch { /* best effort */ }
             }
         }
@@ -342,8 +437,13 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             ? await _interpreter.InterpretAsync(prompt, ct).ConfigureAwait(false) ?? FallbackQuery(prompt)
             : FallbackQuery(prompt);
 
+        AppLog.Info($"[Dj] sourcing \"{prompt}\" · interpreter={_interpreter.IsConfigured} "
+                    + $"ranker={_ranker.IsConfigured} web={_agenticSearch.IsConfigured} "
+                    + $"tags=[{string.Join(",", query.Tags ?? [])}] want={count}");
+
         var cheap = await _searchService.SearchCandidatesAsync(query, 0, ct).ConfigureAwait(false);
         AddUniqueCandidates(pool, seen, cheap.Select(ToCandidate));
+        AppLog.Info($"[Dj] directory returned {cheap.Count} playable candidate(s)");
 
         // Grow the local catalog from DJ sessions too (fire-and-forget, same as the visible
         // search does): next time these stations are judged, the ranker gets a real description.
@@ -351,6 +451,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             _enrichment.EnrichInBackground(cheap);
 
         var relevant = await RankRelevantAsync(prompt, pool, count, ct).ConfigureAwait(false);
+        AppLog.Info($"[Dj] ranker kept {relevant.Count} of {pool.Count} as genuinely relevant");
 
         // Escalate only when the RELEVANT count (not the raw pool size) falls short — the fix
         // for the bug above. A thin cheap pool that's ALSO fully relevant doesn't need escalation
@@ -359,10 +460,15 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         // which would leave the reserve almost empty here.
         if (relevant.Count < count && _agenticSearch.IsConfigured)
         {
+            AppLog.Info($"[Dj] escalating to web discovery ({relevant.Count} < {count})");
             var web = await _agenticSearch.SearchAsync(prompt, count, ct).ConfigureAwait(false);
             AddUniqueCandidates(pool, seen, web.Select(r => new SourceCandidate(r.Station, r.Reason, null)));
             relevant = await RankRelevantAsync(prompt, pool, count, ct).ConfigureAwait(false);
+            AppLog.Info($"[Dj] web added {web.Count}; ranker now keeps {relevant.Count} of {pool.Count}");
         }
+
+        if (relevant.Count == 0)
+            AppLog.Warn($"[Dj] nothing relevant for \"{prompt}\" — session will not start");
 
         return relevant;
     }

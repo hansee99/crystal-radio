@@ -186,7 +186,7 @@ public sealed class StationSearchService : IStationSearchService
             }
             catch (Exception ex) when (attempt < _mirrors.Length - 1)
             {
-                Debug.WriteLine($"[RadioBrowser] {mirror} failed ({ex.Message}) — trying next mirror");
+                AppLog.Debug($"[RadioBrowser] {mirror} failed ({ex.Message}) — trying next mirror");
                 _mirrorIndex++; // sticky failover: later calls start at the mirror that worked
             }
         }
