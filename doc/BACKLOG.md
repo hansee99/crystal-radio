@@ -5,6 +5,42 @@ just enough context to pick back up later. Add new items at the top.
 
 ---
 
+## DJ mode: a maximum segment length (long mixes / DJ sets)
+
+**The concern:** electronic stations often play extended mixes or full DJ sets rather than
+3-minute songs. A station announcing one ICY title for a 60-minute set produces a single
+60-minute segment — useless as a "song": it dominates the mix, can't be crossfaded sensibly,
+eats a large slice of the 500 MB harvest cache on its own, and makes "Up next" meaningless.
+The QC gate has a *minimum* length (`DjMinSongSeconds`) but no maximum, so such a segment
+sails straight through.
+
+**What the measurements actually show (56 segments across four sessions):** median around 4:30,
+and a tail of 7:12 / 7:24 / 7:37 / 8:02 / 8:25 / 8:36 / 10:04. Long, but nothing like an
+hour-long set. So this is currently **anticipatory, not observed** — worth building only when a
+station is seen doing it, and worth checking the session logs for a genuinely huge segment first.
+
+**A related thing that IS observed:** metadata bounce cutting a mix into fragments — the opposite
+problem. "UK Hardcore #13 Mix 2017" appeared twice in one session at 3:33 and 2:25, and a
+9-second sliver of "YOU'RE THE ONE" was produced 2 seconds after a 5:20 segment of the same
+title. Some stations re-announce the current title mid-track, and every re-announcement is
+treated as a song boundary. The new minimum-length gate hides the worst of it, but the underlying
+cut logic is wrong: a boundary whose title equals the current one isn't a boundary.
+
+**Design tension if we do chunk.** Fixed-time chunking reintroduces exactly the abrupt
+start/end problem the whole deferred-boundary-cut design exists to avoid — every chunk would
+begin and end mid-phrase. Better options, roughly in order of appeal:
+1. **Cap and reject** — treat anything over N minutes as "not a song", let the live bridge cover
+   the gap. Simplest, no arbitrary cuts, no new failure modes.
+2. **Silence-aligned cutting** — chop at a detected low-energy point near the target length
+   rather than at a fixed offset. `MusicDetector` already computes a per-frame energy envelope,
+   so the signal is there.
+3. **Treat a long segment as a "set"** — play it as-is but exclude it from crossfade and mark it
+   in the UI as a set rather than a track.
+
+**Gotcha for whichever route:** `DjQueueService` dedupes on `artist|title`, so chunks of one mix
+would all carry the same key and everything after the first would be silently discarded. Chunking
+needs a distinct key per chunk (and probably a "part N" suffix in the displayed title).
+
 ## DJ mode: save songs out of the mix (and the list-header actions)
 
 **What:** the DJ-panel mockup (`doc/design-review/DJ Panel Restructure.dc.html`) shows a save
