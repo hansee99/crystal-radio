@@ -6,10 +6,18 @@ using RadioPlayer.Models;
 
 namespace RadioPlayer.Services;
 
-/// <summary>One currently-connected harvester, for UI display. Dead harvesters are removed from
-/// the active pool (and replaced from reserve) the instant they die, so there's no "dead" state
-/// to carry here — only genuinely live connections are ever in a snapshot.</summary>
-public sealed record HarvesterInfo(string Label, int TitlesSeen);
+/// <summary>
+/// One currently-connected harvester, for UI display. Dead harvesters are removed from the
+/// active pool (and replaced from reserve) the instant they die, so there's no "dead" state to
+/// carry here — only genuinely live connections are ever in a snapshot.
+///
+/// <paramref name="TitlesSeen"/> counts ICY title changes, which is NOT a song count: two
+/// boundaries are needed to complete one segment, and QC then rejects some. Showing it as
+/// "songs" overstated every station by roughly a factor of two, so the UI uses
+/// <paramref name="Kept"/>/<paramref name="Rejected"/> — what actually reached the mix — and
+/// TitlesSeen stays for the metadata watchdog, which only cares whether it's zero.
+/// </summary>
+public sealed record HarvesterInfo(string Label, int TitlesSeen, int Kept, int Rejected);
 
 /// <summary>Snapshot of the harvest pool for status-line reporting.</summary>
 public sealed record HarvestStatus(int ActiveHarvesters, int Kept, int Rejected, IReadOnlyList<HarvesterInfo> Harvesters);
@@ -68,6 +76,18 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     // per-harvester snapshot) — a plain List isn't safe for that, so every access is locked.
     private readonly object _activeLock = new();
     private readonly List<StreamHarvester> _active = new();
+
+    // Per-station keep/reject counts, so the Sources list can report what each one actually
+    // contributed rather than how many titles went past. Keyed by label; written from QC worker
+    // threads, read by RaiseStatus.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, StationTally> _tallies =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private sealed class StationTally
+    {
+        public int Kept;
+        public int Rejected;
+    }
     private Queue<Station> _reserve = new();
     private Thread? _harvestThread;
     private Dispatcher? _harvestDispatcher;
@@ -163,6 +183,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         TopStation = hot[0]; // stations are already best-first out of RankRelevantAsync
         _kept = 0;
         _rejected = 0;
+        _tallies.Clear();
         _running = true;
 
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -337,14 +358,18 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
                 (DateTime.Now - seg.StartedAt).TotalSeconds,
                 verdict.Verdict, verdict.LeadTrimSeconds, verdict.TailTrimSeconds);
 
+            var tally = _tallies.GetOrAdd(label, _ => new StationTally());
+
             if (!verdict.Kept)
             {
                 Interlocked.Increment(ref _rejected);
+                Interlocked.Increment(ref tally.Rejected);
                 RaiseStatus();
                 return;
             }
 
             Interlocked.Increment(ref _kept);
+            Interlocked.Increment(ref tally.Kept);
             var saved = new SavedSong(dest, seg.Title, seg.Artist ?? "", seg.Station,
                 ext.TrimStart('.'), DateTimeOffset.Now, Source: SongSource.Harvested);
             _songLibrary.AddAndEnrich(saved);
@@ -453,7 +478,11 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     {
         List<HarvesterInfo> harvesters;
         lock (_activeLock)
-            harvesters = _active.Select(h => new HarvesterInfo(h.Label, h.TitlesSeen)).ToList();
+            harvesters = _active.Select(h =>
+            {
+                _tallies.TryGetValue(h.Label, out var t);
+                return new HarvesterInfo(h.Label, h.TitlesSeen, t?.Kept ?? 0, t?.Rejected ?? 0);
+            }).ToList();
         StatusChanged?.Invoke(this, new HarvestStatus(
             harvesters.Count, Volatile.Read(ref _kept), Volatile.Read(ref _rejected), harvesters));
     }

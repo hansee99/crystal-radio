@@ -2193,7 +2193,7 @@ public sealed class MainViewModel : ObservableObject
 
         DjHarvesters.Clear();
         foreach (var h in status.Harvesters)
-            DjHarvesters.Add(new DjHarvesterItem(h.Label, h.TitlesSeen));
+            DjHarvesters.Add(new DjHarvesterItem(h.Label, h.TitlesSeen, h.Kept, h.Rejected));
         RaiseDjIndicatorChanged(); // harvester count feeds ShowDjSpinner/ShowDjLiveDot
     }
 

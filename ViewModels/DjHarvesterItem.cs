@@ -1,16 +1,25 @@
 namespace RadioPlayer.ViewModels;
 
-/// <summary>One row in the DJ panel's "Harvesting" tab — a snapshot of one currently-connected
+/// <summary>One row in the DJ panel's "Sources" tab — a snapshot of one currently-connected
 /// harvester. Dead harvesters are removed from <see cref="Services.DjHarvestService"/>'s active
 /// pool (and replaced from reserve) the instant they die, so only genuinely live connections ever
 /// appear here — there's no "dead" state to show. Rebuilt wholesale each time
 /// <see cref="Services.DjHarvestService.StatusChanged"/> fires, not mutated in place.</summary>
-public sealed record DjHarvesterItem(string Label, int TitlesSeen)
+public sealed record DjHarvesterItem(string Label, int TitlesSeen, int Kept, int Rejected)
 {
-    /// <summary>Row subtitle. "Listening…" instead of a bare zero (UX audit: a zero is the
-    /// least reassuring number to show someone waiting), then plain "N songs so far" —
-    /// "titles seen" was internal vocabulary.</summary>
-    public string StatusText => TitlesSeen == 0
-        ? "Listening…"
-        : $"{TitlesSeen} song{(TitlesSeen == 1 ? "" : "s")} so far";
+    /// <summary>
+    /// What this station has actually contributed. Deliberately NOT a title count: TitlesSeen
+    /// tracks ICY metadata changes, and reporting those as "songs" overstated every station by
+    /// roughly double — two boundaries are needed to complete one segment, and QC rejects some
+    /// of what's left. A row claiming four songs while the session had produced one was the
+    /// clearest possible way to make the panel untrustworthy.
+    /// </summary>
+    public string StatusText =>
+        Kept > 0
+            ? (Rejected > 0 ? $"{Songs(Kept)} in the mix · {Rejected} skipped" : $"{Songs(Kept)} in the mix")
+            : Rejected > 0
+                ? $"Nothing kept yet · {Rejected} skipped"
+                : "Listening…";
+
+    private static string Songs(int n) => n == 1 ? "1 song" : $"{n} songs";
 }
