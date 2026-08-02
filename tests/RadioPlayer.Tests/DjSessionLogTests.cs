@@ -111,6 +111,21 @@ public sealed class DjSessionLogTests : IDisposable
         Assert.Contains("trimmed 1", summary); // only the one segment was trimmed
     }
 
+    /// <summary>A rejected segment is discarded, so whatever trim was measured on it cost
+    /// nothing. Counting it made the total look alarming for the wrong reason — the figure that
+    /// matters is audio lost from songs that actually reached the mix.</summary>
+    [Fact]
+    public void Summary_CountsTrimOnlyOnKeptSegments()
+    {
+        var log = NewLog();
+        log.SegmentCompleted("Radio A", "Discarded", kept: false, confidence: 0.02,
+            seconds: 200, verdict: "TALK", leadTrim: 196, tailTrim: 0);
+        log.SegmentCompleted("Radio A", "In the mix", kept: true, confidence: 0.60,
+            seconds: 240, verdict: "MIXED", leadTrim: 4, tailTrim: 2);
+
+        Assert.Contains("Edge-trimmed        6 s total", Summary(log));
+    }
+
     [Fact]
     public void Summary_OmitsTheTrimLineWhenNothingWasTrimmed()
     {

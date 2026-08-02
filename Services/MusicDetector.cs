@@ -236,11 +236,16 @@ internal sealed class MusicDetector
         var musicCount = windows.Count(w => w.Confidence >= MusicThreshold);
         var frac = musicCount / (double)windows.Count;
 
-        // Leading / trailing non-music runs → edge-trim suggestion.
+        // Leading / trailing non-music runs → edge-trim suggestion. The tail scan stops where the
+        // lead scan finished: without that bound, a file the detector reads as non-music
+        // THROUGHOUT reports lead = tail = the whole file, i.e. a trim of twice its own length.
+        // (Observed: a 3:20 segment reporting 196s + 196s. TryTrimAndCopy's sanity guard caught
+        // it and fell back to a plain copy, so nothing was damaged — but the measurement was
+        // nonsense, and it fed the session log's trim totals.)
         var lead = 0;
         while (lead < windows.Count && windows[lead].Confidence < MusicThreshold) lead++;
         var tail = 0;
-        while (tail < windows.Count && windows[^(tail + 1)].Confidence < MusicThreshold) tail++;
+        while (tail < windows.Count - lead && windows[^(tail + 1)].Confidence < MusicThreshold) tail++;
 
         var verdict = frac >= 0.85 ? "MUSIC" : frac >= 0.4 ? "MIXED" : "TALK";
         // Windows overlap 50%, so each advances WindowHopSeconds of audio.

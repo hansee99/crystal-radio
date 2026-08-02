@@ -48,6 +48,10 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     private readonly List<LocalTrack> _queue = new();
     private int _index = -1;
 
+    // True when playback stopped because the queue ran out, as opposed to someone pressing Stop.
+    // Only the first case should be resumed by a later Append — see that method.
+    private bool _ranDry;
+
     private SyncProcedure? _endSync;
     private SyncProcedure? _fadeTriggerSync;
     private int _generation;
@@ -134,20 +138,33 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     public int QueueCount => _queue.Count;
 
     /// <summary>
-    /// Appends tracks to the end of the queue without disturbing playback — the self-refilling
-    /// queue's write side (a warm-start seed or an empty cold start both just keep growing via
-    /// this). If the queue was empty (nothing playing yet), starts playback immediately.
+    /// Appends tracks to the end of the queue and starts playing them if nothing is playing and
+    /// nobody asked for that.
+    ///
+    /// The subtlety is DJ mode's whole premise: a queue that has been played to the end is NOT
+    /// empty — played tracks stay in it, only <see cref="_index"/> moves — so "resume if the
+    /// queue was empty" silently never fired once the mix had caught up with itself. A session
+    /// would play its warm-start songs, run dry, and then sit in silence for the rest of its life
+    /// while harvesters happily kept collecting into a queue nobody was reading.
+    /// <see cref="_ranDry"/> is what distinguishes that from a deliberate Stop, which must NOT be
+    /// undone by the next harvested song landing.
     /// </summary>
     public void Append(IReadOnlyList<LocalTrack> tracks)
     {
         ArgumentNullException.ThrowIfNull(tracks);
         if (tracks.Count == 0)
             return;
-        var wasEmpty = _queue.Count == 0;
+
+        // Where the new run begins — and where playback picks up if we'd run dry, so we continue
+        // into the new material rather than replaying the queue from the top.
+        var resumeAt = _queue.Count;
+        var shouldResume = _queue.Count == 0 || _ranDry;
+
         _queue.AddRange(tracks);
         QueueChanged?.Invoke(this, EventArgs.Empty);
-        if (wasEmpty)
-            PlayAt(0);
+
+        if (shouldResume)
+            PlayAt(resumeAt);
     }
 
     /// <summary>Play the queue entry at <paramref name="index"/>.</summary>
@@ -155,6 +172,7 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     {
         if (index < 0 || index >= _queue.Count)
             return;
+        _ranDry = false;
         _index = index;
         StartStream(_queue[index]);
     }
@@ -164,7 +182,7 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         if (_index + 1 < _queue.Count)
             PlayAt(_index + 1);
         else
-            Stop(); // end of queue
+            StopInternal(ranDry: true); // end of queue — a later Append should pick up from here
     }
 
     public void Previous()
@@ -201,10 +219,15 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
             SetState(PlaybackState.Playing);
     }
 
-    public void Stop()
+    /// <summary>Stops because someone asked. A subsequent <see cref="Append"/> will NOT resume —
+    /// that's the difference from running off the end of the queue.</summary>
+    public void Stop() => StopInternal(ranDry: false);
+
+    private void StopInternal(bool ranDry)
     {
         FreeStream();
         _index = -1;
+        _ranDry = ranDry;
         SetState(PlaybackState.Stopped);
     }
 
@@ -253,11 +276,12 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         if (handle == 0)
         {
             ErrorOccurred?.Invoke(this, $"Couldn't open \"{track.Title}\": {Bass.LastError}");
-            // Skip a dead file rather than stalling the queue.
+            // Skip a dead file rather than stalling the queue. If it was the last one we've run
+            // dry, not stopped — the next harvested song should start us again.
             if (_index + 1 < _queue.Count)
                 PlayAt(_index + 1);
             else
-                Stop();
+                StopInternal(ranDry: true);
             return;
         }
 

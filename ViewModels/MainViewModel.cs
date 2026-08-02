@@ -1087,10 +1087,14 @@ public sealed class MainViewModel : ObservableObject
     /// itself so it can never disagree with what's on screen.</summary>
     public bool IsNowPlayingIdle => _nowPlayingTitle == IdleTitle;
 
-    /// <summary>Mode-specific next step shown under the idle title (UX audit).</summary>
+    /// <summary>Mode-specific next step shown under the idle title (UX audit). DJ mode has two
+    /// idle states and they need different words: no session at all, versus a running session
+    /// whose mix has nothing playable in it yet — telling someone to start a session they're
+    /// already in is how a stall reads as a dead app.</summary>
     public string IdleHint => _mode switch
     {
         PlayerMode.Library => "Play a saved song, or curate a set.",
+        PlayerMode.Dj when IsDjRunning => "Still collecting — the mix will start on its own.",
         PlayerMode.Dj => "Describe a vibe to start a session.",
         _ => "Pick a station on the left."
     };
@@ -1937,6 +1941,8 @@ public sealed class MainViewModel : ObservableObject
                 StopDjCommand.RaiseCanExecuteChanged();
                 RaiseDjIndicatorChanged();
                 OnPropertyChanged(nameof(DjSourcesPanelState));
+                OnPropertyChanged(nameof(DjMixPanelState));
+                OnPropertyChanged(nameof(IdleHint));
             }
         }
     }
@@ -2304,8 +2310,11 @@ public sealed class MainViewModel : ObservableObject
         if (state == PlaybackState.Stopped)
         {
             // Queue finished (or stopped): clear the now-playing header and row highlight.
+            // DjMix included — it was missed, so a stopped DJ session left an equalizer animating
+            // on the last-played row as if it were still going.
             foreach (var item in CuratedQueue) item.IsCurrent = false;
             foreach (var item in LibrarySongs) item.IsCurrent = false;
+            MarkDjMixPosition();
             NowPlayingTitle = IdleTitle;
             NowPlayingArtist = string.Empty;
             HasTrackInfo = false;

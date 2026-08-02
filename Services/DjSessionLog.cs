@@ -111,7 +111,10 @@ public sealed class DjSessionLog
             if (kept) { tally.Kept++; _kept++; }
             else { tally.Rejected++; _rejected++; }
 
-            if (leadTrim > 0 || tailTrim > 0)
+            // Only kept segments count toward the trim totals: a rejected file is discarded, so
+            // its measured trim costs nothing. The number that matters is audio actually lost
+            // from songs that made it into the mix.
+            if (kept && (leadTrim > 0 || tailTrim > 0))
             {
                 tally.Trimmed++;
                 _trimmedSeconds += leadTrim + tailTrim;

@@ -31,6 +31,14 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
+  <!-- MusicDetector/Fft are internal (they're an implementation detail of the QC backstop, not
+       app API) but they carry the fitted weights and the edge-trim logic, which is exactly the
+       part worth testing — especially while the corpus is being extended to genres it currently
+       misreads. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="RadioPlayer.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="ManagedBass" Version="4.0.2" />
     <PackageReference Include="ManagedBass.Aac" Version="4.0.2" />
