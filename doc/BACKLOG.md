@@ -5,6 +5,45 @@ just enough context to pick back up later. Add new items at the top.
 
 ---
 
+## Test coverage: the remaining untested seams
+
+**Where we are:** 129 tests. The pure derivation logic (`StationNameFormatter`,
+`TrackTitleCleaner`, `MusicDetector` trim, `SegmentQualityChecker`, `StagedProgress`,
+`DjSessionLog`, harvester retirement), the WPF chrome regressions (`AppDialog`, `StatePanel`),
+`DjQueueService`, and — as of the last pass — every LLM boundary (`AnthropicApi`,
+`PromptInterpreter`, `LlmSearchRanker`, and `AgenticSearchService`'s stationuuid validation gate)
+are covered. `tests/RadioPlayer.Tests/Fakes/FakeHttpMessageHandler.cs` scripts Messages API
+replies, so any further LLM-backed service can be driven end to end without a network.
+
+**Deliberately not chasing whole-app coverage.** Every bug this project has actually hit lived in
+parsing/derivation logic or a state machine — the `Append`-after-exhaustion stall, the AAC+ regex
+leaving `"Liquid DnB - +"`, lead/tail trim double-counting, the implicit style not matching a
+subclass, "12 songs vs 7 segments". Wiring and I/O have not been the problem. Order the remaining
+work by that evidence, not by line count.
+
+**Next, in priority order:**
+
+1. **`LocalPlaybackEngine`'s queue state machine** — the strongest candidate. The silent-stall bug
+   lived here (`Append` resumed only when the queue had been empty, never again once it had been
+   played to the end) and the `_ranDry` fix that repaired it has no test. `Append` / `Next` /
+   `PlayAt` / `Stop` / `QueueExhausted` is exactly the shape of logic that breaks twice. Needs a
+   small seam so the transitions can run without BASS — the state machine and the stream handling
+   are already nearly separable.
+2. **`LibraryStore`'s v1→v2 migration** — the app's only schema migration, currently unverified,
+   and getting it wrong costs the user their library. Test the upgrade-from-v1 path against a real
+   v1 file, not just `CREATE TABLE IF NOT EXISTS` on a fresh DB.
+3. **`StreamRecorder` segment cutting** — boundary offset, the GUID+tick filenames that keep N+1
+   concurrent recorders from colliding, and cache eviction.
+4. **`SettingsStore`** — cheap: the `Load()` clamps, and that `SetApiKey` is load-modify-save so it
+   can't clobber `Volume`.
+
+**Explicitly parked: `MainViewModel`.** 2,489 lines and 17 concrete dependencies including two
+audio engines — it cannot be instantiated in a test at all. Testing it means refactoring it, which
+is a separate decision from adding tests and shouldn't be smuggled in under one.
+
+**Why deferred:** the highest-risk uncovered surface (the model boundaries) is now covered; the
+rest is worth doing but nothing is currently failing there.
+
 ## DJ mode: a maximum segment length (long mixes / DJ sets)
 
 **The concern:** electronic stations often play extended mixes or full DJ sets rather than
