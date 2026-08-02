@@ -19,9 +19,7 @@ namespace RadioPlayer.Services;
 /// </summary>
 public sealed partial class EnrichmentService : IEnrichmentService
 {
-    private const string Endpoint = "https://api.anthropic.com/v1/messages";
-    private const string AnthropicVersion = "2023-06-01";
-    private const string DefaultModel = "claude-haiku-4-5"; // summarization, not reasoning
+    private const string DefaultModel = AnthropicApi.HaikuModel; // summarization, not reasoning
 
     private const int MaxHomepageBytes = 200_000;   // size cap for untrusted fetch
     private const int MaxExtractedChars = 4_000;    // cap text sent to the model
@@ -83,7 +81,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[Enrich] {uuid} failed: {ex.Message}");
+                    AppLog.Debug($"[Enrich] {uuid} failed: {ex.Message}");
                 }
                 finally
                 {
@@ -122,7 +120,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Enrich] {candidate.StationUuid} failed: {ex.Message}");
+                AppLog.Debug($"[Enrich] {candidate.StationUuid} failed: {ex.Message}");
             }
             finally
             {
@@ -138,7 +136,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
     {
         var record = await BuildRecordAsync(candidate).ConfigureAwait(false);
         _store.Upsert(record);
-        Debug.WriteLine($"[Enrich] cached {candidate.Station.Name} (source={record.Source})");
+        AppLog.Debug($"[Enrich] cached {candidate.Station.Name} (source={record.Source})");
 
         // Phase 2: embed the fresh description right away (same path that backfill uses).
         EmbedAndStore(candidate.StationUuid, record.Description);
@@ -154,12 +152,12 @@ public sealed partial class EnrichmentService : IEnrichmentService
             if (vector is not null)
             {
                 _store.SetEmbedding(uuid, vector, _embeddings.ModelId);
-                Debug.WriteLine($"[Embed] stored vector for {uuid} (model={_embeddings.ModelId})");
+                AppLog.Debug($"[Embed] stored vector for {uuid} (model={_embeddings.ModelId})");
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Embed] {uuid} failed: {ex.Message}");
+            AppLog.Debug($"[Embed] {uuid} failed: {ex.Message}");
         }
     }
 
@@ -177,14 +175,14 @@ public sealed partial class EnrichmentService : IEnrichmentService
             try
             {
                 var rows = _store.GetRowsNeedingEmbedding(_embeddings.ModelId);
-                Debug.WriteLine($"[Embed] backfill: {rows.Count} row(s) need an embedding");
+                AppLog.Debug($"[Embed] backfill: {rows.Count} row(s) need an embedding");
                 foreach (var row in rows)
                     EmbedAndStore(row.StationUuid, row.Description);
-                Debug.WriteLine("[Embed] backfill complete");
+                AppLog.Debug("[Embed] backfill complete");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Embed] backfill error: {ex.Message}");
+                AppLog.Debug($"[Embed] backfill error: {ex.Message}");
             }
         });
     }
@@ -207,7 +205,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Enrich] homepage path failed for {c.Station.Name}: {ex.Message}");
+                AppLog.Debug($"[Enrich] homepage path failed for {c.Station.Name}: {ex.Message}");
             }
         }
 
@@ -285,18 +283,12 @@ public sealed partial class EnrichmentService : IEnrichmentService
             }
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint)
-        {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-        };
-        request.Headers.Add("x-api-key", _apiKey);
-        request.Headers.Add("anthropic-version", AnthropicVersion);
-
+        using var request = AnthropicApi.CreateRequest(_apiKey, body);
         using var response = await _llmHttp.SendAsync(request).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             return null;
 
-        var responseText = ExtractText(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        var responseText = AnthropicApi.ExtractText(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
         return ParseDistill(responseText);
     }
 
@@ -350,37 +342,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
         return new JsonObject { ["genres"] = genres, ["moods"] = new JsonArray() }.ToJsonString();
     }
 
-    // --- Shared JSON helpers --------------------------------------------------
-
-    private static string? ExtractText(string responseBody)
-    {
-        try
-        {
-            var node = JsonNode.Parse(responseBody);
-            if (node?["content"] is not JsonArray content) return null;
-            foreach (var block in content)
-                if (block?["type"]?.GetValue<string>() == "text")
-                    return block["text"]?.GetValue<string>();
-        }
-        catch (JsonException) { }
-        return null;
-    }
-
-    private static string? StripToJsonObject(string? text)
-    {
-        if (string.IsNullOrEmpty(text)) return null;
-        var trimmed = text.Trim();
-        if (trimmed.StartsWith("```", StringComparison.Ordinal))
-        {
-            var nl = trimmed.IndexOf('\n');
-            if (nl >= 0) trimmed = trimmed[(nl + 1)..];
-            var fence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-            if (fence >= 0) trimmed = trimmed[..fence];
-        }
-        var start = trimmed.IndexOf('{');
-        var end = trimmed.LastIndexOf('}');
-        return start < 0 || end <= start ? null : trimmed[start..(end + 1)];
-    }
+    private static string? StripToJsonObject(string? text) => AnthropicApi.StripToJsonObject(text);
 
     private sealed record DistillResult(string Description, string? FacetsJson);
 

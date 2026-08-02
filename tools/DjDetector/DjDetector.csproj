@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- x64 to match the native BASS DLLs. -->
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <!-- Self-contained: this offline DSP tool shares nothing with the app but BASS, so it
+       references the BASS packages directly rather than the whole crystal-radio project. -->
+  <ItemGroup>
+    <PackageReference Include="ManagedBass" Version="4.0.2" />
+    <PackageReference Include="ManagedBass.Aac" Version="4.0.2" />
+  </ItemGroup>
+
+  <!-- Native BASS DLLs (x64). bass_aac decodes the harvested .aac segments. -->
+  <ItemGroup>
+    <Content Include="..\..\native\x64\bass.dll" Link="bass.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\native\x64\bass_aac.dll" Link="bass_aac.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- The detector was promoted into Services/ once DJ mode shipped it as the segment QC
+       backstop (SegmentQualityChecker); this tool links the app's copy rather than owning a
+       duplicate, same trick tools/DjHarvest already used to share it with this project. -->
+  <ItemGroup>
+    <Compile Include="..\..\Services\Fft.cs" Link="Fft.cs" />
+    <Compile Include="..\..\Services\MusicDetector.cs" Link="MusicDetector.cs" />
+  </ItemGroup>
+
+</Project>

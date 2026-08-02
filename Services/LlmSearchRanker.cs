@@ -13,10 +13,14 @@ namespace RadioPlayer.Services;
 /// </summary>
 public sealed class LlmSearchRanker : ISearchRanker
 {
-    private const string Endpoint = "https://api.anthropic.com/v1/messages";
-    private const string AnthropicVersion = "2023-06-01";
-    private const string DefaultModel = "claude-haiku-4-5"; // relevance judging is cheap
-    private const int MaxTextChars = 320;                   // cap each description's length
+    private const string DefaultModel = AnthropicApi.HaikuModel; // relevance judging is cheap
+    private const int MaxTextChars = 320;                        // cap each description's length
+
+    // The system prompt tells the model to only include candidates scoring >= 0.5, but that is
+    // an instruction, not a guarantee — this enforces the same floor client-side so a loose
+    // match (or an unparseable score, which reads as 0.0) can never slip through on a day the
+    // model ignores the strictness rule. Keep the two values in sync with the prompt.
+    private const double MinScore = 0.5;
 
     private const string SystemPrompt = """
         You rank internet radio stations by how well they match a user's request. You get the
@@ -76,7 +80,7 @@ public sealed class LlmSearchRanker : ISearchRanker
         var body = new JsonObject
         {
             ["model"] = _model,
-            ["max_tokens"] = 512,
+            ["max_tokens"] = 1024,
             ["system"] = SystemPrompt,
             ["messages"] = new JsonArray
             {
@@ -86,19 +90,17 @@ public sealed class LlmSearchRanker : ISearchRanker
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint)
-            {
-                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-            };
-            request.Headers.Add("x-api-key", _apiKey);
-            request.Headers.Add("anthropic-version", AnthropicVersion);
-
+            using var request = AnthropicApi.CreateRequest(_apiKey, body);
             using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 return null;
 
-            var text = ExtractText(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            var text = AnthropicApi.ExtractText(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
             return ParseRanked(text, candidates.Count, topK);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // caller cancelled — propagate rather than degrade to the heuristic
         }
         catch (Exception)
         {
@@ -108,7 +110,7 @@ public sealed class LlmSearchRanker : ISearchRanker
 
     private static IReadOnlyList<RankVerdict>? ParseRanked(string? modelText, int candidateCount, int topK)
     {
-        var json = StripToJsonObject(modelText);
+        var json = AnthropicApi.StripToJsonObject(modelText);
         if (json is null)
             return null;
 
@@ -128,40 +130,12 @@ public sealed class LlmSearchRanker : ISearchRanker
             if (id < 0 || id >= candidateCount || !used.Add(id))
                 continue;
             var score = item["score"] is JsonValue sv && sv.TryGetValue<double>(out var s) ? s : 0.0;
+            if (score < MinScore)
+                continue; // enforce the prompt's own floor client-side
             verdicts.Add(new RankVerdict(id, score));
             if (verdicts.Count >= topK)
                 break;
         }
         return verdicts; // may be empty (ran, but nothing matched)
-    }
-
-    private static string? ExtractText(string responseBody)
-    {
-        try
-        {
-            var node = JsonNode.Parse(responseBody);
-            if (node?["content"] is not JsonArray content) return null;
-            foreach (var block in content)
-                if (block?["type"]?.GetValue<string>() == "text")
-                    return block["text"]?.GetValue<string>();
-        }
-        catch (JsonException) { }
-        return null;
-    }
-
-    private static string? StripToJsonObject(string? text)
-    {
-        if (string.IsNullOrEmpty(text)) return null;
-        var trimmed = text.Trim();
-        if (trimmed.StartsWith("```", StringComparison.Ordinal))
-        {
-            var nl = trimmed.IndexOf('\n');
-            if (nl >= 0) trimmed = trimmed[(nl + 1)..];
-            var fence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-            if (fence >= 0) trimmed = trimmed[..fence];
-        }
-        var start = trimmed.IndexOf('{');
-        var end = trimmed.LastIndexOf('}');
-        return start < 0 || end <= start ? null : trimmed[start..(end + 1)];
     }
 }

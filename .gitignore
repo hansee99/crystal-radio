@@ -23,3 +23,11 @@ desktop.ini
 # Local embedding model is large (~90 MB) — fetched on setup, not committed.
 # vocab.txt is small and IS tracked.
 MlAssets/*.onnx
+
+# Design-review screenshots (~26 MB) are inputs to the audit, not deliverables — the
+# audit, brief and token summary in doc/design-review/ are what we keep. Also kept out
+# of history deliberately: the Options screenshot showed a live API key before it was
+# painted over, and a redaction that turns out imperfect is permanent once committed.
+doc/design-review/screenshots/
+doc/design-review/composites/
+doc/design-review/audit-text.txt

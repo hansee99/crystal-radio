@@ -13,12 +13,8 @@ namespace RadioPlayer.Services;
 /// </summary>
 public sealed class PromptInterpreter : IPromptInterpreter
 {
-    private const string Endpoint = "https://api.anthropic.com/v1/messages";
-    private const string AnthropicVersion = "2023-06-01";
-
     // CLAUDE.md calls for a small/fast model for query translation; Haiku is plenty.
-    // (The provider-agnostic seam means this is the only place the model id lives.)
-    private const string DefaultModel = "claude-haiku-4-5";
+    private const string DefaultModel = AnthropicApi.HaikuModel;
 
     private const string SystemPrompt = """
         You translate a user's natural-language request for internet radio into structured
@@ -66,25 +62,22 @@ public sealed class PromptInterpreter : IPromptInterpreter
         if (string.IsNullOrWhiteSpace(prompt))
             return null;
 
-        var requestBody = new
+        var requestBody = new System.Text.Json.Nodes.JsonObject
         {
-            model = _model,
-            max_tokens = 1024,
-            system = SystemPrompt,
-            messages = new[] { new { role = "user", content = prompt } }
+            ["model"] = _model,
+            ["max_tokens"] = 1024,
+            ["system"] = SystemPrompt,
+            ["messages"] = new System.Text.Json.Nodes.JsonArray
+            {
+                new System.Text.Json.Nodes.JsonObject { ["role"] = "user", ["content"] = prompt }
+            }
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint)
-        {
-            Content = JsonContent.Create(requestBody)
-        };
-        request.Headers.Add("x-api-key", _apiKey);
-        request.Headers.Add("anthropic-version", AnthropicVersion);
-
+        using var request = AnthropicApi.CreateRequest(_apiKey, requestBody);
         using var response = await _http.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Anthropic API returned {(int)response.StatusCode}: {Truncate(body)}");
+            throw new HttpRequestException($"Anthropic API returned {(int)response.StatusCode}: {AnthropicApi.Truncate(body)}");
 
         var text = ExtractText(body);
         if (string.IsNullOrWhiteSpace(text))
@@ -93,25 +86,13 @@ public sealed class PromptInterpreter : IPromptInterpreter
         return TryParseQuery(text);
     }
 
-    /// <summary>Pulls the first text block out of the Messages API response.</summary>
-    private static string? ExtractText(string responseBody)
-    {
-        try
-        {
-            var parsed = JsonSerializer.Deserialize<AnthropicResponse>(responseBody, JsonOptions);
-            var block = parsed?.Content?.FirstOrDefault(b => b.Type == "text" && !string.IsNullOrEmpty(b.Text));
-            return block?.Text;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+    /// <summary>Pulls the text out of the Messages API response.</summary>
+    private static string? ExtractText(string responseBody) => AnthropicApi.ExtractText(responseBody);
 
     /// <summary>Strips optional ```json fences, isolates the JSON object, and deserializes.</summary>
     private static StationSearchQuery? TryParseQuery(string text)
     {
-        var json = StripToJsonObject(text);
+        var json = AnthropicApi.StripToJsonObject(text);
         if (json is null)
             return null;
         try
@@ -122,42 +103,5 @@ public sealed class PromptInterpreter : IPromptInterpreter
         {
             return null;
         }
-    }
-
-    private static string? StripToJsonObject(string text)
-    {
-        var trimmed = text.Trim();
-
-        // Drop a leading ```json / ``` fence and its closing fence if present.
-        if (trimmed.StartsWith("```", StringComparison.Ordinal))
-        {
-            var firstNewline = trimmed.IndexOf('\n');
-            if (firstNewline >= 0)
-                trimmed = trimmed[(firstNewline + 1)..];
-            var closingFence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-            if (closingFence >= 0)
-                trimmed = trimmed[..closingFence];
-        }
-
-        // Isolate the outermost { ... } so stray text on either side can't break parsing.
-        var start = trimmed.IndexOf('{');
-        var end = trimmed.LastIndexOf('}');
-        if (start < 0 || end <= start)
-            return null;
-
-        return trimmed[start..(end + 1)];
-    }
-
-    private static string Truncate(string s) => s.Length <= 300 ? s : s[..300] + "…";
-
-    private sealed class AnthropicResponse
-    {
-        [JsonPropertyName("content")] public List<ContentBlock>? Content { get; set; }
-    }
-
-    private sealed class ContentBlock
-    {
-        [JsonPropertyName("type")] public string? Type { get; set; }
-        [JsonPropertyName("text")] public string? Text { get; set; }
     }
 }

@@ -1,0 +1,93 @@
+# DjHarvest — DJ Mode (harvest) PoC 1
+
+The minimal proof of concept for the **harvest-and-replay** DJ mode
+([doc/DJ-MODE-SPEC-HARVEST.md](../../doc/DJ-MODE-SPEC-HARVEST.md)). It answers the one new
+engineering question and the fill-rate assumption together:
+
+> Can we run several **headless** (download-only, no playback) recording connections in
+> parallel, cut clean complete-song segments at ICY boundaries, and do songs arrive fast
+> enough to keep a queue playing continuously?
+
+It reuses the app's real `StreamRecorder` — the same boundary-cut, deferred-offset,
+min-size, and `SongHistoryFilter` logic that the shipping "save this song" feature uses — so
+the segments it produces are exactly what the eventual harvest engine would queue.
+
+Each completed segment then passes through **segment QC** (the harvest design's
+`SegmentQualityChecker`, PoC form): it's decoded and classified by the shared
+[`MusicDetector`](../DjDetector/MusicDetector.cs). **Clear talk is rejected** (music fraction
+below `--qc-reject`, default 0.30) so ad/talk that slipped the ICY filter never reaches the
+folder; **kept songs** have the detector's head/tail talk measurement (**edge-trim seconds**)
+actually **applied** to the copied audio (byte-trimmed, not just logged) before they land in
+the output folder, and the seconds trimmed are still recorded to `manifest.csv` for visibility.
+
+This edge-trim is the real fix for "song starts abruptly / has talk (or the next song) bled
+into the tail": `StreamRecorder`'s capture-time `--offset` can only *delay* a boundary cut, so
+it can't correct a station whose ICY metadata genuinely lags its own audio (a negative true
+lead — confirmed on Radio Paradise: even `--offset 0` left 5s of talk at a song's tail).
+Byte-trimming after the fact fixes it regardless of the station's timing, because it uses the
+detector's own measurement of where content starts/ends rather than a fixed assumption about
+encoder lead time. Pass `--no-edge-trim` to fall back to the old copy-untrimmed behavior (e.g.
+to A/B compare, or if you suspect a bad trim).
+
+The cut isn't frame-boundary-exact (no MP3/ADTS frame parsing), so expect an occasional
+barely-audible micro-glitch right at the trim point — acceptable for this PoC; a production
+cut would snap to the nearest frame header.
+
+## How it works
+
+- Initializes BASS on the **"no sound" device (0)** and *plays* each station there. Playback
+  drives the download + ICY metadata syncs at real-time with no audible output and no
+  contention for a real output device — the headless-harvest trick.
+- Each station gets its own `StreamRecorder`; the download callback feeds it raw bytes and
+  the ICY metadata sync feeds it title changes, exactly as `RadioEngine` does during playback.
+- Every complete, song-like segment is copied to the scratch folder (named
+  `station · artist - title.ext`) so you can **listen to a sample by ear**, and the original
+  is removed from the app's real cache so this tool doesn't pollute it.
+- Reconnects a dropped stream a bounded number of times, then marks it dead.
+
+## Usage
+
+```sh
+# Defaults: 4 stations (1 AAC + 3 MP3), 15 minutes, segments to %TEMP%\DjHarvest
+dotnet run --project tools/DjHarvest
+
+# Longer soak to a chosen folder
+dotnet run --project tools/DjHarvest -- --seconds 3600 --out C:\harvest
+
+# Your own stations (codec inferred from the URL, or forced with |aac / |mp3)
+dotnet run --project tools/DjHarvest -- "http://host/stream|aac" "http://host/other|mp3"
+```
+
+| Arg | Default | Meaning |
+|---|---|---|
+| *(positional)* | 4 built-in stations | Station URLs, each `url` or `url\|aac` / `url\|mp3` |
+| `--seconds N` | 900 | How long to run before auto-stopping |
+| `--out <dir>` | `%TEMP%\DjHarvest` | Where kept segments (+ `manifest.csv`) go |
+| `--offset <sec>` | 6 | Boundary-cut offset (same meaning as `CaptureBoundaryOffsetSeconds`) |
+| `--qc-reject <frac>` | 0.30 | Reject a segment whose music fraction is below this (0 disables QC) |
+| `--no-edge-trim` | off (trim ON) | Copy kept segments untrimmed — the old behavior, for comparison |
+
+Ctrl+C stops early and prints the final summary. No API key needed — PoC 1 takes explicit
+station URLs; search-based seeding is a later phase.
+
+## What to look at
+
+- The periodic status shows per-station **kept songs**, **ICY titles seen**, and **songs/hr**,
+  plus an aggregate vs. a rough starvation line (~17 songs/hr sustains one continuous
+  playback at ~3.5-min average song length).
+- The `--out` folder is the by-ear check: are the cut segments clean, complete songs, or do
+  some stations leak ads/talk (poor ICY hygiene → would need the optional QC backstop)?
+
+## Exit criterion (from the spec)
+
+N harvesters run stably in parallel, produce clean complete-song segments, and the aggregate
+fill rate comfortably exceeds one song per average-song-length (the queue would grow, not
+starve) after warm-up. If that holds, the harvest design's core risk is retired and the next
+step is PoC 2 (warm-start + self-refilling queue on `LocalPlaybackEngine`).
+
+## Notes
+
+- **Run with the main app closed** (like the SeedEnrichment tool) to avoid the app's cache
+  sweep racing with the harvesters.
+- Not part of `crystal-radio.sln`; an on-demand PoC/soak tool, kept per the spec's testing
+  strategy as a fill-rate / stability harness.

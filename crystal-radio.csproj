@@ -7,12 +7,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <!-- The seed tool lives under tools/ (a separate project). Keep its sources/artifacts
-         out of this project's default **/*.cs and Content/Page globs. -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);tools\**</DefaultItemExcludes>
+    <!-- PoC tools and the test project live under tools/ and tests/ (separate projects). Keep
+         their sources/artifacts out of this project's default **/*.cs and Content/Page globs. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);tools\**;tests\**</DefaultItemExcludes>
     <!-- App identity / versioning. Bump Version (SemVer MAJOR.MINOR.PATCH) per release;
          the SDK flows it into the assembly's File/Informational version automatically. -->
-    <Version>1.5.0</Version>
+    <Version>1.6.0</Version>
     <AssemblyName>crystal-radio</AssemblyName>
     <!-- Keep namespace RadioPlayer so no C# files need touching (shallow rename). -->
     <RootNamespace>RadioPlayer</RootNamespace>
@@ -30,6 +30,14 @@
     <!-- Per-monitor v2 DPI awareness (crisp text on hi-DPI). -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+
+  <!-- MusicDetector/Fft are internal (they're an implementation detail of the QC backstop, not
+       app API) but they carry the fitted weights and the edge-trim logic, which is exactly the
+       part worth testing — especially while the corpus is being extended to genres it currently
+       misreads. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="RadioPlayer.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="ManagedBass" Version="4.0.2" />

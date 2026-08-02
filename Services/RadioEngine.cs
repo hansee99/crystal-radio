@@ -29,6 +29,15 @@ public sealed class RadioEngine : IPlaybackEngine
     private readonly Dispatcher _dispatcher;
     private readonly StreamRecorder? _recorder;
 
+    // BASS's device selection is per-CALLING-THREAD, and a thread that has never explicitly
+    // touched Bass.CurrentDevice auto-selects the lowest initialized device index. That's
+    // harmless while this is the only device the process ever initializes, but DJ mode's
+    // harvest thread initializes device 0 ("no sound") — always the lowest possible index —
+    // so any ThreadPool thread servicing our Task.Run callbacks below would otherwise silently
+    // create streams against the silent device instead of this one. Captured once, right after
+    // our own successful Init, and set explicitly before every CreateStream call.
+    private readonly int _realDeviceIndex;
+
     private int _stream;
     private Station? _currentStation;
     private double _volume = 0.5;
@@ -60,6 +69,11 @@ public sealed class RadioEngine : IPlaybackEngine
         // Init the default output device. Returns false if already initialised; that's fine.
         if (!Bass.Init() && Bass.LastError != Errors.Already)
             throw new InvalidOperationException($"BASS init failed: {Bass.LastError}");
+
+        // Whether we just initialized it or it was already up (e.g. LocalPlaybackEngine got
+        // there first on this same UI thread), CurrentDevice on THIS thread now correctly
+        // reflects the real output device — capture it for the background-thread call sites.
+        _realDeviceIndex = Bass.CurrentDevice;
 
         // ICY/Shoutcast metadata is requested by default in this BASS version, so no
         // extra configuration is needed here — we just subscribe to the metadata sync.
@@ -139,10 +153,12 @@ public sealed class RadioEngine : IPlaybackEngine
 
         return Task.Run(() =>
         {
-            // Separate handle from the playback stream, so this never affects what's playing.
+            // Decode-only: never plays, just checks connectivity, so it doesn't need — and by
+            // using Decode, doesn't need to worry about — the calling thread's output device at
+            // all (sidesteps the per-thread device-selection gotcha entirely, see _realDeviceIndex).
             var handle = isAac
-                ? BassAac.CreateStream(url, 0, BassFlags.Default, null)
-                : Bass.CreateStream(url, 0, BassFlags.Default, null);
+                ? BassAac.CreateStream(url, 0, BassFlags.Decode, null)
+                : Bass.CreateStream(url, 0, BassFlags.Decode, null);
             if (handle == 0)
                 return false;
             Bass.StreamFree(handle);
@@ -185,6 +201,11 @@ public sealed class RadioEngine : IPlaybackEngine
 
         Task.Run(() =>
         {
+            // This runs on a ThreadPool thread that has never touched Bass.CurrentDevice — set
+            // it explicitly to the real output device before creating a playback stream (see
+            // _realDeviceIndex's field comment for why this is required, not just defensive).
+            Bass.CurrentDevice = _realDeviceIndex;
+
             // AAC core is NOT in BASS core — the add-on path is required for aac streams.
             var handle = isAac
                 ? BassAac.CreateStream(url, 0, BassFlags.Default, downloadProc)
@@ -349,7 +370,10 @@ public sealed class RadioEngine : IPlaybackEngine
         // ICY terminates the field with an apostrophe-semicolon ('; ), so search for that rather
         // than a bare apostrophe — otherwise a title like "Don't let me down" truncates at "Don".
         var end = meta.IndexOf("';", start, StringComparison.Ordinal);
-        return end < 0 ? meta[start..].TrimEnd('\'') : meta[start..end];
+        var raw = end < 0 ? meta[start..].TrimEnd('\'') : meta[start..end];
+        // Cleaned at the parse point so every consumer — UI, history, SMTC, the recorder's
+        // segment names — sees the same tidy title.
+        return TrackTitleCleaner.Clean(raw);
     }
 
     private void FreeStream()

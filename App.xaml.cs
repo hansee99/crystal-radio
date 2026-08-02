@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Windows;
+using RadioPlayer.Services;
 
 namespace RadioPlayer;
 
@@ -36,8 +38,38 @@ public partial class App : Application
         _activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
         StartActivationListener(_activateEvent);
 
+        HookCrashLogging();
+        AppLog.BeginSession(Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "?");
+
         base.OnStartup(e);
         new MainWindow().Show();
+    }
+
+    /// <summary>
+    /// Records anything that escapes to the top, on all three routes an exception can take here:
+    /// the UI thread, a background thread, and a fire-and-forget Task (of which this codebase has
+    /// plenty — enrichment, embedding, QC). Without this, a failure in a normally-launched copy
+    /// leaves nothing behind to look at.
+    ///
+    /// Deliberately does NOT mark the dispatcher exception handled: swallowing it would leave the
+    /// app running in an unknown state. The point here is a record, not a behaviour change.
+    /// </summary>
+    private void HookCrashLogging()
+    {
+        DispatcherUnhandledException += (_, args) =>
+            AppLog.Error("[Crash] unhandled exception on the UI thread", args.Exception);
+
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            AppLog.Error($"[Crash] unhandled exception (terminating: {args.IsTerminating})",
+                args.ExceptionObject as Exception);
+
+        // Fire-and-forget Tasks don't crash the process, so these would otherwise vanish
+        // completely — exactly the "it failed and said nothing" case.
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            AppLog.Error("[Crash] unobserved task exception", args.Exception);
+            args.SetObserved();
+        };
     }
 
     /// <summary>Background thread that surfaces our window whenever a second launch signals us.</summary>

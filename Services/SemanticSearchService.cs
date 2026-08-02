@@ -50,7 +50,7 @@ public sealed class SemanticSearchService : ISemanticSearchService
             return hits;
         }, ct).ConfigureAwait(false);
 
-        Debug.WriteLine($"[Semantic] '{query}': {scored.Count} hit(s); top={(scored.Count > 0 ? scored[0].Score.ToString("0.000") : "n/a")}");
+        AppLog.Debug($"[Semantic] '{query}': {scored.Count} hit(s); top={(scored.Count > 0 ? scored[0].Score.ToString("0.000") : "n/a")}");
         if (scored.Count == 0)
             return [];
 

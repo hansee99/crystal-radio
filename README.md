@@ -14,15 +14,31 @@ Anthropic API key).
 
 Built with WPF on .NET 10, using the [BASS](https://www.un4seen.com/) audio library.
 
-![Crystal Radio — now playing, with the AI search panel](doc/screenshot.png)
+![Crystal Radio — now playing, with saved-song and "About this song" actions on the history rows](doc/screenshot.png)
+
+## Three modes
+
+- **Radio** — play stations, see live track titles, save songs off the stream.
+- **Library** — play your saved songs, or ask for a playlist built from them by mood.
+- **DJ** — describe a vibe and the app assembles a mix on the fly, harvesting songs from
+  live stations that match it.
 
 ## Features
 
 - Stream AAC and MP3 internet radio.
 - **Live track titles** via ICY metadata.
 - **Station management** — add / edit / delete stations, persisted as JSON.
+- **Save the song that's playing** — the stream is continuously recorded to a rolling
+  cache, so a song can be saved *after* you've heard it, cut at its real track
+  boundaries.
 - **AI-assisted search** — describe a vibe, get real playable stations (optional; see
   below).
+- **AI-curated playlists** — describe a mood and get a running order from your own saved
+  songs (optional; needs an API key).
+- **DJ mode** — a self-refilling mix from live radio: stations are chosen for your prompt,
+  harvested headlessly, checked by a local music/speech detector, and sequenced with
+  crossfades and spoken-style intro lines. Bridges to live radio whenever the mix runs
+  dry, so it never falls silent (optional; needs an API key).
 - **"About this track"** — an on-demand AI briefing (web-sourced) about the now-playing
   song and artist, shown inside the player (optional; needs an API key).
 - **OS integration** — SMTC (Win11 flyout, lock screen, media keys) and taskbar thumbnail
@@ -74,11 +90,26 @@ precedence; changes apply on restart.
 > Anthropic Console) and incurs per-search cost. Local layers (enrichment + embeddings)
 > are free.
 
-## How AI search works
+## Where things are stored
 
-See [doc/TECHNICAL.md](doc/TECHNICAL.md) for the full architecture, AI search patterns
-(structured output, agentic loop, local enrichment, semantic search), and design
-decisions.
+Nothing leaves your PC except the API calls themselves.
+
+| What | Where |
+| --- | --- |
+| Stations, song history, settings, encrypted API key | `%AppData%\RadioPlayer` |
+| Saved songs | `Music\Crystal Radio` (configurable in Options) |
+| Rolling stream cache, DJ harvest, station/song index, logs | `%LocalAppData%\RadioPlayer` |
+
+The rolling cache and the DJ harvest folder are both size-capped and prune themselves;
+saved songs are never touched.
+
+## How it works
+
+See [doc/TECHNICAL.md](doc/TECHNICAL.md) for the full architecture, the AI search patterns
+(structured output, agentic loop, local enrichment, semantic search), the offline curated
+playlists, and the design decisions behind them. DJ mode has its own spec in
+[doc/DJ-MODE-SPEC-HARVEST.md](doc/DJ-MODE-SPEC-HARVEST.md); known gaps and deferred ideas
+live in [doc/BACKLOG.md](doc/BACKLOG.md).
 
 ## License
 

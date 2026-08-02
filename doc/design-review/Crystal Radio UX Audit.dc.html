@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#050D0C; }
+  body { font-family:'Hanken Grotesk', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#56C7BA; text-decoration:none; border-bottom:1px solid rgba(86,199,186,0.35); }
+  a:hover { color:#8FE0D5; border-bottom-color:rgba(143,224,213,0.6); }
+  ::selection { background:rgba(86,199,186,0.28); }
+</style>
+</helmet>
+
+<div style="background:#050D0C;color:#E7F0EE;min-height:100vh;padding:0 0 160px">
+
+  <div style="max-width:1120px;margin:0 auto;padding:0 56px">
+
+    <div style="padding:88px 0 0;display:flex;flex-direction:column;gap:26px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#62D2C4,#2F8F86)"></div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.18em;color:#7D938E;text-transform:uppercase">Crystal Radio · UX &amp; design audit</div>
+      </div>
+      <h1 style="margin:0;font-size:60px;line-height:1.02;font-weight:400;color:#F3F9F7;letter-spacing:-0.02em;max-width:15ch">Three modes, one player, three different rulebooks</h1>
+      <p style="margin:0;max-width:62ch;font-size:17px;line-height:1.65;color:#BCCCC8;text-wrap:pretty">The skeleton works — the left-panel/Now-Playing split is the right shape for a long-session player, and the glowing play button plus the LIVE-badge/equalizer pairing give the app a genuine signature. The problems are almost all downstream of that: the right panel's artwork is doing damage to legibility, DJ mode is running five states through one status line, and Library's row templates have drifted far enough from Radio's that they read as two different apps.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:0;margin-top:12px;border-top:1px solid rgba(255,255,255,0.08);border-bottom:1px solid rgba(255,255,255,0.08)">
+        <div style="flex:1;min-width:150px;padding:20px 24px 20px 0;display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:28px;color:#F3F9F7;font-weight:400">31</div>
+          <div style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#7D938E;font-weight:600">Findings</div>
+        </div>
+        <div style="flex:1;min-width:150px;padding:20px 24px;display:flex;flex-direction:column;gap:6px;border-left:1px solid rgba(255,255,255,0.08)">
+          <div style="font-size:28px;color:#E9A98D;font-weight:400">9</div>
+          <div style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#7D938E;font-weight:600">High severity</div>
+        </div>
+        <div style="flex:1;min-width:150px;padding:20px 24px;display:flex;flex-direction:column;gap:6px;border-left:1px solid rgba(255,255,255,0.08)">
+          <div style="font-size:28px;color:#56C7BA;font-weight:400">14</div>
+          <div style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#7D938E;font-weight:600">Quick wins</div>
+        </div>
+        <div style="flex:1;min-width:150px;padding:20px 0 20px 24px;display:flex;flex-direction:column;gap:6px;border-left:1px solid rgba(255,255,255,0.08)">
+          <div style="font-size:28px;color:#F3F9F7;font-weight:400">18</div>
+          <div style="font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#7D938E;font-weight:600">Screens reviewed</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:64px;display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
+      <div style="grid-column:1 / -1;font-size:11px;font-weight:700;letter-spacing:0.18em;color:#56C7BA;text-transform:uppercase;margin-bottom:2px">The five things I'd fix first</div>
+      <div style="padding:22px 24px;border-radius:12px;background:rgba(4,11,10,0.5);border:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:9px">
+        <div style="font-size:11px;font-weight:700;color:#5F736F;letter-spacing:0.1em">01</div>
+        <div style="font-size:16px;color:#F3F9F7;font-weight:500">Text is sitting on raw artwork</div>
+        <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8">Every contrast number in your token file is measured against <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">#050D0C</span>. On the right panel that background is a bright cream-and-teal bokeh. The recently-played list, the seek times and the transport row all cross it.</div>
+      </div>
+      <div style="padding:22px 24px;border-radius:12px;background:rgba(4,11,10,0.5);border:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:9px">
+        <div style="font-size:11px;font-weight:700;color:#5F736F;letter-spacing:0.1em">02</div>
+        <div style="font-size:16px;color:#F3F9F7;font-weight:500">DJ mode's status line is overloaded</div>
+        <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8">Idle, scouting, warming up, steady and refilling all render as one 11.5px muted sentence with the same spinner — while the panel below it still says "Not harvesting yet."</div>
+      </div>
+      <div style="padding:22px 24px;border-radius:12px;background:rgba(4,11,10,0.5);border:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:9px">
+        <div style="font-size:11px;font-weight:700;color:#5F736F;letter-spacing:0.1em">03</div>
+        <div style="font-size:16px;color:#F3F9F7;font-weight:500">The sparkle means two things</div>
+        <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8">Your tokens say sparkle = "AI does something here." In Radio history and Library it's also the save-this-song button, and it's on the DJ <em style="font-style:normal;color:#E7F0EE">Stop</em> button, which is not an AI action.</div>
+      </div>
+      <div style="padding:22px 24px;border-radius:12px;background:rgba(4,11,10,0.5);border:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:9px">
+        <div style="font-size:11px;font-weight:700;color:#5F736F;letter-spacing:0.1em">04</div>
+        <div style="font-size:16px;color:#F3F9F7;font-weight:500">Raw stream metadata is reaching the 44px title</div>
+        <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8"><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#E9A98D">We Gotta Get Out Of This Place ("Stereo") ( / 1965)</span> — the empty-field artifact and quoted mix name are rendered at the app's largest, most confident type size.</div>
+      </div>
+      <div style="grid-column:1 / -1;padding:22px 24px;border-radius:12px;background:rgba(4,11,10,0.5);border:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:9px">
+        <div style="font-size:11px;font-weight:700;color:#5F736F;letter-spacing:0.1em">05</div>
+        <div style="font-size:16px;color:#F3F9F7;font-weight:500">The two dialogs aren't in the design system at all</div>
+        <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8">About and Options use default WPF chrome and light gray OK / Cancel / Save buttons, with no scrim behind them. After eighteen screens of a carefully toned dark UI they land like a different application — and they're the two places a new user goes first.</div>
+      </div>
+    </div>
+
+    <div style="margin-top:96px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:16px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#56C7BA;letter-spacing:0.08em">01</div>
+        <h2 style="margin:0;font-size:32px;font-weight:400;color:#F3F9F7;letter-spacing:-0.01em">First impressions, screen by screen</h2>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.08);margin:8px 0 18px"></div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:24px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Radio · Stations</div>
+          <div style="font-size:12.5px;color:#7D938E;line-height:1.5">Stopped, playing, row hover</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Reads clearly:</span> what's playing, which station it came from, and that it's live. The station chip under the title is a smart, quiet piece of provenance. The equalizer swapping into the selected row's icon tile is the best state cue in the app.</p>
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Doesn't:</span> in the stopped state the 44px slot holds the <em style="font-style:normal;color:#E7F0EE">station name</em> and the subtitle holds a description truncated mid-word — "listener-su…" — that is already fully visible in the left list two inches away. The lone <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">AAC</span> chip is unlabelled and at the faintest text tier, so it reads as debris. The row-hover edit/delete buttons appear only on hover with no other affordance, and the bottom-left <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">+</span> is stranded 500px below the list it adds to.</p>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:24px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Radio · Search</div>
+          <div style="font-size:12.5px;color:#7D938E;line-height:1.5">In progress, results</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Reads clearly:</span> results are honest and plainly written — "Found 6 stations you can play" is exactly the right voice, and per-row descriptions make the picks defensible.</p>
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Doesn't:</span> during the search, an operation you say can run 30+ seconds is represented by a 14px spinner and one faint line in the top-left corner, with ~420px of empty panel below it. Nothing communicates duration, nothing can be cancelled, and if it fails there is no visible place for the failure to go. <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">Show different</span> is ambiguous — different results, different sort, or a new search?</p>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:24px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Radio · History</div>
+          <div style="font-size:12.5px;color:#7D938E;line-height:1.5">Song list, About this track</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Reads clearly:</span> the About panel is the most polished screen in the set. THE SONG / THE ARTIST eyebrows, the measured line length, and the "AI-generated · may be imperfect" footer next to Regenerate are all exactly right.</p>
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Doesn't:</span> in the history list, some rows carry a download glyph and others don't, with no legend — I read it as "saved vs not saved" but that's a guess, and it's conveyed by icon presence alone. Timestamps are clock-only (<span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">17:48</span>), so a list spanning days is unreadable. In the About panel, body copy fades out at the bottom over the brightest part of the artwork — it looks like a rendering fault rather than a scroll hint.</p>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:24px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Library</div>
+          <div style="font-size:12.5px;color:#7D938E;line-height:1.5">Curate ×3, Songs</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Reads clearly:</span> the CURATED PLAYLIST result card is a genuinely nice object — eyebrow, title, count, provenance — and it makes the AI feel like a feature rather than a chatbot.</p>
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Doesn't:</span> the helper line "Describe a mood or vibe above…" floats at an arbitrary vertical position, and <em style="font-style:normal;color:#E9A98D">stays on screen while the spinner runs</em> — telling the user to do the thing they just did. The playlist title echoes the prompt verbatim including the typo ("Ecclectic"), title-cased, which reads as a bug. And the Songs list mixes two row templates: some rows show <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">artist</span>, others show a three-line AI description and <em style="font-style:normal;color:#E7F0EE">no artist at all</em>. That single list breaks the row scale, the rhythm, and scannability at once.</p>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:24px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">DJ</div>
+          <div style="font-size:12.5px;color:#7D938E;line-height:1.5">Idle, warming up, steady, history</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Reads clearly:</span> "Tuned into 4 stations · 1 song in the mix" is the single best status string in the app — concrete, plainly worded, quietly proud. The harvesting list makes an invisible process visible, which is the right instinct.</p>
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Doesn't:</span> the prompt placeholder is clipped mid-word — <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#E9A98D">"…spins up a live statio"</span>. <em style="font-style:normal;color:#E7F0EE">Start DJ session</em> and <em style="font-style:normal;color:#E7F0EE">Stop</em> are identical teal pills of equal weight, both sparkled, with Stop enabled when there's nothing to stop. During warm-up the panel says "Not harvesting yet — start a session above" while a session is demonstrably starting, and Now Playing says "Not playing" even though the brief says the best station is live at that moment. Harvest rows read "0 song titles seen" — internal vocabulary, and a zero is the least reassuring number you can show someone waiting.</p>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:24px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Dialogs</div>
+          <div style="font-size:12.5px;color:#7D938E;line-height:1.5">About, Options</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Reads clearly:</span> the Options content model is good — three honest sections, plain-language reassurance about the key, an explicit note about respecting station terms.</p>
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty"><span style="color:#F3F9F7">Doesn't:</span> both dialogs are unthemed. Light system buttons, system title bars, system link blue, no scrim, no teal anywhere. About's second paragraph ("translating it into a directory search and ranking the results") is the most technical copy in the product, in the place most likely to be read by someone deciding whether they trust it.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:96px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:16px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#56C7BA;letter-spacing:0.08em">02</div>
+        <h2 style="margin:0;font-size:32px;font-weight:400;color:#F3F9F7;letter-spacing:-0.01em">Hierarchy &amp; layout</h2>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.08);margin:8px 0 18px"></div>
+      <p style="margin:0 0 8px;max-width:70ch;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">The split itself is sound: dense-left / spacious-right is the correct model for an app you leave open for six hours. It does its job fully in Radio, partly in Library, and least well in DJ — where the right panel has the least to say precisely when the user most wants to know what's happening.</p>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">All modes</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Now Playing artwork</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(233,169,141,0.13);border:1px solid rgba(233,169,141,0.32);color:#E9A98D;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">High</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">The background image has a bright cream/white diagonal running through the lower-right third — exactly where the transport, volume slider, seek times and the tail of the recently-played list live. In the Radio playing screen, "Insomnia / Crooked Fingers · 9 hr ago" is effectively unreadable. The stop button and the volume value disappear into the wash. This one issue invalidates most of the contrast work in your token file.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">Put a vertical scrim between the artwork and the content column: a left-to-right <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">LinearGradientBrush</span> from <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">#F2050D0C</span> at x=0 to <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">#00050D0C</span> at x=0.75, plus a bottom scrim <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">#00050D0C → #E6050D0C</span> over the lower 200px for the transport. The artwork keeps its atmosphere at the top-right where nothing sits on it.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">Library, DJ</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">"Not playing" null state</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(230,200,138,0.13);border:1px solid rgba(230,200,138,0.3);color:#E6C88A;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">Medium</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">"Not playing" is rendered at 44px — the same weight the app gives a song title — and then followed by roughly 300px of empty artwork before the transport. The loudest element on screen is an absence, and it offers no next step. It's also vertically centred differently in Library-Curate than in DJ-idle, so switching modes makes it jump.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">Drop to 28px Light at the Secondary tier, anchored at the same baseline in all three modes, with a mode-specific second line at 15px Muted: Radio → "Pick a station on the left." · Library → "Play a saved song, or curate a set." · DJ → "Describe a vibe to start a session."</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">DJ · left panel</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Five control rows before content</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(230,200,138,0.13);border:1px solid rgba(230,200,138,0.3);color:#E6C88A;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">Medium</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">Mode pills → prompt → two buttons → status line → sub-tabs → list. Radio reaches its list in two rows; DJ takes five, pushing the harvest list ~95px lower than the equivalent list in every other mode. The status line is also stranded <em style="font-style:normal;color:#E7F0EE">above</em> the sub-tabs, so it floats between the controls and the content that it describes — which is how you end up with a "warming up" line directly above "Not harvesting yet."</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">Collapse rows 2–4 into one session block: prompt field with the primary action as a trailing button inside it, Stop demoted to a ghost button that only appears while a session runs, and the status moved <em style="font-style:normal;color:#CDEEE7">inside</em> the Harvesting panel where it replaces the empty-state line. Sub-tabs then sit at the same y as Radio's and Library's.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">Radio · stopped</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Station description in the title slot</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(159,179,174,0.12);border:1px solid rgba(159,179,174,0.28);color:#9FB3AE;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">Low</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">The 44px/20px pair is a song-title/artist template. Filling it with station-name/description means the 20px Light line gets a hard mid-word truncation, and the station chip below repeats the name a third time.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">Keep the station name at 44px, replace the artist line with "Ready to play · AAC 128k" at Muted, and let the description wrap to two lines at 15px below the chip — or drop it entirely, since it's already in the row you just clicked.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:96px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:16px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#56C7BA;letter-spacing:0.08em">03</div>
+        <h2 style="margin:0;font-size:32px;font-weight:400;color:#F3F9F7;letter-spacing:-0.01em">Consistency drift</h2>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.08);margin:8px 0 18px"></div>
+      <p style="margin:0 0 20px;max-width:70ch;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">You predicted this and you were right. The drift is concentrated in four places: row templates, the meaning of icons, where status lines live, and how each mode names things.</p>
+
+      <div style="border:1px solid rgba(255,255,255,0.08);border-radius:12px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;background:rgba(255,255,255,0.03)">
+          <div style="padding:14px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#7D938E">Pattern</div>
+          <div style="padding:14px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#7D938E">Radio</div>
+          <div style="padding:14px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#7D938E">Library</div>
+          <div style="padding:14px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#7D938E">DJ</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE">First sub-tab</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">Stations <span style="color:#5F736F">(content)</span></div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D">Curate <span style="color:#5F736F">(AI tool)</span></div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">Harvesting</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE">Prompt field icon</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D">Magnifier</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">Sparkle</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">Sparkle</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE">Status line position</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">Under input</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">Under input</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D">Above sub-tabs</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE">Row subtitle</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">Description / artist · time</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D">Artist <em style="font-style:normal">or</em> 3-line AI blurb</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">Artist · time</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE">Approx. row height</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">62 / 55 / 44</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D">43 – 58 (mixed in one list)</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">44</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE">Add / save affordance</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D">Bottom-left +, row +, row sparkle, row download</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">None</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">None</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE">Noun for a saved item</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">"song", "track"</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D">"songs", "recordings"</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#BCCCC8">"song titles", "the mix"</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;margin-top:12px;border-top:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">All modes</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Sparkle glyph overloaded</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(233,169,141,0.13);border:1px solid rgba(233,169,141,0.32);color:#E9A98D;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">High</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">Your token doc lists the sparkle as a signature moment meaning "AI does something here." It currently also means save-this-song (Radio history rows, Now Playing recently-played rows) and appears on <em style="font-style:normal;color:#E7F0EE">Stop</em>, which stops a session rather than invoking anything. Meanwhile Radio's AI search — the most AI thing in the app — gets a plain magnifier. The one symbol you've invested in is diluted in three directions at once.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">Sparkle = AI only (Search field, Curate, Start DJ session, About this track, Regenerate). Save-to-library gets its own glyph — a plus-in-circle, filled teal once saved. Stop loses the sparkle and becomes a ghost square/round button in the transport family. Radio's search field gains the sparkle.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">Dialogs</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Outside the theme entirely</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(233,169,141,0.13);border:1px solid rgba(233,169,141,0.32);color:#E9A98D;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">High</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">System title bars, system-blue links, light gray OK / Cancel / Save, sharp corners, no scrim behind the dialog so the running app competes for attention. The Options text field is the only input in the product without the radius-10 hairline treatment.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">One <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">AppDialog</span> shell: <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">WindowStyle=None</span>, <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">#06110F</span> surface, radius 12, hairline border, your <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">TitleIconButton</span> close, a <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">#99050D0C</span> scrim over the main window while open. Primary action = teal pill, secondary = ghost. Links use <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">#56C7BA</span>.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:96px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:16px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#56C7BA;letter-spacing:0.08em">04</div>
+        <h2 style="margin:0;font-size:32px;font-weight:400;color:#F3F9F7;letter-spacing:-0.01em">State feedback</h2>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.08);margin:8px 0 18px"></div>
+      <p style="margin:0 0 20px;max-width:70ch;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">Every async state in the app is rendered as the same object: a 14px spinner plus one 11.5px muted sentence, top-left of the panel. That's a fine component — it just can't carry a 45-second multi-stage operation, and there's no error variant of it anywhere in the eighteen screens.</p>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px">
+        <div style="padding:20px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#56C7BA">Loading</div>
+          <div style="font-size:14px;line-height:1.6;color:#BCCCC8">Present everywhere, but undifferentiated. A 2-second curate and a 45-second DJ start look identical.</div>
+        </div>
+        <div style="padding:20px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#E6C88A">Empty</div>
+          <div style="font-size:14px;line-height:1.6;color:#BCCCC8">Three different treatments: centred helper paragraph (Library), top-left faint line (DJ), nothing at all (Radio Stations, Search before first use).</div>
+        </div>
+        <div style="padding:20px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#E9A98D">Error</div>
+          <div style="font-size:14px;line-height:1.6;color:#BCCCC8">Not visible in any screen. Stream failures, zero results, expired key, and DJ exhaustion have no designed home.</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">DJ · warming up</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Two contradicting states on screen</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(233,169,141,0.13);border:1px solid rgba(233,169,141,0.32);color:#E9A98D;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">High</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">"Warming up the decks — scouting stations for your vibe…" sits immediately above "Not harvesting yet — start a session above." Meanwhile Now Playing reads "Not playing," although the brief says the best station is bridging live at this moment. A user who reads the screen honestly concludes nothing is happening.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">The empty state must never coexist with an active status. Replace the Harvesting panel contents with a staged checklist while warming up — <span style="color:#CDEEE7">✓ Found 6 stations · ◐ Checking they play · ○ Recording the first songs</span> — and give Now Playing the live bridge station with its LIVE badge plus a small "Bridging until the mix fills" line, so the right panel isn't lying.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">Library · curating</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Helper text persists during load</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(233,169,141,0.13);border:1px solid rgba(233,169,141,0.32);color:#E9A98D;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">High</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">"Describe a mood or vibe above to curate a playlist from your recordings" stays visible while "Curating a playlist…" spins. Same class of bug as the DJ one: the empty state isn't bound to the same visibility condition as the content.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">One <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">PanelState</span> enum per list panel — <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">Empty | Loading | Content | Error</span> — driving a single <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">ContentControl</span>. Mutually exclusive by construction, and it gives you the missing Error state for free in all six panels.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">Radio · search · DJ · start</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">30–60s waits, no progress, no cancel</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(230,200,138,0.13);border:1px solid rgba(230,200,138,0.3);color:#E6C88A;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">Medium</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">Rotating status copy is a good idea, but rotation alone doesn't signal <em style="font-style:normal;color:#E7F0EE">progress</em> — after 20 seconds the user can't tell the difference between "working" and "hung." There's also no way out of a search you've decided against.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">Stage the waits: 3–4 named steps with completed ones ticked and left on screen. Add three skeleton rows below (radius-10, 34px tile, two shimmer bars) so the panel isn't empty. Put a ghost "Cancel" at the right end of the status row for anything expected to exceed ~5 seconds.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">DJ · steady</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Spinner still spinning at rest</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(230,200,138,0.13);border:1px solid rgba(230,200,138,0.3);color:#E6C88A;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">Medium</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">"Tuned into 4 stations · 1 song in the mix" still carries the loading spinner. A spinner that never stops stops meaning anything — and steady state is the state the user will see for hours.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">Swap the spinner for the pulsing teal dot you already use in the LIVE badge once the session is running. Reserve the spinner strictly for "you are waiting on something." Also worth surfacing the refill state here — "1 song in the mix" with nothing else said is quietly alarming.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">Radio · history rows</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Saved vs unsaved is unlabelled</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(230,200,138,0.13);border:1px solid rgba(230,200,138,0.3);color:#E6C88A;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">Medium</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">Some rows show a download glyph, some don't; the difference is never explained, and saving produces no visible confirmation in the screens provided. Saving a song is the main bridge between Radio and Library — it deserves a state, not an inference.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">Three explicit row states: <span style="color:#CDEEE7">unsaved</span> (outline plus, visible on hover/focus), <span style="color:#CDEEE7">saving</span> (spinner in place of the glyph), <span style="color:#CDEEE7">saved</span> (filled teal check, always visible, tooltip "In your library"). No new components required.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:96px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:16px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#56C7BA;letter-spacing:0.08em">05</div>
+        <h2 style="margin:0;font-size:32px;font-weight:400;color:#F3F9F7;letter-spacing:-0.01em">Copy &amp; tone</h2>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.08);margin:8px 0 18px"></div>
+      <p style="margin:0 0 22px;max-width:70ch;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">The voice is largely working — "Warming up the decks", "Found 6 stations you can play", "respect the stations' terms" all hit professional-but-quirky without straining. The failures cluster at the edges: internal vocabulary leaking into status lines, and the About dialog slipping into engineering register. One rule would fix most of it: <em style="font-style:normal;color:#E7F0EE">never show the user a number or noun that only makes sense if you've read the source.</em></p>
+
+      <div style="display:flex;flex-direction:column;border:1px solid rgba(255,255,255,0.08);border-radius:12px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr;background:rgba(255,255,255,0.03)">
+          <div style="padding:13px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#7D938E">Where</div>
+          <div style="padding:13px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#7D938E">Now</div>
+          <div style="padding:13px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#56C7BA">Suggested</div>
+        </div>
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:12.5px;color:#7D938E;line-height:1.5">DJ · harvest row</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D;line-height:1.55">0 song titles seen</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE;line-height:1.55">Listening… → 3 songs so far</div>
+        </div>
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:12.5px;color:#7D938E;line-height:1.5">DJ · prompt</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D;line-height:1.55">Describe a vibe — DJ mode spins up a live statio<span style="color:#5F736F">[clipped]</span></div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE;line-height:1.55">Describe a vibe…<br /><span style="color:#7D938E;font-size:12.5px">Helper below: "We'll find stations, record the good bits, and keep it playing."</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:12.5px;color:#7D938E;line-height:1.5">Library · Curate empty</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D;line-height:1.55">…curate a playlist from your recordings.</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE;line-height:1.55">…and we'll build a set from your saved songs.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:12.5px;color:#7D938E;line-height:1.5">Radio · search results</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D;line-height:1.55">Show different</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE;line-height:1.55">Find six more</div>
+        </div>
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:12.5px;color:#7D938E;line-height:1.5">All modes · null state</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D;line-height:1.55">Not playing</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE;line-height:1.55">Nothing playing<br /><span style="color:#7D938E;font-size:12.5px">+ one mode-specific next step</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:12.5px;color:#7D938E;line-height:1.5">Options</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D;line-height:1.55">Restart the app to apply changes.</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE;line-height:1.55">The library folder changes next time you start Crystal Radio.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:12.5px;color:#7D938E;line-height:1.5">Options · key field</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D;line-height:1.55">"AI-assisted search" header, then "Used for AI-assisted search…"</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE;line-height:1.55">Drop the repeat; keep only "Leave blank to turn it off — the player works fine without it."</div>
+        </div>
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr;border-top:1px solid rgba(255,255,255,0.06)">
+          <div style="padding:15px 18px;font-size:12.5px;color:#7D938E;line-height:1.5">About dialog</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E9A98D;line-height:1.55">…translating it into a directory search and ranking the results.</div>
+          <div style="padding:15px 18px;font-size:13.5px;color:#E7F0EE;line-height:1.55">Describe what you want to hear and it finds real stations that actually play. Optional, online-only.</div>
+        </div>
+      </div>
+
+      <div style="margin-top:24px;padding:24px 26px;border-radius:12px;border:1px solid rgba(86,199,186,0.28);background:rgba(86,199,186,0.06);display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Pick one noun per concept</div>
+        <div style="font-size:14.5px;line-height:1.7;color:#E7F0EE">A <span style="color:#CDEEE7">station</span> is a live stream. A <span style="color:#CDEEE7">song</span> is a song, everywhere — not "track", not "recording", not "song title". Your saved songs are your <span style="color:#CDEEE7">library</span>. A DJ run is a <span style="color:#CDEEE7">session</span>; what it's collected is the <span style="color:#CDEEE7">mix</span>. That gives you "About this song", "1 song in the mix", "in your library", "end session" — and you can delete "recordings", "titles seen", and "harvesting" from user-facing copy entirely. (Keep "Harvesting" as the tab name only if you like the word; "Sources" is clearer.)</div>
+      </div>
+    </div>
+
+    <div style="margin-top:96px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:16px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#56C7BA;letter-spacing:0.08em">06</div>
+        <h2 style="margin:0;font-size:32px;font-weight:400;color:#F3F9F7;letter-spacing:-0.01em">Accessibility basics</h2>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.08);margin:8px 0 18px"></div>
+
+      <sc-if value="{{ showContrastTable }}" hint-placeholder-val="{{ true }}">
+        <div style="border:1px solid rgba(255,255,255,0.08);border-radius:12px;overflow:hidden;margin-bottom:26px">
+          <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.7fr 1.3fr;background:rgba(255,255,255,0.03)">
+            <div style="padding:13px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#7D938E">Text tier</div>
+            <div style="padding:13px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#7D938E">On #050D0C</div>
+            <div style="padding:13px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#7D938E">AA body</div>
+            <div style="padding:13px 18px;font-size:10.5px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:#7D938E">Verdict</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.7fr 1.3fr;border-top:1px solid rgba(255,255,255,0.06);align-items:center">
+            <div style="padding:14px 18px;display:flex;align-items:center;gap:10px"><span style="width:13px;height:13px;border-radius:4px;background:#F3F9F7"></span><span style="font-size:13.5px;color:#E7F0EE">Primary #F3F9F7</span></div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#BCCCC8;font-family:'IBM Plex Mono',monospace">17.4 : 1</div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#56C7BA">Pass</div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#BCCCC8">Fine</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.7fr 1.3fr;border-top:1px solid rgba(255,255,255,0.06);align-items:center">
+            <div style="padding:14px 18px;display:flex;align-items:center;gap:10px"><span style="width:13px;height:13px;border-radius:4px;background:#BCCCC8"></span><span style="font-size:13.5px;color:#E7F0EE">Secondary #BCCCC8</span></div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#BCCCC8;font-family:'IBM Plex Mono',monospace">10.9 : 1</div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#56C7BA">Pass</div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#BCCCC8">Fine</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.7fr 1.3fr;border-top:1px solid rgba(255,255,255,0.06);align-items:center">
+            <div style="padding:14px 18px;display:flex;align-items:center;gap:10px"><span style="width:13px;height:13px;border-radius:4px;background:#7D938E"></span><span style="font-size:13.5px;color:#E7F0EE">Muted #7D938E</span></div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#BCCCC8;font-family:'IBM Plex Mono',monospace">6.0 : 1</div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#56C7BA">Pass</div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#BCCCC8">Fine on flat panel; fails over artwork</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.7fr 1.3fr;border-top:1px solid rgba(255,255,255,0.06);align-items:center">
+            <div style="padding:14px 18px;display:flex;align-items:center;gap:10px"><span style="width:13px;height:13px;border-radius:4px;background:#5F736F"></span><span style="font-size:13.5px;color:#E7F0EE">Faint #5F736F</span></div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#E9A98D;font-family:'IBM Plex Mono',monospace">3.9 : 1</div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#E9A98D">Fail</div>
+            <div style="padding:14px 18px;font-size:13.5px;color:#BCCCC8">Used for 11.5px status text, timestamps, "AAC", volume value</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">Theme.xaml</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Faint tier fails at body sizes</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(233,169,141,0.13);border:1px solid rgba(233,169,141,0.32);color:#E9A98D;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">High</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">Faint at 3.9:1 is below AA for anything under 18.66px, and it's currently carrying the 11.5–12px status lines, the history timestamps, the codec chip and the volume readout — small text, which needs <em style="font-style:normal;color:#E7F0EE">more</em> contrast, not less. It's a token change, so it propagates for free.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">Lift Faint from <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">#5F736F</span> to <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">#8A9F9A</span> (≈7.1:1) and reserve the old value for non-text only — hairlines, disabled glyphs, decorative separators. The tonal relationship between the tiers is preserved; the bottom step just stops being decorative.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">All modes</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Hit targets under 32px</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(230,200,138,0.13);border:1px solid rgba(230,200,138,0.3);color:#E6C88A;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">Medium</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">The 28×28 ghost squares (add station, row edit, row delete) sit below the Fluent 32px minimum, and edit/delete are adjacent with an ~8px gap — a mis-click deletes a station. The underline sub-tabs are text-only with no vertical padding, giving roughly a 16px tall target. The row save glyphs read as ~24px.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">32×32 minimum on all icon buttons (keep the 13–20px glyph, grow the padding — nothing moves visually). Sub-tabs get <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">Padding="2,8"</span> for a 32px band. Delete gets a confirm, or an undo line in the status slot for 5 seconds.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:210px 1fr;gap:34px;padding:26px 0;border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7D938E">All modes</div>
+          <div style="font-size:13.5px;color:#E7F0EE;font-weight:500;line-height:1.45">Focus visuals &amp; colour-alone cues</div>
+          <span style="align-self:flex-start;padding:3px 9px 4px;border-radius:6px;background:rgba(230,200,138,0.13);border:1px solid rgba(230,200,138,0.3);color:#E6C88A;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase">Medium</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#BCCCC8;text-wrap:pretty">The only focus indicator visible anywhere is WPF's default dotted rectangle on the pause button — which is both ugly and inconsistent. For an app someone keeps open all day, keyboard operation deserves a real ring. Most state cues are honest (selected row = teal tint <em style="font-style:normal;color:#E7F0EE">plus</em> a 2px bar; playing = equalizer motion; LIVE = dot plus word), but two rely on colour alone: mode pill selection is tint-only aside from the border, and DJ session active/inactive is conveyed only by two identically-styled teal buttons.</p>
+          <sc-if value="{{ showFixes }}" hint-placeholder-val="{{ true }}">
+            <div style="border-left:2px solid #56C7BA;background:rgba(86,199,186,0.07);border-radius:0 8px 8px 0;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Change to</div>
+              <div style="font-size:14px;line-height:1.65;color:#E7F0EE">One <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">FocusVisualStyle</span> in Theme.xaml: 2px <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">#56C7BA</span> ring, 3px offset, matching the control's radius; suppress the default dotted rect. Make the selected mode pill SemiBold as well as tinted, and let Start/Stop swap rather than sit side by side.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:104px">
+      <div style="display:flex;align-items:baseline;gap:16px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#56C7BA;letter-spacing:0.08em">07</div>
+        <h2 style="margin:0;font-size:32px;font-weight:400;color:#F3F9F7;letter-spacing:-0.01em">Prioritised recommendations</h2>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.08);margin:22px 0 26px"></div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:start">
+
+        <sc-if value="{{ showQuick }}" hint-placeholder-val="{{ true }}">
+          <div style="border:1px solid rgba(86,199,186,0.3);background:rgba(86,199,186,0.05);border-radius:14px;padding:26px 24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">a · Quick wins</div>
+              <div style="font-size:12.5px;color:#7D938E;line-height:1.5">Token, copy and spacing edits. Mostly Theme.xaml.</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:13px">
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">01</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Add the vertical + bottom scrims behind the Now Playing content column.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">02</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Lift Faint to <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">#8A9F9A</span>; retire the old value to non-text.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">03</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Fix the clipped DJ placeholder; move the explanation to helper text.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">04</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Hide the Curate helper line while curating; hide DJ's empty state during warm-up.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">05</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Demote Stop to a ghost button; disable it when idle; drop its sparkle.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">06</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Strip empty metadata fields — no more <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">( / 1965)</span> in a 44px title.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">07</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">32×32 minimum on every icon button; 32px band on sub-tabs.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">08</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Add the teal FocusVisualStyle; kill the dotted default.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">09</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Swap DJ's steady-state spinner for the pulsing live dot.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">10</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Apply the copy table; standardise on station / song / library / session / mix.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">11</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Quieten the "Not playing" state and give it a next step per mode.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">12</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Show dates on history timestamps once they cross midnight.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">13</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Label the codec chip, or move it beside the LIVE badge as "LIVE · AAC".</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px">14</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Don't title-case the user's prompt into a playlist name — keep it verbatim, in quotes.</span></div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showMedium }}" hint-placeholder-val="{{ true }}">
+          <div style="border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);border-radius:14px;padding:26px 24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#E6C88A">b · Worthwhile medium</div>
+              <div style="font-size:12.5px;color:#7D938E;line-height:1.5">New shared components, no skeleton change.</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:13px">
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">01</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">One <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">PanelState</span> control (Empty / Loading / Content / Error) across all six list panels — kills two live bugs and supplies the missing error state.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">02</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Staged progress + Cancel for the 30s+ AI operations, with skeleton rows instead of an empty panel.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">03</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Two row templates only — 44px compact and 60px with description — applied to every list, ending Library's mixed rows.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">04</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Theme both dialogs into the app shell, with a scrim and teal primary buttons.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">05</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Reclaim the sparkle for AI; give save-to-library its own three-state glyph.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">06</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Restructure DJ's left panel: session block, status inside the panel it describes, sub-tabs aligned with the other modes.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">07</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Show the per-pick reason the brief promises on curated playlist rows.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">08</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Content tab first in every mode: Stations / Search · Songs / Curate · Mix / Sources.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">09</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Give the transport a defined surface strip so it never floats on bright artwork.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">10</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Move "add station" into the Stations list header; retire the stranded bottom-left +.</span></div>
+              <div style="display:flex;gap:11px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#E6C88A;padding-top:2px">11</span><span style="font-size:13.5px;line-height:1.6;color:#E7F0EE">Promote the DJ intro line: 15px italic at Secondary in a bordered block, not 12.5px muted over artwork. It's the mode's signature and it's currently the hardest thing to read.</span></div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showBig }}" hint-placeholder-val="{{ true }}">
+          <div style="border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);border-radius:14px;padding:26px 24px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#BCCCC8">c · Bigger ideas</div>
+              <div style="font-size:12.5px;color:#7D938E;line-height:1.5">Worth knowing about even if deferred.</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:14px;color:#F3F9F7;font-weight:500">Make the DJ session a first-class object</div>
+                <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8">A session card at the top of the panel — vibe, elapsed time, stations tuned, songs in the mix, refill health — replaces the status line entirely and gives all five states somewhere structural to live. Harvest rows become little live meters rather than counters.</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:14px;color:#F3F9F7;font-weight:500">Let the artwork respond to what's playing</div>
+                <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8">One fixed image with a bright diagonal will fight every layout you put over it forever. Either derive a heavily-darkened blur from station/album art, or ship 3–4 ambient variants that rotate slowly — same calm, no hotspots.</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:14px;color:#F3F9F7;font-weight:500">One save model across all three modes</div>
+                <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8">Right now saving exists only in Radio history. Every song surface — DJ history, curated queue, Now Playing — should offer the same affordance and the same confirmation. That's what makes the library feel like the centre of the app rather than a third tab.</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:14px;color:#F3F9F7;font-weight:500">Show what's next</div>
+                <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8">Library and DJ both play from a queue but never show the next track in Now Playing. A single "Up next · <span style="color:#7D938E">Title — Artist</span>" line under the transport would do it, and it's the thing a listener most often wants to know without switching panels.</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:14px;color:#F3F9F7;font-weight:500">Keyboard-first operation</div>
+                <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8">For a hands-off, hours-long app: a defined tab order, space to play/pause, <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">Ctrl+K</span> to focus whichever prompt the current mode owns, <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">Ctrl+S</span> to save the playing song.</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:14px;color:#F3F9F7;font-weight:500">About this track as a rail, not a swap</div>
+                <div style="font-size:13.5px;line-height:1.6;color:#BCCCC8">Currently it hides Now Playing, so you lose sight of what's playing while reading about it. If the window can widen, a third column keeps both; if not, an inline expansion under the title would preserve context.</div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+
+    <div style="margin-top:88px;padding-top:26px;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:baseline;gap:24px;flex-wrap:wrap">
+      <div style="font-size:12.5px;color:#5F736F">Crystal Radio 1.5.0 · audit against 18 screens, the design-token summary and the product brief</div>
+      <div style="font-size:12.5px;color:#5F736F">Skeleton preserved throughout — no recommendation moves the left panel / Now Playing split</div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showFixes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Audit display&quot;},&quot;showContrastTable&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Audit display&quot;},&quot;priorityFocus&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;all&quot;,&quot;quick wins&quot;,&quot;medium&quot;,&quot;bigger ideas&quot;],&quot;default&quot;:&quot;all&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Audit display&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const focus = p.priorityFocus ?? 'all';
+    return {
+      showFixes: p.showFixes ?? true,
+      showContrastTable: p.showContrastTable ?? true,
+      showQuick: focus === 'all' || focus === 'quick wins',
+      showMedium: focus === 'all' || focus === 'medium',
+      showBig: focus === 'all' || focus === 'bigger ideas',
+    };
+  }
+}
+</script>
+</body>
+</html>

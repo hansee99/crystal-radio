@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#0A1211; }
+  body { font-family:'Hanken Grotesk', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#56C7BA; text-decoration:none; }
+  a:hover { color:#8FE0D5; }
+  @keyframes eqbar { 0%,100% { height:4px } 50% { height:14px } }
+  @keyframes livepulse { 0%,100% { opacity:1; transform:scale(1) } 50% { opacity:0.45; transform:scale(0.82) } }
+  @keyframes spin { to { transform:rotate(360deg) } }
+</style>
+</helmet>
+
+<div style="background:#0A1211;min-height:100vh;box-sizing:border-box;min-width:1320px;padding:40px 40px 90px;display:flex;flex-direction:column;gap:26px;font-family:'Hanken Grotesk',system-ui,sans-serif">
+
+  <div style="width:1240px;margin:0 auto;display:flex;justify-content:space-between;align-items:flex-end;gap:30px;flex-wrap:wrap">
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.18em;color:#7D938E;text-transform:uppercase">Mockup · DJ mode restructure</div>
+      <div style="font-size:27px;color:#F3F9F7;font-weight:400;letter-spacing:-0.01em">Session block, status where it belongs</div>
+      <div style="font-size:14px;color:#8A9F9A;max-width:70ch;line-height:1.6">Implements b06, b08, b10 and b11. Same window skeleton, same split — five control rows collapse to two, and every state now has a structural home.</div>
+    </div>
+    <div style="display:flex;gap:8px;padding:5px;border-radius:11px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)">
+      <button type="button" onClick="{{ setIdle }}" style="{{ tabIdle }}">Idle</button>
+      <button type="button" onClick="{{ setWarming }}" style="{{ tabWarming }}">Warming up</button>
+      <button type="button" onClick="{{ setSteady }}" style="{{ tabSteady }}">Steady</button>
+    </div>
+  </div>
+
+  <div style="width:1240px;margin:0 auto;box-sizing:border-box;height:772px;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.1);background:#050D0C;box-shadow:0 30px 80px rgba(0,0,0,0.55);display:flex;flex-direction:column">
+
+    <div style="height:46px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 14px 0 18px;background:#07100F;border-bottom:1px solid rgba(255,255,255,0.07)">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div style="display:flex;align-items:center;gap:9px">
+          <div style="width:15px;height:15px;border-radius:5px;background:linear-gradient(135deg,#62D2C4,#2F8F86)"></div>
+          <div style="font-size:12.5px;color:#BCCCC8;font-weight:600;letter-spacing:0.02em">Crystal Radio</div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <div style="padding:5px 13px;border-radius:8px;font-size:12.5px;color:#8A9F9A;border:1px solid transparent">Radio</div>
+          <div style="padding:5px 13px;border-radius:8px;font-size:12.5px;color:#8A9F9A;border:1px solid transparent">Library</div>
+          <div style="padding:5px 13px;border-radius:8px;font-size:12.5px;color:#CDEEE7;font-weight:600;background:rgba(86,199,186,0.14);border:1px solid rgba(86,199,186,0.4)">DJ</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:2px;align-items:center">
+        <div style="width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#8A9F9A;font-size:13px">⚙</div>
+        <div style="width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#8A9F9A;font-size:13px">?</div>
+        <div style="width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#8A9F9A;font-size:15px">─</div>
+        <div style="width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#8A9F9A;font-size:13px">□</div>
+        <div style="width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#8A9F9A;font-size:14px">✕</div>
+      </div>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="width:432px;flex:none;border-right:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;min-height:0;background:#060E0D">
+
+        <div style="padding:18px 20px 0;flex:none;position:relative">
+          <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:16px;right:-1px;display:flex;gap:5px;z-index:5">
+              <span style="padding:2px 7px 3px;border-radius:5px;background:rgba(86,199,186,0.16);border:1px solid rgba(86,199,186,0.45);color:#7FDDD0;font-size:9.5px;font-weight:700;letter-spacing:0.08em;font-family:'IBM Plex Mono',monospace">b06</span>
+            </div>
+          </sc-if>
+
+          <div style="border:1px solid rgba(255,255,255,0.09);border-radius:12px;background:rgba(255,255,255,0.025);padding:14px 14px 13px;display:flex;flex-direction:column;gap:11px">
+
+            <sc-if value="{{ isIdle }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;align-items:center;gap:8px;padding:0 4px 0 12px;height:42px;border-radius:10px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.12)">
+                  <div style="flex:1;font-size:13.5px;color:#8A9F9A">Describe a vibe…</div>
+                  <button type="button" onClick="{{ setWarming }}" style="height:32px;padding:0 14px;border:none;border-radius:8px;background:#56C7BA;color:#04100E;font-size:12.5px;font-weight:700;font-family:inherit;display:flex;align-items:center;gap:6px;cursor:pointer">✦ Start</button>
+                </div>
+                <div style="font-size:12px;color:#8A9F9A;line-height:1.55;padding:0 2px">We'll find stations, record the good bits, and keep it playing.</div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isRunning }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:11px">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+                  <div style="display:flex;flex-direction:column;gap:5px;min-width:0">
+                    <div style="font-size:9.5px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#7D938E">This session</div>
+                    <div style="font-size:15px;color:#F3F9F7;font-weight:500;line-height:1.35">{{ vibeText }}</div>
+                  </div>
+                  <button type="button" onClick="{{ setIdle }}" style="flex:none;height:32px;padding:0 13px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.16);color:#BCCCC8;font-size:12.5px;font-weight:500;font-family:inherit;cursor:pointer">End session</button>
+                </div>
+                <div style="display:flex;align-items:center;gap:9px;padding-top:2px">
+                  <span style="width:6px;height:6px;border-radius:50%;background:{{ dotColor }};animation:livepulse 1.6s ease-in-out infinite;flex:none"></span>
+                  <span style="font-size:12.5px;color:#BCCCC8">{{ sessionMeta }}</span>
+                </div>
+              </div>
+            </sc-if>
+
+          </div>
+        </div>
+
+        <div style="padding:16px 20px 0;flex:none;position:relative">
+          <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;top:14px;right:-1px;z-index:5">
+              <span style="padding:2px 7px 3px;border-radius:5px;background:rgba(86,199,186,0.16);border:1px solid rgba(86,199,186,0.45);color:#7FDDD0;font-size:9.5px;font-weight:700;letter-spacing:0.08em;font-family:'IBM Plex Mono',monospace">b08</span>
+            </div>
+          </sc-if>
+          <div style="display:flex;gap:22px;border-bottom:1px solid rgba(255,255,255,0.07)">
+            <button type="button" onClick="{{ setTabMix }}" style="{{ subTabMix }}">Mix</button>
+            <button type="button" onClick="{{ setTabSources }}" style="{{ subTabSources }}">Sources</button>
+          </div>
+        </div>
+
+        <div style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+
+          <div style="flex:none;padding:15px 20px 10px;display:flex;align-items:center;justify-content:space-between;gap:12px;position:relative">
+            <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+              <div style="position:absolute;top:-4px;left:20px;z-index:5">
+                <span style="padding:2px 7px 3px;border-radius:5px;background:rgba(86,199,186,0.16);border:1px solid rgba(86,199,186,0.45);color:#7FDDD0;font-size:9.5px;font-weight:700;letter-spacing:0.08em;font-family:'IBM Plex Mono',monospace">b10</span>
+              </div>
+            </sc-if>
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#8A9F9A">{{ listHeading }}</div>
+            <div style="display:flex;gap:2px;align-items:center">
+              <div title="{{ headerActionTitle }}" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;color:#BCCCC8;font-size:14px;background:rgba(255,255,255,0.03)">{{ headerActionGlyph }}</div>
+            </div>
+          </div>
+
+          <div style="flex:1;min-height:0;overflow-y:auto;padding:0 12px 16px">
+
+            <sc-if value="{{ showChecklist }}" hint-placeholder-val="{{ false }}">
+              <div style="margin:0 8px;padding:16px 16px 15px;border-radius:11px;border:1px solid rgba(86,199,186,0.22);background:rgba(86,199,186,0.05);display:flex;flex-direction:column;gap:12px">
+                <sc-for list="{{ steps }}" as="step" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:11px">
+                    <span style="width:16px;flex:none;text-align:center;font-size:12px;color:{{ step.color }};animation:{{ step.anim }}">{{ step.glyph }}</span>
+                    <span style="font-size:13.5px;color:{{ step.textColor }};line-height:1.4">{{ step.label }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ showEmpty }}" hint-placeholder-val="{{ false }}">
+              <div style="margin:36px 20px 0;display:flex;flex-direction:column;gap:8px;align-items:flex-start">
+                <div style="font-size:15px;color:#BCCCC8;line-height:1.5">{{ emptyTitle }}</div>
+                <div style="font-size:13px;color:#8A9F9A;line-height:1.55;max-width:36ch">{{ emptyBody }}</div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ showMixRows }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column">
+                <sc-for list="{{ mixRows }}" as="row" hint-placeholder-count="5">
+                  <div style="height:44px;display:flex;align-items:center;gap:12px;padding:0 10px;border-radius:9px;background:{{ row.bg }}">
+                    <div style="width:28px;height:28px;flex:none;border-radius:7px;background:{{ row.tileBg }};display:flex;align-items:center;justify-content:center;gap:2px;overflow:hidden">
+                      <span style="font-size:11px;color:{{ row.tileColor }};font-family:'IBM Plex Mono',monospace">{{ row.tileText }}</span>
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                      <div style="font-size:13.5px;color:{{ row.titleColor }};font-weight:{{ row.titleWeight }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ row.title }}</div>
+                      <div style="font-size:11.5px;color:#8A9F9A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ row.artist }}</div>
+                    </div>
+                    <div style="flex:none;font-size:11px;color:#8A9F9A;font-family:'IBM Plex Mono',monospace">{{ row.dur }}</div>
+                    <div style="width:32px;height:32px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;color:{{ row.saveColor }};font-size:13px">{{ row.saveGlyph }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ showSourceRows }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column">
+                <sc-for list="{{ sourceRows }}" as="src" hint-placeholder-count="4">
+                  <div style="min-height:52px;display:flex;align-items:center;gap:12px;padding:7px 10px;border-radius:9px">
+                    <div style="width:28px;height:28px;flex:none;border-radius:7px;background:rgba(255,255,255,0.06);display:flex;align-items:flex-end;justify-content:center;gap:2px;padding-bottom:7px">{{ src.meter }}</div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                      <div style="font-size:13.5px;color:#E7F0EE;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ src.name }}</div>
+                      <div style="font-size:11.5px;color:{{ src.statusColor }}">{{ src.status }}</div>
+                    </div>
+                    <div style="flex:none;font-size:11px;color:#8A9F9A;font-family:'IBM Plex Mono',monospace">{{ src.count }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1;min-width:0;position:relative;overflow:hidden;background:linear-gradient(118deg,#0B1A18 0%,#123029 38%,#2E4A3C 58%,#6E7A5E 78%,#C9C0A2 100%)">
+        <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,13,12,0.95) 0%,rgba(5,13,12,0.78) 42%,rgba(5,13,12,0) 78%)"></div>
+        <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,13,12,0) 45%,rgba(5,13,12,0.9) 100%)"></div>
+
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;padding:30px 34px 26px">
+
+          <div style="display:flex;flex-direction:column;gap:15px;max-width:52ch">
+            <sc-if value="{{ showBadge }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="display:flex;align-items:center;gap:7px;padding:4px 10px 5px;border-radius:6px;background:{{ badgeBg }};border:1px solid {{ badgeBorder }}">
+                  <span style="width:6px;height:6px;border-radius:50%;background:{{ badgeDot }};animation:livepulse 1.6s ease-in-out infinite"></span>
+                  <span style="font-size:10px;font-weight:700;letter-spacing:0.14em;color:{{ badgeText }}">{{ badgeLabel }}</span>
+                </div>
+                <div style="font-size:11.5px;color:#8A9F9A;font-family:'IBM Plex Mono',monospace">{{ badgeMeta }}</div>
+              </div>
+            </sc-if>
+
+            <div style="display:flex;flex-direction:column;gap:{{ titleGap }}">
+              <div style="font-size:{{ titleSize }};font-weight:{{ titleWeight }};color:{{ titleColor }};line-height:1.1;letter-spacing:-0.015em;text-wrap:pretty">{{ npTitle }}</div>
+              <div style="font-size:{{ subSize }};font-weight:300;color:#BCCCC8;line-height:1.4">{{ npSub }}</div>
+            </div>
+
+            <sc-if value="{{ showStationChip }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 11px 6px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);align-self:flex-start">
+                <span style="font-size:11px;color:#8A9F9A">from</span>
+                <span style="font-size:12px;color:#CDEEE7">{{ npStation }}</span>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:18px">
+
+            <sc-if value="{{ showIntro }}" hint-placeholder-val="{{ false }}">
+              <div style="position:relative;max-width:62ch">
+                <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+                  <div style="position:absolute;top:-9px;left:14px;z-index:5">
+                    <span style="padding:2px 7px 3px;border-radius:5px;background:rgba(86,199,186,0.18);border:1px solid rgba(86,199,186,0.5);color:#7FDDD0;font-size:9.5px;font-weight:700;letter-spacing:0.08em;font-family:'IBM Plex Mono',monospace">b11</span>
+                  </div>
+                </sc-if>
+                <div style="border:1px solid rgba(86,199,186,0.26);background:rgba(6,18,16,0.72);border-radius:12px;padding:15px 17px 16px;display:flex;flex-direction:column;gap:9px">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:11px;color:#56C7BA">✦</span>
+                    <span style="font-size:9.5px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#56C7BA">Your DJ</span>
+                  </div>
+                  <div style="font-size:15px;font-style:italic;font-weight:300;color:#D8E5E1;line-height:1.6;text-wrap:pretty">{{ introText }}</div>
+                </div>
+              </div>
+            </sc-if>
+
+            <div style="display:flex;flex-direction:column;gap:13px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="font-size:11px;color:#8A9F9A;font-family:'IBM Plex Mono',monospace;width:34px">{{ elapsed }}</span>
+                <div style="flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,0.14);overflow:hidden">
+                  <div style="width:{{ seekPct }};height:100%;background:#56C7BA;border-radius:2px"></div>
+                </div>
+                <span style="font-size:11px;color:#8A9F9A;font-family:'IBM Plex Mono',monospace;width:34px;text-align:right">{{ total }}</span>
+              </div>
+
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:20px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#BCCCC8;font-size:13px;border:1px solid rgba(255,255,255,0.12)">⏮</div>
+                  <div style="width:52px;height:52px;border-radius:50%;background:{{ playBg }};box-shadow:{{ playGlow }};display:flex;align-items:center;justify-content:center;color:#04100E;font-size:17px">{{ playGlyph }}</div>
+                  <div style="width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#BCCCC8;font-size:13px;border:1px solid rgba(255,255,255,0.12)">⏭</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:11px;min-width:190px">
+                  <span style="font-size:13px;color:#BCCCC8">🔈</span>
+                  <div style="flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,0.14);overflow:hidden">
+                    <div style="width:72%;height:100%;background:#8A9F9A;border-radius:2px"></div>
+                  </div>
+                  <span style="font-size:11px;color:#8A9F9A;font-family:'IBM Plex Mono',monospace;width:26px;text-align:right">72</span>
+                </div>
+              </div>
+
+              <sc-if value="{{ showUpNext }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:9px;padding-top:3px">
+                  <span style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Up next</span>
+                  <span style="font-size:12.5px;color:#BCCCC8">{{ upNext }}</span>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="width:1240px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:6px">
+    <div style="padding:18px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);display:flex;flex-direction:column;gap:8px">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:0.08em;color:#56C7BA">b06 · Session block</div>
+      <div style="font-size:13px;line-height:1.6;color:#BCCCC8">Prompt + inline Start replace two full-width pills. Once running, the block becomes the session record: vibe, live dot, counts. End session is a ghost button and only exists while there's something to end.</div>
+    </div>
+    <div style="padding:18px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);display:flex;flex-direction:column;gap:8px">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:0.08em;color:#56C7BA">b08 · Content first</div>
+      <div style="font-size:13px;line-height:1.6;color:#BCCCC8">Mix leads, Sources second — matching Stations-then-Search and Songs-then-Curate. Tabs get a 32px band and sit at the same baseline as the other two modes.</div>
+    </div>
+    <div style="padding:18px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);display:flex;flex-direction:column;gap:8px">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:0.08em;color:#56C7BA">b10 · Header action</div>
+      <div style="font-size:13px;line-height:1.6;color:#BCCCC8">The 32×32 action lives in the list header it acts on, not stranded at the panel foot — save the whole mix on Mix, add a station to the pool on Sources.</div>
+    </div>
+    <div style="padding:18px 20px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);display:flex;flex-direction:column;gap:8px">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:0.08em;color:#56C7BA">b11 · DJ intro promoted</div>
+      <div style="font-size:13px;line-height:1.6;color:#BCCCC8">15px italic Secondary in its own bordered block on a solid surface — the mode's signature line, no longer 12.5px muted text floating on artwork.</div>
+    </div>
+  </div>
+
+  <div style="width:1240px;margin:0 auto;box-sizing:border-box;padding:18px 22px;border-radius:12px;border:1px solid rgba(86,199,186,0.25);background:rgba(86,199,186,0.05);display:flex;flex-direction:column;gap:7px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Also visible here</div>
+    <div style="font-size:13.5px;line-height:1.65;color:#D8E5E1">The status line has moved <em style="font-style:normal;color:#F3F9F7">inside</em> the panel it describes, so the "warming up" checklist now occupies the space that used to say "Not harvesting yet" (b02/a04). Now Playing shows the bridging station live during warm-up instead of "Not playing". Steady state uses the pulsing dot, not a spinner. Source rows read "Listening… / 6 songs" rather than "0 song titles seen", and every icon button is 32×32.</div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1320,&quot;height&quot;:1200},&quot;showAnnotations&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Mockup&quot;},&quot;vibe&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Motorik krautrock — long instrumentals, few vocals&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Mockup&quot;}}">
+class Component extends DCLogic {
+  state = { phase: 'warming', tab: 'mix' };
+
+  pill(active) {
+    return 'height:32px;padding:0 15px;border-radius:8px;border:1px solid ' +
+      (active ? 'rgba(86,199,186,0.45)' : 'transparent') +
+      ';background:' + (active ? 'rgba(86,199,186,0.14)' : 'transparent') +
+      ';color:' + (active ? '#CDEEE7' : '#8A9F9A') +
+      ';font-size:12.5px;font-weight:' + (active ? '600' : '500') +
+      ';font-family:inherit;cursor:pointer';
+  }
+
+  subTab(active) {
+    return 'padding:2px 2px 10px;background:none;border:none;border-bottom:2px solid ' +
+      (active ? '#56C7BA' : 'transparent') +
+      ';color:' + (active ? '#F3F9F7' : '#8A9F9A') +
+      ';font-size:13.5px;font-weight:' + (active ? '600' : '500') +
+      ';font-family:inherit;cursor:pointer;margin-bottom:-1px;min-height:32px';
+  }
+
+  step(label, state) {
+    const map = {
+      done:    { glyph: '✓', color: '#56C7BA', textColor: '#D8E5E1', anim: 'none' },
+      active:  { glyph: '◐', color: '#56C7BA', textColor: '#F3F9F7', anim: 'spin 1.4s linear infinite' },
+      pending: { glyph: '○', color: '#5F736F', textColor: '#8A9F9A', anim: 'none' },
+    };
+    return Object.assign({ label }, map[state]);
+  }
+
+  meter(bars) {
+    const el = [];
+    for (let i = 0; i < 3; i++) {
+      el.push(React.createElement('span', {
+        key: i,
+        style: {
+          width: '2px', flex: 'none', borderRadius: '1px',
+          background: i < bars ? '#56C7BA' : 'rgba(255,255,255,0.18)',
+          height: i < bars ? '10px' : '4px',
+          animation: i < bars ? 'eqbar ' + (0.9 + i * 0.25) + 's ease-in-out infinite' : 'none',
+        },
+      }));
+    }
+    return el;
+  }
+
+  renderVals() {
+    const p = this.props;
+    const { phase, tab } = this.state;
+    const idle = phase === 'idle', warming = phase === 'warming', steady = phase === 'steady';
+    const onMix = tab === 'mix';
+
+    const mixRows = [
+      { title: 'Hallogallo', artist: 'Neu!', dur: '10:06', playing: true },
+      { title: 'Moonshake', artist: 'Can', dur: '3:04', saved: true },
+      { title: 'E2–E4 (excerpt)', artist: 'Manuel Göttsching', dur: '8:12' },
+      { title: 'Dyed in the Wool', artist: 'Cluster', dur: '5:47', saved: true },
+      { title: 'Autobahn (edit)', artist: 'Kraftwerk', dur: '9:31' },
+      { title: 'Negativland', artist: 'Neu!', dur: '9:45' },
+      { title: 'Spoon', artist: 'Can', dur: '3:02' },
+      { title: 'Sowiesoso', artist: 'Cluster', dur: '4:58' },
+    ].map((r) => ({
+      title: r.title,
+      artist: r.artist,
+      dur: r.dur,
+      bg: r.playing ? 'rgba(86,199,186,0.1)' : 'transparent',
+      tileBg: r.playing ? 'rgba(86,199,186,0.2)' : 'rgba(255,255,255,0.06)',
+      tileColor: r.playing ? '#56C7BA' : '#8A9F9A',
+      tileText: r.playing ? '▶' : '♪',
+      titleColor: r.playing ? '#CDEEE7' : '#E7F0EE',
+      titleWeight: r.playing ? '600' : '400',
+      saveGlyph: r.saved ? '✓' : '＋',
+      saveColor: r.saved ? '#56C7BA' : '#5F736F',
+    }));
+
+    const sourceRows = [
+      { name: 'Radio Krautrock Berlin', status: 'Recording', count: '6 songs', bars: 3, live: true },
+      { name: 'Motorik FM', status: 'Recording', count: '4 songs', bars: 2, live: true },
+      { name: 'NDW Archive Stream', status: 'Listening…', count: '2 songs', bars: 1, live: true },
+      { name: 'Cosmic Couriers Radio', status: 'Quiet for 8 min', count: '0 songs', bars: 0, live: false },
+    ].map((s) => ({
+      name: s.name,
+      status: s.status,
+      count: s.count,
+      statusColor: s.live ? '#56C7BA' : '#8A9F9A',
+      meter: this.meter(s.bars),
+    }));
+
+    const warmSteps = [
+      this.step('Found 6 stations for your vibe', 'done'),
+      this.step('Checking they actually play', 'active'),
+      this.step('Recording the first songs', 'pending'),
+    ];
+
+    let sessionMeta = '', dotColor = '#56C7BA';
+    if (warming) { sessionMeta = 'Warming up · bridging a live station'; dotColor = '#E6C88A'; }
+    if (steady) { sessionMeta = 'Tuned into 4 stations · 12 songs in the mix · 41 min'; }
+
+    const showMixRows = onMix && steady;
+    const showSourceRows = !onMix && (steady || warming);
+    const showChecklist = warming && onMix;
+    const showEmpty = idle;
+
+    let emptyTitle = '', emptyBody = '';
+    if (idle && onMix) {
+      emptyTitle = 'No mix yet.';
+      emptyBody = 'Describe a vibe above and the DJ builds one from live radio — it keeps playing while it collects.';
+    } else if (idle) {
+      emptyTitle = 'No stations in the pool.';
+      emptyBody = 'Start a session and the stations it tunes into show up here, with what each one is contributing.';
+    }
+
+    return {
+      showAnnotations: p.showAnnotations ?? true,
+      isIdle: idle,
+      isRunning: warming || steady,
+      isWarming: warming,
+
+      setIdle: () => this.setState({ phase: 'idle', tab: 'mix' }),
+      setWarming: () => this.setState({ phase: 'warming', tab: 'mix' }),
+      setSteady: () => this.setState({ phase: 'steady' }),
+      setTabMix: () => this.setState({ tab: 'mix' }),
+      setTabSources: () => this.setState({ tab: 'sources' }),
+
+      tabIdle: this.pill(idle),
+      tabWarming: this.pill(warming),
+      tabSteady: this.pill(steady),
+      subTabMix: this.subTab(onMix),
+      subTabSources: this.subTab(!onMix),
+
+      vibeText: p.vibe ?? 'Motorik krautrock — long instrumentals, few vocals',
+      sessionMeta,
+      dotColor,
+
+      listHeading: onMix ? 'In the mix' : 'Stations in the pool',
+      headerActionGlyph: onMix ? '＋' : '⟳',
+      headerActionTitle: onMix ? 'Save the whole mix to your library' : 'Add a station to the pool',
+
+      steps: warmSteps,
+      showChecklist,
+      showEmpty,
+      showMixRows,
+      showSourceRows,
+      emptyTitle,
+      emptyBody,
+      mixRows,
+      sourceRows,
+
+      showBadge: !idle,
+      badgeLabel: warming ? 'BRIDGING' : 'LIVE',
+      badgeBg: warming ? 'rgba(230,200,138,0.14)' : 'rgba(86,199,186,0.14)',
+      badgeBorder: warming ? 'rgba(230,200,138,0.4)' : 'rgba(86,199,186,0.42)',
+      badgeDot: warming ? '#E6C88A' : '#56C7BA',
+      badgeText: warming ? '#E6C88A' : '#7FDDD0',
+      badgeMeta: warming ? 'until the mix fills' : 'AAC 128k',
+
+      npTitle: idle ? 'Nothing playing' : (warming ? 'Radio Krautrock Berlin' : 'Hallogallo'),
+      npSub: idle ? 'Describe a vibe to start a session.' : (warming ? 'Bridging live while the mix fills' : 'Neu! · 1972'),
+      titleSize: idle ? '28px' : '44px',
+      titleWeight: idle ? '300' : '400',
+      titleColor: idle ? '#BCCCC8' : '#F3F9F7',
+      titleGap: idle ? '10px' : '7px',
+      subSize: idle ? '15px' : '20px',
+      showStationChip: steady,
+      npStation: 'Radio Krautrock Berlin',
+
+      showIntro: !idle,
+      introText: warming
+        ? "Give me a minute — I'm finding stations that actually play this stuff, not just tag it."
+        : "Neu! more or less invented the beat everything else here is built on. Two drummers' worth of patience in one take.",
+
+      elapsed: idle ? '0:00' : (warming ? '0:14' : '3:41'),
+      total: idle ? '0:00' : (warming ? 'LIVE' : '10:06'),
+      seekPct: idle ? '0%' : (warming ? '100%' : '36%'),
+      playGlyph: idle ? '▶' : '❚❚',
+      playBg: idle ? 'rgba(86,199,186,0.35)' : '#56C7BA',
+      playGlow: idle ? 'none' : '0 0 26px rgba(86,199,186,0.45)',
+      showUpNext: steady,
+      upNext: 'Moonshake — Can',
+    };
+  }
+}
+</script>
+</body>
+</html>

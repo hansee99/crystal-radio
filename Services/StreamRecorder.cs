@@ -10,6 +10,28 @@ namespace RadioPlayer.Services;
 public sealed record CompletedSegment(
     string FileName, long Bytes, string Title, string? Artist, string? Station, DateTime StartedAt);
 
+/// <summary>Why a captured segment was dropped at its end boundary instead of being announced.</summary>
+public enum DiscardReason
+{
+    /// <summary>The session's first boundary closed a segment we joined mid-song. Expected once
+    /// per connection — and useful, because it proves the station announced a title at all.</summary>
+    MidSongHead,
+
+    /// <summary>Below the minimum size — a sweeper or ident, or two boundaries almost together
+    /// (a station re-announcing the same title mid-track leaves exactly this kind of sliver).</summary>
+    TooShort,
+
+    /// <summary>Rejected by <see cref="SongHistoryFilter"/>: no artist part, an ad marker, or a
+    /// title/artist containing the station's own name.</summary>
+    NotSongLike,
+
+    /// <summary>The capture file couldn't be closed cleanly, so its contents aren't trustworthy.</summary>
+    WriteFailed
+}
+
+/// <summary>A boundary that produced nothing, and why. Diagnostic only — nothing acts on it.</summary>
+public sealed record DiscardedSegment(DiscardReason Reason, string? Title, string? Artist, long Bytes);
+
 /// <summary>
 /// The rolling audio cache: receives the raw encoded bytes of the stream being played (via the
 /// engine's download callback — same connection as playback, no re-encode) and cuts them into
@@ -36,9 +58,16 @@ public sealed record CompletedSegment(
 /// </summary>
 public sealed class StreamRecorder : IDisposable
 {
+    /// <summary>Default cache directory — the live "Save Song"/RadioEngine recorder's own
+    /// scratch space. A <see cref="StreamRecorder"/> instance backing a headless harvester
+    /// passes its own directory to the constructor instead (see <see cref="_cacheDir"/>), so
+    /// concurrent instances (N harvesters, or a harvester alongside this live recorder) never
+    /// write into the same folder.</summary>
     public static readonly string CacheDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "RadioPlayer", "cache");
+
+    private readonly string _cacheDir;
 
     // A "complete" segment shorter than this is almost certainly a sweeper/ident that slipped
     // the title filter (~12s at 128 kbps), not a song worth offering to save.
@@ -76,16 +105,29 @@ public sealed class StreamRecorder : IDisposable
     /// <summary>Raised on the UI thread when a song's segment finished capturing completely.</summary>
     public event EventHandler<CompletedSegment>? SegmentCompleted;
 
+    /// <summary>
+    /// Raised on the UI thread when a boundary arrived but its segment was dropped. Diagnostic
+    /// only — the live recorder ignores it; DJ mode logs it, because otherwise a station that
+    /// announces nothing and a station whose every announcement is filtered out are
+    /// indistinguishable in the session log.
+    /// </summary>
+    public event EventHandler<DiscardedSegment>? SegmentDiscarded;
+
     /// <param name="boundaryOffsetSeconds">How far the stream's title changes lead its audio;
     /// cuts are delayed by this much. Station encoders differ — ~6s fits many.</param>
-    public StreamRecorder(double boundaryOffsetSeconds = 6.0)
+    /// <param name="cacheDir">Scratch directory for in-progress/completed segment files before
+    /// the caller copies a keeper elsewhere. Defaults to <see cref="CacheDir"/> (the live
+    /// recorder's shared space); pass a dedicated directory for a headless harvester instance
+    /// so concurrent recorders never collide.</param>
+    public StreamRecorder(double boundaryOffsetSeconds = 6.0, string? cacheDir = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         _boundaryOffsetSeconds = Math.Clamp(boundaryOffsetSeconds, 0.0, 30.0);
+        _cacheDir = cacheDir ?? CacheDir;
     }
 
-    /// <summary>Absolute path of a cached segment file.</summary>
-    public static string PathFor(string fileName) => Path.Combine(CacheDir, fileName);
+    /// <summary>Absolute path of one of this instance's cached segment files.</summary>
+    public string PathFor(string fileName) => Path.Combine(_cacheDir, fileName);
 
     /// <summary>
     /// Starts a capture session for a new stream connection. Returns the session id the engine
@@ -244,8 +286,12 @@ public sealed class StreamRecorder : IDisposable
 
         try
         {
-            Directory.CreateDirectory(CacheDir);
-            _currentPath = $"{DateTime.UtcNow.Ticks}{_extension}";
+            Directory.CreateDirectory(_cacheDir);
+            // Ticks alone risk collisions once several StreamRecorder instances (concurrent
+            // harvesters, or a harvester alongside the live recorder) cut segments within the
+            // same ~15ms clock-resolution window; the suffix makes that effectively impossible
+            // even though instances no longer share a directory anyway (belt and braces).
+            _currentPath = $"{DateTime.UtcNow.Ticks}-{Guid.NewGuid().ToString("N")[..8]}{_extension}";
             _current = new FileStream(PathFor(_currentPath), FileMode.Create, FileAccess.Write, FileShare.Read);
             _currentIsHead = !_seenBoundary; // first cut of the session opens a mid-song segment
             _pending = (_cutNext.Title, _cutNext.Artist, _cutNext.Station, DateTime.Now);
@@ -286,6 +332,7 @@ public sealed class StreamRecorder : IDisposable
             return null;
 
         long bytes = 0;
+        var writeFailed = false;
         try
         {
             bytes = _current.Length;
@@ -293,7 +340,7 @@ public sealed class StreamRecorder : IDisposable
         }
         catch
         {
-            complete = false;
+            writeFailed = true;
         }
         var path = _currentPath!;
         var isHead = _currentIsHead;
@@ -303,12 +350,25 @@ public sealed class StreamRecorder : IDisposable
         _currentIsHead = false;
 
         var keep = complete
+                   && !writeFailed
                    && !isHead
                    && bytes >= MinSegmentBytes
                    && SongHistoryFilter.IsLikelySong(pending.Title, pending.Artist, pending.Station);
         if (!keep)
         {
             TryDelete(PathFor(path));
+            // Only announce discards at a real boundary. A partial tail (complete: false — stop,
+            // reconnect, superseded session) says nothing about the station and would just add
+            // noise. BeginInvoke never runs the handler inline, so raising under the lock is safe.
+            if (complete)
+            {
+                var reason = writeFailed ? DiscardReason.WriteFailed
+                    : isHead ? DiscardReason.MidSongHead
+                    : bytes < MinSegmentBytes ? DiscardReason.TooShort
+                    : DiscardReason.NotSongLike;
+                var discarded = new DiscardedSegment(reason, pending.Title, pending.Artist, bytes);
+                _dispatcher.BeginInvoke(() => SegmentDiscarded?.Invoke(this, discarded));
+            }
             return null;
         }
         return new CompletedSegment(path, bytes, pending.Title, pending.Artist, pending.Station, pending.StartedAt);

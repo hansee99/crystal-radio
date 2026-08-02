@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private readonly EnrichmentStore _enrichmentStore;
     private readonly LibraryStore _libraryStore;
     private readonly MiniLmEmbeddingProvider _embeddingProvider;
+    private readonly DjHarvestService _djHarvest;
     private SmtcController? _smtc;
 
     public MainWindow()
@@ -56,6 +57,7 @@ public partial class MainWindow : Window
             new HttpClient(), searchService, enrichment, apiKey);
         var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
         var trackInfo = new TrackInfoService(new HttpClient(), apiKey); // "About this track" briefings
+        var djIntro = new DjIntroService(new HttpClient(), apiKey);    // DJ Mode "why this song" line
 
         // Phase C: local song-library index (metadata + AI description + local embedding on save).
         _libraryStore = new LibraryStore();
@@ -64,10 +66,27 @@ public partial class MainWindow : Window
         // Phase D: prompt-driven curation over the library index (cosine recall + LLM ordering).
         var curator = new SongCurator(new HttpClient(), _libraryStore, _embeddingProvider, apiKey);
 
+        // DJ mode: harvest pool + edge-trim QC, feeding songs into the same library index above
+        // (tagged SongSource.Harvested) so warm-starts and future curation both benefit from it.
+        // Offset 0 + edge-trim on are the PoC-validated defaults for the harvest path specifically
+        // — independent of CaptureBoundaryOffsetSeconds, which stays 6.0 for the live "Save Song"
+        // recorder above.
+        var djSettings = _settingsStore.Load();
+        var harvestDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadioPlayer", "harvest");
+        _djHarvest = new DjHarvestService(searchService, interpreter, agenticSearch, ranker, enrichment, songLibrary, harvestDir,
+            harvesterCount: djSettings.DjHarvesterCount, reserveCount: djSettings.DjHarvestReserveCount,
+            offsetSeconds: 0.0, trimEdges: true,
+            rejectBelow: djSettings.DjMusicFractionFloor,   // 0 = off; see SegmentQualityChecker
+            minSongSeconds: djSettings.DjMinSongSeconds,
+            stationIdleMinutes: djSettings.DjStationIdleMinutes,
+            maxHarvestCacheBytes: djSettings.DjMaxHarvestCacheMb * 1024L * 1024L,
+            maxRejectedCacheBytes: djSettings.DjRejectedCacheMb * 1024L * 1024L);
+
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new SongHistoryStore(), _recorder,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
-            semanticSearch, ranker, trackInfo, songLibrary, _localEngine, curator);
+            semanticSearch, ranker, trackInfo, songLibrary, _localEngine, curator, _djHarvest, djIntro);
         DataContext = _viewModel;
 
         // Reset the About reading view to the top whenever fresh content loads (a new briefing
@@ -110,6 +129,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _viewModel.SaveSettings();
+        _djHarvest.Dispose();   // stops harvesters and tears down its own (device 0) BASS thread first
         _smtc?.Dispose();
         _localEngine.Dispose();  // free its stream before RadioEngine frees the shared BASS device
         _engine.Dispose();       // ends the capture session and calls Bass.Free()

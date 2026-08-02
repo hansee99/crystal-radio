@@ -20,9 +20,7 @@ namespace RadioPlayer.Services;
 /// </summary>
 public sealed class SongLibraryService : ISongLibraryService
 {
-    private const string Endpoint = "https://api.anthropic.com/v1/messages";
-    private const string AnthropicVersion = "2023-06-01";
-    private const string DefaultModel = "claude-haiku-4-5"; // describing, not reasoning
+    private const string DefaultModel = AnthropicApi.HaikuModel; // describing, not reasoning
     private const int MaxConcurrent = 3;
 
     private const string SystemPrompt = """
@@ -61,7 +59,7 @@ public sealed class SongLibraryService : ISongLibraryService
 
     private bool CanDistill => !string.IsNullOrWhiteSpace(_apiKey);
 
-    public IReadOnlyList<SavedSong> GetAll() => _store.GetAll();
+    public IReadOnlyList<SavedSong> GetAll(SongSource? source = null) => _store.GetAll(source);
 
     public void Remove(string path) => _store.Remove(path);
 
@@ -100,7 +98,7 @@ public sealed class SongLibraryService : ISongLibraryService
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Library] backfill error: {ex.Message}");
+                AppLog.Debug($"[Library] backfill error: {ex.Message}");
             }
         });
     }
@@ -122,11 +120,11 @@ public sealed class SongLibraryService : ISongLibraryService
 
                 _store.SetEnrichment(path, description, distilled?.FacetsJson);
                 EmbedAndStore(path, description);
-                Debug.WriteLine($"[Library] enriched {title} — {artist}");
+                AppLog.Debug($"[Library] enriched {title} — {artist}");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[Library] enrich failed for {path}: {ex.Message}");
+                AppLog.Debug($"[Library] enrich failed for {path}: {ex.Message}");
             }
             finally
             {
@@ -148,7 +146,7 @@ public sealed class SongLibraryService : ISongLibraryService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Library] embed failed for {path}: {ex.Message}");
+            AppLog.Debug($"[Library] embed failed for {path}: {ex.Message}");
         }
     }
 
@@ -172,18 +170,12 @@ public sealed class SongLibraryService : ISongLibraryService
             }
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint)
-        {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-        };
-        request.Headers.Add("x-api-key", _apiKey);
-        request.Headers.Add("anthropic-version", AnthropicVersion);
-
+        using var request = AnthropicApi.CreateRequest(_apiKey, body);
         using var response = await _http.SendAsync(request).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             return null;
 
-        var text = ExtractText(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        var text = AnthropicApi.ExtractText(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
         return ParseDistill(text);
     }
 
@@ -209,35 +201,7 @@ public sealed class SongLibraryService : ISongLibraryService
         return new DistillResult(description.Trim(), facets.ToJsonString());
     }
 
-    private static string? ExtractText(string responseBody)
-    {
-        try
-        {
-            var node = JsonNode.Parse(responseBody);
-            if (node?["content"] is not JsonArray content) return null;
-            foreach (var block in content)
-                if (block?["type"]?.GetValue<string>() == "text")
-                    return block["text"]?.GetValue<string>();
-        }
-        catch (System.Text.Json.JsonException) { }
-        return null;
-    }
-
-    private static string? StripToJsonObject(string? text)
-    {
-        if (string.IsNullOrEmpty(text)) return null;
-        var trimmed = text.Trim();
-        if (trimmed.StartsWith("```", StringComparison.Ordinal))
-        {
-            var nl = trimmed.IndexOf('\n');
-            if (nl >= 0) trimmed = trimmed[(nl + 1)..];
-            var fence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-            if (fence >= 0) trimmed = trimmed[..fence];
-        }
-        var start = trimmed.IndexOf('{');
-        var end = trimmed.LastIndexOf('}');
-        return start < 0 || end <= start ? null : trimmed[start..(end + 1)];
-    }
+    private static string? StripToJsonObject(string? text) => AnthropicApi.StripToJsonObject(text);
 
     private sealed record DistillResult(string Description, string? FacetsJson);
 }

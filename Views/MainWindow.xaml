@@ -6,6 +6,7 @@
         xmlns:local="clr-namespace:RadioPlayer"
         xmlns:vm="clr-namespace:RadioPlayer.ViewModels"
         xmlns:mvvm="clr-namespace:RadioPlayer.Mvvm"
+        xmlns:ctl="clr-namespace:RadioPlayer.Controls"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
         Title="Crystal Radio" Height="760" Width="1000"
@@ -26,7 +27,8 @@
         <!-- Segoe Fluent Icons ships with Windows 11; no asset to bundle. -->
         <FontFamily x:Key="FluentIcons">Segoe Fluent Icons</FontFamily>
 
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <!-- BoolToVis now lives in Theme.xaml (its own templates need it); this window's
+             references resolve up through Application.Resources to that one. -->
         <mvvm:UrlIsPlayingMultiConverter x:Key="UrlIsPlayingConverter"/>
 
         <!-- Save (download→check) + About (sparkle) row actions for anything that carries a
@@ -36,24 +38,47 @@
              of which control hosts the row. -->
         <DataTemplate x:Key="SaveAndAboutActions">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Button Margin="0,0,6,0"
+                <!-- Save, as three legible states rather than two-plus-an-absence (UX audit).
+                     A song can only be saved if the rolling cache captured its audio while it
+                     played; rows that missed that window used to show NOTHING, which reads as a
+                     missing button rather than a state. Now the affordance is always there:
+                     enabled, dimmed-and-explained, or replaced by the saved mark. -->
+                <!-- IsEnabled binds CanSave rather than leaning on the command's CanExecute:
+                     RelayCommand only re-evaluates when RaiseCanExecuteChanged is called, and
+                     nothing calls it when a segment finishes recording, so the button would go
+                     stale. CanSave raises PropertyChanged, so this tracks live. -->
+                <Button Margin="0,0,6,0" ToolTipService.ShowOnDisabled="True"
+                        IsEnabled="{Binding CanSave}"
                         Command="{Binding DataContext.SaveSongCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                        CommandParameter="{Binding}"
-                        Visibility="{Binding HasSegment, Converter={StaticResource BoolToVis}}">
+                        CommandParameter="{Binding}">
                     <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource GhostSquareButton}">
-                            <Setter Property="Content" Value="{StaticResource SaveGeometry}"/>
-                            <Setter Property="ToolTip" Value="Save to library"/>
+                            <Setter Property="Content" Value="{StaticResource AddCircleGeometry}"/>
+                            <Setter Property="ToolTip" Value="Save to your library"/>
                             <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasSegment}" Value="False">
+                                    <Setter Property="ToolTip"
+                                            Value="Can't save this one — it wasn't recorded while it played"/>
+                                </DataTrigger>
+                                <!-- Saved: hand over to the teal mark beside it. -->
                                 <DataTrigger Binding="{Binding IsSaved}" Value="True">
-                                    <Setter Property="Content" Value="{StaticResource CheckGeometry}"/>
-                                    <Setter Property="ToolTip" Value="Saved to library"/>
-                                    <Setter Property="IsHitTestVisible" Value="False"/>
+                                    <Setter Property="Visibility" Value="Collapsed"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Button.Style>
                 </Button>
+                <!-- Saved mark. A plain glyph, not a button: it isn't an action, and as a
+                     disabled button it would render at the same faded opacity as "can't save",
+                     which is the opposite of the confirmation it's meant to be. -->
+                <Border Width="32" Height="32" Margin="0,0,6,0" Background="Transparent"
+                        ToolTip="In your library"
+                        Visibility="{Binding IsSaved, Converter={StaticResource BoolToVis}}">
+                    <Path Data="{StaticResource CheckCircleGeometry}" Stretch="Uniform"
+                          Width="15" Height="15" Stroke="{StaticResource TealBright}"
+                          StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
                 <Button Style="{StaticResource GhostSquareButton}"
                         Content="{StaticResource SparkleGeometry}"
                         ToolTip="About this song"
@@ -77,37 +102,9 @@
             </DrawingImage.Drawing>
         </DrawingImage>
 
-        <!-- Compact icon button for the station-management toolbar. -->
-        <Style x:Key="ListToolButton" TargetType="Button">
-            <Setter Property="Width" Value="30"/>
-            <Setter Property="Height" Value="28"/>
-            <Setter Property="Margin" Value="0,0,4,0"/>
-            <Setter Property="Background" Value="#22FFFFFF"/>
-            <Setter Property="Foreground" Value="#FFEDEDED"/>
-            <Setter Property="FontFamily" Value="{StaticResource FluentIcons}"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="6">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#3DFFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#55FFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="bd" Property="Opacity" Value="0.35"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- ListToolButton removed with the stranded bottom-left "+" (UX audit b10): the add
+             action now lives in the Stations list header and uses the app's GhostSquareButton,
+             so there's no separate button family and no Segoe-glyph dependency here. -->
 
     </Window.Resources>
 
@@ -214,15 +211,19 @@
                     </RadialGradientBrush>
                 </Rectangle.Fill>
             </Rectangle>
-            <!-- horizontal scrim: dark on the left (list) fading out to the right -->
+            <!-- horizontal scrim: dark on the left (list) fading out to the right. Held darker
+                 through the Now Playing content column (UX audit — the recently-played list and
+                 status text sit on the artwork's bright diagonal); the artwork keeps its
+                 atmosphere only in the top-right where nothing is placed on it. -->
             <Rectangle>
                 <Rectangle.Fill>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                         <GradientStop Color="#FF050D0C" Offset="0"/>
                         <GradientStop Color="#DB050D0C" Offset="0.26"/>
-                        <GradientStop Color="#A8050D0C" Offset="0.46"/>
-                        <GradientStop Color="#52050D0C" Offset="0.62"/>
-                        <GradientStop Color="#00050D0C" Offset="0.82"/>
+                        <GradientStop Color="#C0050D0C" Offset="0.46"/>
+                        <GradientStop Color="#8C050D0C" Offset="0.62"/>
+                        <GradientStop Color="#38050D0C" Offset="0.78"/>
+                        <GradientStop Color="#00050D0C" Offset="0.92"/>
                     </LinearGradientBrush>
                 </Rectangle.Fill>
             </Rectangle>
@@ -232,6 +233,20 @@
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                         <GradientStop Color="#8C050D0C" Offset="0"/>
                         <GradientStop Color="#00050D0C" Offset="1"/>
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+            <!-- bottom scrim (UX audit): a solid floor under the transport, seek times and
+                 volume, which otherwise cross the brightest part of the artwork. Starts high
+                 (280px) and ramps slowly: at 200px it was still light where the transport strip
+                 began, so the strip's own tone arrived as a step. The strip now fades in over its
+                 top 62px and meets an already-darkening artwork, leaving no visible band. -->
+            <Rectangle VerticalAlignment="Bottom" Height="280">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#00050D0C" Offset="0"/>
+                        <GradientStop Color="#63050D0C" Offset="0.45"/>
+                        <GradientStop Color="#E6050D0C" Offset="1"/>
                     </LinearGradientBrush>
                 </Rectangle.Fill>
             </Rectangle>
@@ -256,6 +271,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <RadioButton Grid.Column="0" GroupName="playerMode" Style="{StaticResource PillTab}"
                                          Content="Radio" IsChecked="{Binding IsRadioMode, Mode=OneWay}"
@@ -263,10 +279,13 @@
                             <RadioButton Grid.Column="1" GroupName="playerMode" Style="{StaticResource PillTab}"
                                          Content="Library" IsChecked="{Binding IsLibraryMode, Mode=OneWay}"
                                          Command="{Binding SwitchToLibraryCommand}"/>
+                            <RadioButton Grid.Column="2" GroupName="playerMode" Style="{StaticResource PillTab}"
+                                         Content="DJ" IsChecked="{Binding IsDjMode, Mode=OneWay}"
+                                         Command="{Binding SwitchToDjCommand}"/>
                         </Grid>
                     </Border>
 
-                    <!-- Mode content: the radio panel and the library panel share this area -->
+                    <!-- Mode content: the radio, library, and DJ panels share this area -->
                     <Grid>
                     <!-- ================= RADIO panel (Stations / Search / History) ================= -->
                     <DockPanel Visibility="{Binding ShowRadioPanel, Converter={StaticResource BoolToVis}}">
@@ -286,10 +305,19 @@
                         <!-- ===== Stations tab ===== -->
                         <DockPanel Visibility="{Binding IsChecked, ElementName=StationsTab,
                                    Converter={StaticResource BoolToVis}}">
-                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
-                                <Button Style="{StaticResource ListToolButton}" Content="&#xE710;"
-                                        Command="{Binding AddStationCommand}" ToolTip="Add station"/>
-                            </StackPanel>
+                            <!-- List header with the add action (UX audit b10). It used to be
+                                 stranded ~500px below the list it adds to; it belongs on the
+                                 list it acts on. -->
+                            <DockPanel DockPanel.Dock="Top" Margin="2,0,0,8">
+                                <Button DockPanel.Dock="Right" Style="{StaticResource GhostSquareButton}"
+                                        Content="{StaticResource PlusGeometry}" ToolTip="Add a station"
+                                        Command="{Binding AddStationCommand}"/>
+                                <TextBlock Text="YOUR STATIONS" FontSize="10.5" FontWeight="SemiBold"
+                                           Foreground="#FF6F8C87" VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <ctl:StatePanel State="{Binding StationsPanelState}"
+                                            EmptyContent="No stations yet — add one above, or find some in Search."
+                                            EmptyContentTemplate="{StaticResource PanelMessage}">
                             <ListBox ItemsSource="{Binding Stations}"
                                      SelectedItem="{Binding SelectedStation, Mode=TwoWay}"
                                      MouseDoubleClick="Stations_DoubleClick"
@@ -336,15 +364,11 @@
                                                 </Grid>
                                             </Border>
                                             <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                                <TextBlock Text="{Binding Name}" FontSize="13.5" FontWeight="Medium"
-                                                           Foreground="{StaticResource TextBody}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
-                                                <TextBlock Text="{Binding Description}" FontSize="11.5" Margin="0,2,0,0"
-                                                           Foreground="{StaticResource TextMuted}"
-                                                           TextWrapping="Wrap" MaxHeight="30"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Description}">
+                                                <TextBlock Style="{StaticResource RowTitleText}"
+                                                           Text="{Binding Name}" ToolTip="{Binding Name}"/>
+                                                <TextBlock Text="{Binding Description}" ToolTip="{Binding Description}">
                                                     <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource RowSubtitleDetailed}">
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding Description}" Value="{x:Null}">
                                                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -389,6 +413,7 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
+                            </ctl:StatePanel>
                         </DockPanel>
 
                         <!-- ===== Search tab ===== -->
@@ -399,9 +424,12 @@
                                     Background="{StaticResource FillSubtle}"
                                     BorderBrush="{StaticResource Hairline}" BorderThickness="1" Padding="12,0">
                                 <DockPanel>
-                                    <Path DockPanel.Dock="Left" Data="{StaticResource SearchGeometry}"
-                                          Stretch="Uniform" Width="16" Height="16" Stroke="#FF62A59B"
-                                          StrokeThickness="1.6" VerticalAlignment="Center" Margin="0,0,9,0"/>
+                                    <!-- Sparkle, not a magnifier (UX audit): this is the app's
+                                         most AI-driven surface and now matches the Curate and DJ
+                                         prompts, so the glyph means one thing everywhere. -->
+                                    <Path DockPanel.Dock="Left" Data="{StaticResource SparkleGeometry}"
+                                          Stretch="Uniform" Width="15" Height="15" Fill="#FF62A59B"
+                                          VerticalAlignment="Center" Margin="0,0,9,0"/>
                                     <Grid>
                                         <TextBox x:Name="PromptBox" Background="Transparent" BorderThickness="0"
                                                  VerticalContentAlignment="Center" Foreground="{StaticResource TextBody}"
@@ -429,43 +457,40 @@
                                 </DockPanel>
                             </Border>
 
-                            <!-- Status + loading spinner (+ "Show different" on the right) -->
+                            <!-- Result status (+ "Find six more" on the right). No spinner here
+                                 any more: while a search runs, the panel below owns the spinner
+                                 and the progress line, so the two can't narrate in parallel. -->
                             <DockPanel DockPanel.Dock="Top" Margin="2,0,0,8">
                                 <!-- Regenerate: fetch a different set for the same prompt -->
                                 <Button DockPanel.Dock="Right" Style="{StaticResource AboutLinkButton}"
-                                        Content="Show different" Command="{Binding RegenerateSearchCommand}"
-                                        ToolTip="Find other stations for this prompt"
+                                        Content="Find six more" Command="{Binding RegenerateSearchCommand}"
+                                        ToolTip="Fetch a fresh set of stations for this prompt"
                                         VerticalAlignment="Center" Margin="8,0,0,0"
                                         Visibility="{Binding CanRegenerateSearch, Converter={StaticResource BoolToVis}}"/>
-                                <StackPanel Orientation="Horizontal">
-                                <Grid Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center"
-                                      RenderTransformOrigin="0.5,0.5"
-                                      Visibility="{Binding IsSearching, Converter={StaticResource BoolToVis}}">
-                                    <Grid.RenderTransform>
-                                        <RotateTransform/>
-                                    </Grid.RenderTransform>
-                                    <Grid.Triggers>
-                                        <EventTrigger RoutedEvent="Loaded">
-                                            <BeginStoryboard>
-                                                <Storyboard>
-                                                    <DoubleAnimation
-                                                        Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                        From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever"/>
-                                                </Storyboard>
-                                            </BeginStoryboard>
-                                        </EventTrigger>
-                                    </Grid.Triggers>
-                                    <Ellipse Stroke="#33FFFFFF" StrokeThickness="2"/>
-                                    <Path Stroke="{StaticResource Teal}" StrokeThickness="2"
-                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                          Data="M 7,1 A 6,6 0 0 1 13,7"/>
-                                </Grid>
                                 <TextBlock Text="{Binding SearchStatus}" FontSize="11.5"
                                            Foreground="{StaticResource TextMuted}"
-                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                </StackPanel>
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <!-- The panel narrates while loading; don't say it twice. -->
+                                                <DataTrigger Binding="{Binding IsSearching}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </DockPanel>
 
+                            <ctl:StatePanel State="{Binding SearchPanelState}"
+                                            EmptyContent="{Binding SearchEmptyMessage}"
+                                            EmptyContentTemplate="{StaticResource PanelMessage}"
+                                            LoadingContent="{Binding SearchProgress}"
+                                            LoadingContentTemplate="{StaticResource PanelProgress}"
+                                            ErrorContent="{Binding SearchError}"
+                                            ErrorContentTemplate="{StaticResource PanelErrorMessage}">
                             <ListBox ItemsSource="{Binding SearchResults}"
                                      SelectedItem="{Binding SelectedSearchResult, Mode=TwoWay}"
                                      MouseDoubleClick="SearchResults_DoubleClick"
@@ -512,15 +537,11 @@
                                                 </Grid>
                                             </Border>
                                             <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                                <TextBlock Text="{Binding DisplayName}" FontSize="13.5" FontWeight="Medium"
-                                                           Foreground="{StaticResource TextBody}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}"/>
-                                                <TextBlock Text="{Binding Reason}" FontSize="11.5" Margin="0,2,0,0"
-                                                           Foreground="{StaticResource TextMuted}"
-                                                           TextWrapping="Wrap" MaxHeight="30"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Reason}">
+                                                <TextBlock Style="{StaticResource RowTitleText}"
+                                                           Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}"/>
+                                                <TextBlock Text="{Binding Reason}" ToolTip="{Binding Reason}">
                                                     <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource RowSubtitleDetailed}">
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding Reason}" Value="{x:Null}">
                                                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -552,11 +573,15 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
+                            </ctl:StatePanel>
                         </DockPanel>
 
                         <!-- ===== History tab (Phase A: songs heard, About per row) ===== -->
                         <Grid Visibility="{Binding IsChecked, ElementName=HistoryTab,
                               Converter={StaticResource BoolToVis}}">
+                            <ctl:StatePanel State="{Binding HistoryPanelState}"
+                                            EmptyContent="Songs you hear will show up here."
+                                            EmptyContentTemplate="{StaticResource PanelMessage}">
                             <ListBox ItemsSource="{Binding History}"
                                      Background="Transparent" BorderThickness="0"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -577,14 +602,12 @@
                                                       Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
                                                       StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                                <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
-                                                           Foreground="{StaticResource TextBody}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-                                                <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
-                                                           Foreground="{StaticResource TextMuted}"
-                                                           TextWrapping="Wrap" MaxHeight="30"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                <!-- Compact row: Artist · Station · time on one line. -->
+                                                <TextBlock Style="{StaticResource RowTitleText}"
+                                                           Text="{Binding Title}" ToolTip="{Binding Title}"/>
+                                                <TextBlock Style="{StaticResource RowSubtitleCompact}"
+                                                           Text="{Binding Subtitle}" ToolTip="{Binding Subtitle}"/>
                                             </StackPanel>
                                             <ContentControl Grid.Column="2" Content="{Binding}"
                                                              ContentTemplate="{StaticResource SaveAndAboutActions}"
@@ -593,21 +616,7 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
-                            <!-- Empty state -->
-                            <TextBlock Text="Songs you hear will show up here."
-                                       FontSize="12.5" Foreground="{StaticResource TextMuted}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding History.Count}" Value="0">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
+                            </ctl:StatePanel>
                         </Grid>
                     </Grid>
                     </DockPanel>
@@ -665,33 +674,24 @@
                             </DockPanel>
                         </Border>
 
-                        <!-- Status + curating spinner -->
+                        <!-- Result status. No spinner: while curating, the panel below owns the
+                             spinner and the progress line (same rule as Search). -->
                         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="2,0,0,8">
-                            <Grid Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center"
-                                  RenderTransformOrigin="0.5,0.5"
-                                  Visibility="{Binding IsCurating, Converter={StaticResource BoolToVis}}">
-                                <Grid.RenderTransform>
-                                    <RotateTransform/>
-                                </Grid.RenderTransform>
-                                <Grid.Triggers>
-                                    <EventTrigger RoutedEvent="Loaded">
-                                        <BeginStoryboard>
-                                            <Storyboard>
-                                                <DoubleAnimation
-                                                    Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                    From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever"/>
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </EventTrigger>
-                                </Grid.Triggers>
-                                <Ellipse Stroke="#33FFFFFF" StrokeThickness="2"/>
-                                <Path Stroke="{StaticResource Teal}" StrokeThickness="2"
-                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                      Data="M 7,1 A 6,6 0 0 1 13,7"/>
-                            </Grid>
                             <TextBlock Text="{Binding LibraryStatus}" FontSize="11.5"
                                        Foreground="{StaticResource TextMuted}"
-                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <!-- The panel narrates while curating; don't say it twice. -->
+                                            <DataTrigger Binding="{Binding IsCurating}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                         </StackPanel>
 
                         <!-- Context card: "the thing I asked for" (query), distinct from "the
@@ -713,13 +713,19 @@
                                            TextTrimming="CharacterEllipsis"/>
                                 <TextBlock FontSize="11.5" Foreground="{StaticResource TextMuted}">
                                     <Run Text="{Binding CuratedQueue.Count, Mode=OneWay}"/>
-                                    <Run Text=" songs · from your recordings"/>
+                                    <Run Text=" songs · from your library"/>
                                 </TextBlock>
                             </StackPanel>
                         </Border>
 
-                        <!-- Curated queue (double-click plays from that track) + empty state -->
-                        <Grid>
+                        <!-- Curated queue (double-click plays from that song) -->
+                        <ctl:StatePanel State="{Binding CuratePanelState}"
+                                        EmptyContent="{Binding CurateEmptyMessage}"
+                                        EmptyContentTemplate="{StaticResource PanelMessage}"
+                                        LoadingContent="{Binding CurateProgress}"
+                                        LoadingContentTemplate="{StaticResource PanelProgress}"
+                                        ErrorContent="{Binding CurateError}"
+                                        ErrorContentTemplate="{StaticResource PanelErrorMessage}">
                         <ListBox ItemsSource="{Binding CuratedQueue}"
                                  MouseDoubleClick="Queue_DoubleClick"
                                  Background="Transparent" BorderThickness="0"
@@ -768,40 +774,26 @@
                                             </Grid>
                                         </Border>
                                         <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                            <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
-                                                       Foreground="{StaticResource TextBody}"
-                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-                                            <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
-                                                       Foreground="{StaticResource TextMuted}"
-                                                       TextWrapping="Wrap" MaxHeight="30"
-                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                            <!-- Detailed row: the curator's reason earns two lines. -->
+                                            <TextBlock Style="{StaticResource RowTitleText}"
+                                                       Text="{Binding Title}" ToolTip="{Binding Title}"/>
+                                            <TextBlock Style="{StaticResource RowSubtitleDetailed}"
+                                                       Text="{Binding Subtitle}" ToolTip="{Binding Subtitle}"/>
                                         </StackPanel>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
-                        <!-- Empty state -->
-                        <TextBlock Text="Describe a mood or vibe above to curate a playlist from your recordings."
-                                   FontSize="12.5" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20,0">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding CuratedQueue.Count}" Value="0">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                        </Grid>
+                        </ctl:StatePanel>
                         </DockPanel>
                         <!-- ===== end Curate tab ===== -->
 
                         <!-- ===== Songs tab: every song saved to the library ===== -->
                         <Grid Visibility="{Binding IsChecked, ElementName=SongsTab,
                               Converter={StaticResource BoolToVis}}">
+                            <ctl:StatePanel State="{Binding LibrarySongsPanelState}"
+                                            EmptyContent="Songs you save while listening land here."
+                                            EmptyContentTemplate="{StaticResource PanelMessage}">
                             <ListBox ItemsSource="{Binding LibrarySongs}"
                                      MouseDoubleClick="LibrarySong_DoubleClick"
                                      Background="Transparent" BorderThickness="0"
@@ -849,39 +841,274 @@
                                                     </ContentControl>
                                                 </Grid>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Top">
-                                                <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
-                                                           Foreground="{StaticResource TextBody}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-                                                <TextBlock Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
-                                                           Foreground="{StaticResource TextMuted}"
-                                                           TextWrapping="Wrap" MaxHeight="30"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Subtitle}"/>
+                                            <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                <!-- Compact row: uniform height across the whole
+                                                     library, so the list stays scannable. -->
+                                                <TextBlock Style="{StaticResource RowTitleText}"
+                                                           Text="{Binding Title}" ToolTip="{Binding Title}"/>
+                                                <TextBlock Style="{StaticResource RowSubtitleCompact}"
+                                                           Text="{Binding Subtitle}" ToolTip="{Binding Description}"/>
                                             </StackPanel>
                                         </Grid>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
-                            <!-- Empty state -->
-                            <TextBlock Text="Songs you save from the radio will show up here."
-                                       FontSize="12.5" Foreground="{StaticResource TextMuted}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding LibrarySongs.Count}" Value="0">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
+                            </ctl:StatePanel>
                         </Grid>
                         <!-- ===== end Songs tab ===== -->
                         </Grid>
                     </DockPanel>
                     <!-- ================= end LIBRARY panel ================= -->
+
+                    <!-- ================= DJ panel (harvest + self-refilling queue) ================= -->
+                    <DockPanel Visibility="{Binding ShowDjPanel, Converter={StaticResource BoolToVis}}">
+                        <!-- ===== Session block (UX audit b06) =====
+                             Five stacked control rows collapse to one. Idle: the prompt with
+                             Start inside it. Running: the same block becomes the session's
+                             record — vibe, state, counts — with End session as a quiet ghost
+                             that only exists while there IS something to end. -->
+
+                        <!-- Idle -->
+                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDjRunning}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+
+                            <Border Height="42" CornerRadius="10" Background="{StaticResource FillSubtle}"
+                                    BorderBrush="{StaticResource Hairline}" BorderThickness="1"
+                                    Padding="12,0,5,0">
+                                <DockPanel>
+                                    <Path DockPanel.Dock="Left" Data="{StaticResource SparkleGeometry}"
+                                          Stretch="Uniform" Width="15" Height="15" Fill="#FF62A59B"
+                                          VerticalAlignment="Center" Margin="0,0,9,0"/>
+                                    <!-- Start lives inside the field it acts on, instead of a
+                                         second full-width pill below it. -->
+                                    <Button DockPanel.Dock="Right" Content="Start"
+                                            Style="{StaticResource AboutPillButton}"
+                                            VerticalAlignment="Center" Margin="8,0,0,0"
+                                            Command="{Binding StartDjCommand}"/>
+                                    <Grid>
+                                        <TextBox x:Name="DjPromptBox" Background="Transparent" BorderThickness="0"
+                                                 VerticalContentAlignment="Center" Foreground="{StaticResource TextBody}"
+                                                 CaretBrush="{StaticResource Teal}" FontSize="13"
+                                                 Text="{Binding DjPrompt, UpdateSourceTrigger=PropertyChanged}">
+                                            <TextBox.InputBindings>
+                                                <KeyBinding Key="Return" Command="{Binding StartDjCommand}"/>
+                                            </TextBox.InputBindings>
+                                        </TextBox>
+                                        <TextBlock IsHitTestVisible="False" VerticalAlignment="Center" FontSize="13"
+                                                   Foreground="{StaticResource TextFaint}"
+                                                   Text="Describe a vibe…">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Text, ElementName=DjPromptBox}" Value="">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                </DockPanel>
+                            </Border>
+
+                            <TextBlock Margin="2,9,0,0" FontSize="11.5" TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextMuted}"
+                                       Text="We'll find stations, record the good bits, and keep it playing."/>
+                        </StackPanel>
+
+                        <!-- Running: the session's record -->
+                        <Border DockPanel.Dock="Top" Margin="0,0,0,16" CornerRadius="10" Padding="13,11"
+                                Background="{StaticResource TealTint10}" BorderBrush="#3D56C7BA"
+                                BorderThickness="1"
+                                Visibility="{Binding IsDjRunning, Converter={StaticResource BoolToVis}}">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="End session"
+                                        Style="{StaticResource GhostPillButton}"
+                                        VerticalAlignment="Center" Margin="10,0,0,0"
+                                        Command="{Binding StopDjCommand}"/>
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                        <!-- Amber while bridging a live station, teal once the
+                                             mix itself is playing. -->
+                                        <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                                 Margin="0,0,7,0">
+                                            <Ellipse.Style>
+                                                <Style TargetType="Ellipse">
+                                                    <Setter Property="Fill" Value="{StaticResource TealBright}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsDjWarmingUp}" Value="True">
+                                                            <Setter Property="Fill" Value="#FFE6C88A"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Ellipse.Style>
+                                            <Ellipse.Triggers>
+                                                <EventTrigger RoutedEvent="Loaded">
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                From="1" To="0.3" Duration="0:0:0.9"
+                                                                AutoReverse="True" RepeatBehavior="Forever"/>
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </EventTrigger>
+                                            </Ellipse.Triggers>
+                                        </Ellipse>
+                                        <TextBlock Text="THIS SESSION" FontSize="10.5" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TealText}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding DjSessionVibe}" FontSize="13.5" FontWeight="Medium"
+                                               Foreground="{StaticResource TextBody}" TextWrapping="Wrap"
+                                               MaxHeight="36" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding DjStatus}" FontSize="11.5" Margin="0,4,0,0"
+                                               Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Sub-nav (UX audit b08): content first, like Stations-then-Search and
+                             Songs-then-Curate. The mix is what the mode is FOR; the stations
+                             feeding it are the supporting detail. -->
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,14">
+                            <RadioButton x:Name="DjMixTab" GroupName="djTab" IsChecked="True"
+                                         Style="{StaticResource UnderlineTab}" Content="Mix"/>
+                            <RadioButton x:Name="DjSourcesTab" GroupName="djTab"
+                                         Style="{StaticResource UnderlineTab}" Content="Sources"/>
+                        </StackPanel>
+
+                        <Grid>
+                            <!-- ===== Mix tab: the session's queue — played, playing, upcoming.
+                                 During warm-up this is where the staged checklist lands, which is
+                                 the space that used to claim nothing was happening. ===== -->
+                            <DockPanel Visibility="{Binding IsChecked, ElementName=DjMixTab,
+                                       Converter={StaticResource BoolToVis}}">
+                                <ctl:StatePanel State="{Binding DjMixPanelState}"
+                                                EmptyContent="{Binding DjMixEmptyMessage}"
+                                                EmptyContentTemplate="{StaticResource PanelMessage}"
+                                                LoadingContent="{Binding DjProgress}"
+                                                LoadingContentTemplate="{StaticResource PanelProgress}"
+                                                ErrorContent="{Binding DjError}"
+                                                ErrorContentTemplate="{StaticResource PanelErrorMessage}">
+                                <ListBox ItemsSource="{Binding DjMix}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ItemContainerStyle="{StaticResource StationRowItem}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="34"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                        VerticalAlignment="Center"
+                                                        Background="{StaticResource FillSubtle}"
+                                                        BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
+                                                    <Grid>
+                                                        <Path Data="{StaticResource NoteGeometry}" Stretch="Uniform"
+                                                              Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"
+                                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                                            <Path.Style>
+                                                                <Style TargetType="Path">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Path.Style>
+                                                        </Path>
+                                                        <ContentControl Template="{StaticResource EqualizerTemplate}"
+                                                                        Width="20" Height="13" Focusable="False"
+                                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                        Visibility="{Binding IsCurrent,
+                                                                                     Converter={StaticResource BoolToVis}}"/>
+                                                    </Grid>
+                                                </Border>
+                                                <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                    <!-- Played rows recede so what's still coming reads first. -->
+                                                    <TextBlock Text="{Binding Title}" ToolTip="{Binding Title}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource RowTitleText}">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasPlayed}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource TealText}"/>
+                                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Style="{StaticResource RowSubtitleCompact}"
+                                                               Text="{Binding Artist}" ToolTip="{Binding Artist}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                </ctl:StatePanel>
+                            </DockPanel>
+                            <!-- ===== end Mix tab ===== -->
+
+                            <!-- ===== Sources tab: currently-connected stations ===== -->
+                            <DockPanel Visibility="{Binding IsChecked, ElementName=DjSourcesTab,
+                                       Converter={StaticResource BoolToVis}}">
+                                <ctl:StatePanel State="{Binding DjSourcesPanelState}"
+                                                EmptyContent="{Binding DjSourcesEmptyMessage}"
+                                                EmptyContentTemplate="{StaticResource PanelMessage}"
+                                                LoadingContent="{Binding DjProgress}"
+                                                LoadingContentTemplate="{StaticResource PanelProgress}"
+                                                ErrorContent="{Binding DjError}"
+                                                ErrorContentTemplate="{StaticResource PanelErrorMessage}">
+                                <ListBox ItemsSource="{Binding DjHarvesters}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ItemContainerStyle="{StaticResource StationRowItem}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="34"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                                        VerticalAlignment="Top"
+                                                        Background="{StaticResource FillSubtle}"
+                                                        BorderBrush="{StaticResource HairlineSoft}" BorderThickness="1">
+                                                    <Path Data="{StaticResource RadioGeometry}" Stretch="Uniform"
+                                                          Width="15" Height="15" Stroke="#FF6F928C" StrokeThickness="1.4"/>
+                                                </Border>
+                                                <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
+                                                    <TextBlock Style="{StaticResource RowTitleText}"
+                                                               Text="{Binding Label}" ToolTip="{Binding Label}"/>
+                                                    <TextBlock Style="{StaticResource RowSubtitleCompact}"
+                                                               Text="{Binding StatusText}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                </ctl:StatePanel>
+                            </DockPanel>
+                            <!-- ===== end Sources tab =====
+                                 (There is no separate History tab any more: the queue keeps every
+                                 track it has played, so the Mix list above IS the session record.) -->
+                        </Grid>
+                    </DockPanel>
+                    <!-- ================= end DJ panel ================= -->
                     </Grid>
                 </DockPanel>
             </Border>
@@ -902,26 +1129,29 @@
                                    Foreground="#FF6F8C87" VerticalAlignment="Center"/>
                         <Button Style="{StaticResource TitleIconButton}" Click="CopyNowPlaying_Click"
                                 Content="{StaticResource CopyGeometry}" ToolTip="Copy title &amp; artist"
-                                Width="24" Height="24" Margin="8,0,0,0" VerticalAlignment="Center"
+                                Width="32" Height="32" Margin="8,0,0,0" VerticalAlignment="Center"
                                 Visibility="{Binding HasTrackInfo, Converter={StaticResource BoolToVis}}"/>
                         <!-- Save this song (download→check pair — same mark as everywhere else Save
                              appears): marks it now, saved automatically once its recording
                              completes at the next track change. -->
-                        <Button Command="{Binding MarkForSaveCommand}" Width="24" Height="24"
+                        <Button Command="{Binding MarkForSaveCommand}" Width="32" Height="32"
                                 Margin="4,0,0,0" VerticalAlignment="Center"
                                 Visibility="{Binding CanMarkForSave, Converter={StaticResource BoolToVis}}">
                             <Button.Style>
+                                <!-- Same three-state save family as the history rows: plus →
+                                     teal plus (marked, saves when the song ends) → teal check. -->
                                 <Style TargetType="Button" BasedOn="{StaticResource TitleIconButton}">
-                                    <Setter Property="Content" Value="{StaticResource SaveGeometry}"/>
+                                    <Setter Property="Content" Value="{StaticResource AddCircleGeometry}"/>
                                     <Setter Property="ToolTip" Value="Save this song when it finishes"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsCurrentSongMarked}" Value="True">
                                             <Setter Property="Foreground" Value="{StaticResource TealBright}"/>
-                                            <Setter Property="ToolTip" Value="Marked to save — click to cancel"/>
+                                            <Setter Property="ToolTip" Value="Marked — saves when the song ends; click to cancel"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsCurrentSongSaved}" Value="True">
-                                            <Setter Property="Content" Value="{StaticResource CheckGeometry}"/>
-                                            <Setter Property="ToolTip" Value="Saved to library"/>
+                                            <Setter Property="Content" Value="{StaticResource CheckCircleGeometry}"/>
+                                            <Setter Property="Foreground" Value="{StaticResource TealBright}"/>
+                                            <Setter Property="ToolTip" Value="In your library"/>
                                             <Setter Property="IsHitTestVisible" Value="False"/>
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -930,8 +1160,29 @@
                         </Button>
                     </StackPanel>
 
-                    <TextBlock Text="{Binding NowPlayingTitle}" FontSize="44" FontWeight="Normal"
-                               Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" LineHeight="48"/>
+                    <!-- Idle quiets to 28px Light + a mode-specific next step (UX audit: an
+                         absence must not be the loudest element on screen). -->
+                    <TextBlock Text="{Binding NowPlayingTitle}" TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontSize" Value="44"/>
+                                <Setter Property="FontWeight" Value="Normal"/>
+                                <Setter Property="LineHeight" Value="48"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsNowPlayingIdle}" Value="True">
+                                        <Setter Property="FontSize" Value="28"/>
+                                        <Setter Property="FontWeight" Value="Light"/>
+                                        <Setter Property="LineHeight" Value="32"/>
+                                        <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{Binding IdleHint}" FontSize="15" FontWeight="Light"
+                               Foreground="{StaticResource TextMuted}" Margin="0,8,0,0"
+                               Visibility="{Binding IsNowPlayingIdle, Converter={StaticResource BoolToVis}}"/>
                     <TextBlock Text="{Binding NowPlayingArtist}" FontSize="20" FontWeight="Light"
                                Foreground="{StaticResource TextSecondary}" Margin="0,8,0,0"
                                TextTrimming="CharacterEllipsis"/>
@@ -947,6 +1198,29 @@
                             <TextBlock Text="{Binding NowPlayingStation}" Margin="8,0,0,0" FontSize="12.5"
                                        Foreground="#FFCFDEDB" VerticalAlignment="Center"
                                        TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- DJ Mode: the "why this song" line, promoted (UX audit b11). It's the
+                         mode's signature and was the hardest thing to read on the screen — 12.5px
+                         muted italic floating on artwork. Now 15px Secondary on a solid surface,
+                         attributed so it's clear who's talking. -->
+                    <Border HorizontalAlignment="Left" Margin="0,20,0,0" CornerRadius="10"
+                            Padding="14,12" MaxWidth="430" Background="#B8071614"
+                            BorderBrush="#2E56C7BA" BorderThickness="1"
+                            Visibility="{Binding ShowDjIntro, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
+                                <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform"
+                                      Width="12" Height="12" Fill="{StaticResource TealBright}"
+                                      VerticalAlignment="Center"/>
+                                <TextBlock Text="YOUR DJ" Margin="7,0,0,0" FontSize="10.5"
+                                           FontWeight="SemiBold" Foreground="{StaticResource TealText}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding DjIntroLine}" FontSize="15" FontStyle="Italic"
+                                       Foreground="{StaticResource TextSecondary}"
+                                       TextWrapping="Wrap" LineHeight="22"/>
                         </StackPanel>
                     </Border>
 
@@ -982,12 +1256,35 @@
                         <ContentControl Template="{StaticResource EqualizerTemplate}" Height="13"
                                         VerticalAlignment="Center" Margin="0,0,12,0"
                                         Visibility="{Binding ShowLiveBadge, Converter={StaticResource BoolToVis}}"/>
-                        <Border CornerRadius="7" Padding="9,3" Background="#1F56C7BA"
-                                BorderBrush="#4056C7BA" BorderThickness="1" VerticalAlignment="Center"
+                        <!-- LIVE, or BRIDGING in amber while DJ mode is playing a station to
+                             cover the gap until the mix fills — the two are genuinely different
+                             promises and shouldn't look identical. -->
+                        <Border CornerRadius="7" Padding="9,3" BorderThickness="1" VerticalAlignment="Center"
                                 Visibility="{Binding ShowLiveBadge, Converter={StaticResource BoolToVis}}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="#1F56C7BA"/>
+                                    <Setter Property="BorderBrush" Value="#4056C7BA"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDjWarmingUp}" Value="True">
+                                            <Setter Property="Background" Value="#24E6C88A"/>
+                                            <Setter Property="BorderBrush" Value="#66E6C88A"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                             <StackPanel Orientation="Horizontal">
-                                <Ellipse Width="6" Height="6" Fill="{StaticResource TealBright}"
-                                         VerticalAlignment="Center">
+                                <Ellipse Width="6" Height="6" VerticalAlignment="Center">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{StaticResource TealBright}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDjWarmingUp}" Value="True">
+                                                    <Setter Property="Fill" Value="#FFE6C88A"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
                                     <Ellipse.Triggers>
                                         <EventTrigger RoutedEvent="Loaded">
                                             <BeginStoryboard>
@@ -1000,17 +1297,45 @@
                                         </EventTrigger>
                                     </Ellipse.Triggers>
                                 </Ellipse>
-                                <TextBlock Text="LIVE" Margin="6,0,0,0" FontSize="10.5" FontWeight="SemiBold"
-                                           Foreground="#FF8FE0D4"/>
+                                <TextBlock Margin="6,0,0,0" FontSize="10.5" FontWeight="SemiBold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="LIVE"/>
+                                            <Setter Property="Foreground" Value="#FF8FE0D4"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDjWarmingUp}" Value="True">
+                                                    <Setter Property="Text" Value="BRIDGING"/>
+                                                    <Setter Property="Foreground" Value="#FFE6C88A"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
                         </Border>
-                        <TextBlock Text="{Binding NowPlayingFormat}" Margin="12,0,0,0" FontSize="12"
-                                   Foreground="#FF6F8783" VerticalAlignment="Center"
-                                   Visibility="{Binding HasStation, Converter={StaticResource BoolToVis}}"/>
+                        <!-- Codec pairs with the LIVE badge ("LIVE · AAC" — UX audit: alone and
+                             faint it read as debris) and hides when the codec is unknown. -->
+                        <TextBlock Margin="10,0,0,0" FontSize="12" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextMuted}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowLiveBadge}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding NowPlayingFormat}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                            <Run Text="· "/><Run Text="{Binding NowPlayingFormat, Mode=OneWay}"/>
+                        </TextBlock>
                     </StackPanel>
 
-                    <!-- "About this track" trigger (only with a playing track + an API key) -->
-                    <Button Style="{StaticResource AboutPillButton}" Content="About this track"
+                    <!-- "About this song" trigger (only with a playing track + an API key) -->
+                    <Button Style="{StaticResource AboutPillButton}" Content="About this song"
                             Command="{Binding OpenAboutCommand}" Margin="0,28,0,0"
                             Visibility="{Binding CanShowAbout, Converter={StaticResource BoolToVis}}"/>
 
@@ -1084,7 +1409,7 @@
                                 ToolTip="Back to now playing"/>
                         <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform" Width="15" Height="15"
                               Fill="#FF62D2C4" VerticalAlignment="Center" Margin="13,0,0,0"/>
-                        <TextBlock Text="ABOUT THIS TRACK" Margin="8,0,0,0" FontSize="11" FontWeight="SemiBold"
+                        <TextBlock Text="ABOUT THIS SONG" Margin="8,0,0,0" FontSize="11" FontWeight="SemiBold"
                                    Foreground="#FF8FD6CB" VerticalAlignment="Center"/>
                     </StackPanel>
 
@@ -1127,7 +1452,7 @@
                                               StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                               Data="M 6.5,1 A 5.5,5.5 0 0 1 12,6.5"/>
                                     </Grid>
-                                    <TextBlock Text="Gathering notes on this track…" FontSize="12.5"
+                                    <TextBlock Text="Gathering notes on this song…" FontSize="12.5"
                                                Foreground="#FF8FD6CB" VerticalAlignment="Center"/>
                                 </StackPanel>
 
@@ -1275,8 +1600,30 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- ===== Transport + volume ===== -->
-                <StackPanel Grid.Row="1">
+                <!-- ===== Transport + volume =====
+                     On a defined surface strip (UX audit): the artwork's bright diagonal runs
+                     straight through this area, and a gradient scrim alone still left the
+                     controls looking like they floated on it. Negative margins cancel the
+                     pane's padding so the strip reaches the window edges; Padding restores the
+                     inner spacing.
+
+                     The strip FADES IN over its top 62px rather than starting at full opacity
+                     behind a hairline, which drew a hard band across the artwork. MappingMode
+                     Absolute is what makes that work: the strip's height changes with the mode
+                     (seek row and Up next come and go), so a proportional gradient would move the
+                     boundary around, while SpreadMethod=Pad holds the solid tone everywhere below
+                     62px whatever the height. The top padding matches the fade so no control ever
+                     sits in the ramp. -->
+                <Border Grid.Row="1" Margin="-44,0,-44,-30" Padding="44,62,44,30">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,62"
+                                             MappingMode="Absolute" SpreadMethod="Pad">
+                            <GradientStop Offset="0" Color="#00040B0A"/>
+                            <GradientStop Offset="0.55" Color="#78040B0A"/>
+                            <GradientStop Offset="1" Color="#B8040B0A"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                <StackPanel>
                     <!-- Seek bar (library mode only; radio streams have no timeline) -->
                     <Grid Margin="0,0,0,18" Width="440" HorizontalAlignment="Left"
                           Visibility="{Binding HasDuration, Converter={StaticResource BoolToVis}}">
@@ -1287,7 +1634,7 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{Binding PositionText}" FontSize="11.5"
                                    Foreground="#FF8AA39E" VerticalAlignment="Center" MinWidth="34"/>
-                        <Slider x:Name="SeekSlider" Grid.Column="1" Style="{StaticResource VolumeSlider}"
+                        <Slider x:Name="SeekSlider" Grid.Column="1" Style="{StaticResource SeekBarSlider}"
                                 Margin="12,0" Minimum="0" Maximum="{Binding DurationSeconds}"
                                 Value="{Binding PositionSeconds, Mode=TwoWay}"/>
                         <TextBlock Grid.Column="2" Text="{Binding DurationText}" FontSize="11.5"
@@ -1295,50 +1642,98 @@
                                    TextAlignment="Right"/>
                     </Grid>
 
-                    <StackPanel Orientation="Horizontal">
-                        <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
-                                Command="{Binding PrevStationCommand}"
-                                Content="{StaticResource PrevGeometry}" ToolTip="Previous"/>
-                        <Button Command="{Binding PlayPauseCommand}" ToolTip="{Binding PlayPauseLabel}"
-                                VerticalAlignment="Center" Margin="16,0">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource PlayButton}">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsPlaying}" Value="True">
-                                            <Setter Property="Content" Value="{StaticResource PauseGeometry}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                        <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
-                                Command="{Binding NextStationCommand}"
-                                Content="{StaticResource NextGeometry}" ToolTip="Next"/>
-                        <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
-                                Command="{Binding StopCommand}" Margin="16,0,0,0"
-                                Content="{StaticResource StopGeometry}" ToolTip="Stop"/>
-                    </StackPanel>
-
-                    <!-- Volume (explicit width so the * slider column doesn't collapse) -->
-                    <Grid Margin="0,24,0,0" Width="440" HorizontalAlignment="Left">
+                    <!-- Transport, with volume on the SAME row, right-aligned (design review
+                         "Volume Control Options", option A). Volume used to own a full row styled
+                         identically to the seek bar, which read as "these two matter equally";
+                         it's set once a session. Moving it up buys back a row of artwork and is
+                         the standard desktop-player arrangement. Width 440 aligns the group's
+                         right edge with the seek bar's end above, so the controls read as one
+                         block rather than drifting to the far pane edge. -->
+                    <Grid Width="440" HorizontalAlignment="Left">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="34"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <Path Grid.Column="0" Data="{StaticResource VolumeGeometry}" Stretch="Uniform"
-                              Width="18" Height="18" Fill="#FF8AA39E" VerticalAlignment="Center"/>
-                        <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}" Margin="12,0"
-                                Minimum="0" Maximum="1" SmallChange="0.05" LargeChange="0.1"
-                                Value="{Binding Volume, Mode=TwoWay}"/>
-                        <TextBlock Grid.Column="2" Text="{Binding VolumePercent}" FontSize="12"
-                                   Foreground="#FF8AA39E" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
+                                    Command="{Binding PrevStationCommand}"
+                                    Content="{StaticResource PrevGeometry}" ToolTip="Previous"/>
+                            <Button Command="{Binding PlayPauseCommand}" ToolTip="{Binding PlayPauseLabel}"
+                                    VerticalAlignment="Center" Margin="16,0">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource PlayButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                                <Setter Property="Content" Value="{StaticResource PauseGeometry}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
+                                    Command="{Binding NextStationCommand}"
+                                    Content="{StaticResource NextGeometry}" ToolTip="Next"/>
+                            <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
+                                    Command="{Binding StopCommand}" Margin="16,0,0,0"
+                                    Content="{StaticResource StopGeometry}" ToolTip="Stop"/>
+                        </StackPanel>
+
+                        <!-- Volume group. The readout appears on hover only: a permanently visible
+                             "100" tells the user a number they set themselves. The tooltip keeps
+                             it readable without hovering the slider itself. -->
+                        <StackPanel x:Name="VolumeGroup" Grid.Column="2" Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    ToolTip="{Binding VolumePercent, StringFormat=Volume {0}}">
+                            <Path Data="{StaticResource VolumeGeometry}" Stretch="Uniform"
+                                  Width="16" Height="16" Fill="#FF8AA39E" VerticalAlignment="Center"/>
+                            <Slider Style="{StaticResource MutedSlider}" Width="96" Margin="10,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Minimum="0" Maximum="1" SmallChange="0.05" LargeChange="0.1"
+                                    Value="{Binding Volume, Mode=TwoWay}"/>
+                            <TextBlock Text="{Binding VolumePercent}" FontSize="11" Width="26"
+                                       Margin="8,0,0,0" TextAlignment="Right"
+                                       Foreground="#FF8AA39E" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Opacity" Value="0"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Value="True" Binding="{Binding IsMouseOver,
+                                                         ElementName=VolumeGroup}">
+                                                <Setter Property="Opacity" Value="1"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
                     </Grid>
+
+                    <!-- "Up next" (DJ mode): the thing a listener most often wants to know
+                         without switching panels. Only when there's actually a next track. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,18,0,0"
+                                Visibility="{Binding HasUpNext, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="UP NEXT" FontSize="10" FontWeight="SemiBold"
+                                   Foreground="#FF6F8C87" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding UpNext}" Margin="9,0,0,0" FontSize="12"
+                                   Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
                 </StackPanel>
+                </Border>
             </Grid>
         </Grid>
 
             </Grid>
+
+            <!-- Scrim while a modal dialog is open (UX audit): without it the running app keeps
+                 competing for attention behind the dialog. Spans both rows so the title bar dims
+                 too; AppDialog sets the attached flag on its owner. -->
+            <Rectangle Grid.RowSpan="2" Panel.ZIndex="99" Fill="#99050D0C" IsHitTestVisible="False"
+                       Visibility="{Binding Path=(ctl:AppDialog.IsDimmed),
+                                    RelativeSource={RelativeSource AncestorType=Window},
+                                    Converter={StaticResource BoolToVis}}"/>
         </Grid>
     </Border>
 </Window>

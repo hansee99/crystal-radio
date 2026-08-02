@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using System.IO;
+using System.Net.Http;
 using RadioPlayer.Models;
 using RadioPlayer.Mvvm;
 using RadioPlayer.Services;
@@ -26,6 +27,13 @@ public sealed class MainViewModel : ObservableObject
     private readonly ISongLibraryService _songLibrary;
     private readonly LocalPlaybackEngine _local;
     private readonly ISongCurator _curator;
+    private readonly DjHarvestService _djHarvest;
+    private readonly DjQueueService _djQueue;
+    private readonly IDjIntroService _djIntro;
+    // DjHarvestService's events fire on a background thread (unlike every other engine this
+    // view model handles, which already marshal to the UI thread before raising anything) — this
+    // is the one dispatcher MainViewModel captures itself, purely to marshal those.
+    private readonly System.Windows.Threading.Dispatcher _dispatcher;
 
     // Below this cosine score the local index is considered too weak (heuristic fallback only).
     private const double SemanticThreshold = 0.30;
@@ -45,6 +53,12 @@ public sealed class MainViewModel : ObservableObject
     private string _searchStatus = string.Empty;
     private bool _isSearching;
 
+    // Cancels the in-flight search pipeline (see RunSearchAsync) when the user switches away
+    // from the Radio panel mid-search, or hits Cancel in the progress panel.
+    private CancellationTokenSource? _searchCts;
+    private CancellationTokenSource? _curateCts;
+    private CancellationTokenSource? _djStartCts;
+
     // "Show different" (Regenerate) search: remember what's already been shown for the current
     // prompt so a re-run surfaces fresh stations, and page deeper into the directory each time.
     private readonly HashSet<string> _shownStationUrls = new(StringComparer.OrdinalIgnoreCase);
@@ -54,7 +68,7 @@ public sealed class MainViewModel : ObservableObject
     // Radio Browser rows fetched per structured page — must match StationSearchService's limit
     // so paging on regenerate advances past the previous page's directory rows.
     private const int StructuredPageSize = 30;
-    private string _nowPlayingTitle = "Not playing";
+    private string _nowPlayingTitle = "Nothing playing"; // == IdleTitle (const not usable here)
     private string _nowPlayingArtist = string.Empty;
     private string _nowPlayingStation = string.Empty;
     private string _nowPlayingFormat = string.Empty;
@@ -85,8 +99,10 @@ public sealed class MainViewModel : ObservableObject
         IStationDialog stationDialog, IPromptInterpreter interpreter, IStationSearchService searchService,
         IAgenticSearchService agenticSearch, IEnrichmentService enrichment,
         ISemanticSearchService semanticSearch, ISearchRanker ranker, ITrackInfoService trackInfoService,
-        ISongLibraryService songLibrary, LocalPlaybackEngine local, ISongCurator curator)
+        ISongLibraryService songLibrary, LocalPlaybackEngine local, ISongCurator curator,
+        DjHarvestService djHarvest, IDjIntroService djIntro)
     {
+        _dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
         _engine = engine;
         _store = store;
         _settingsStore = settingsStore;
@@ -103,6 +119,14 @@ public sealed class MainViewModel : ObservableObject
         _songLibrary = songLibrary;
         _local = local;
         _curator = curator;
+        _djHarvest = djHarvest;
+        _djIntro = djIntro;
+        _djQueue = new DjQueueService(local, curator, djHarvest,
+            maxSeed: 20, lowWatermark: settingsStore.Load().DjQueueLowWatermark);
+
+        // DjHarvestService's events fire on a background thread (see its own doc comment) —
+        // marshal before touching any UI-bound property.
+        _djHarvest.StatusChanged += (_, status) => _dispatcher.BeginInvoke(() => OnDjStatusChanged(status));
 
         // Restore the persisted volume onto both engines (either/or, but volume is shared).
         _volume = settingsStore.Load().Volume;
@@ -113,7 +137,7 @@ public sealed class MainViewModel : ObservableObject
         _engine.MetadataChanged += (_, meta) => OnMetadataChanged(meta);
         _engine.ErrorOccurred += (_, msg) => StatusText = msg;
 
-        // Local (library) engine — its handlers no-op unless Library mode is active.
+        // Local (library/DJ) engine — its handlers no-op unless one of those modes is active.
         _local.StateChanged += (_, state) => OnLocalStateChanged(state);
         _local.TrackChanged += (_, e) => OnLocalTrackChanged(e.Track);
         _local.PositionChanged += (_, e) => OnLocalPosition(e.Position, e.Duration);
@@ -133,7 +157,7 @@ public sealed class MainViewModel : ObservableObject
         // exist, then delete cache files nothing references (crash leftovers).
         foreach (var entry in History)
         {
-            if (entry.SegmentFile is not null && !File.Exists(StreamRecorder.PathFor(entry.SegmentFile)))
+            if (entry.SegmentFile is not null && !File.Exists(_recorder.PathFor(entry.SegmentFile)))
             {
                 entry.SegmentFile = null;
                 entry.SegmentBytes = 0;
@@ -146,7 +170,7 @@ public sealed class MainViewModel : ObservableObject
         // Reconcile the song library against disk and finish any pending enrichment/embeddings.
         _songLibrary.BackfillInBackground();
         LibrarySongs = new ObservableCollection<LibrarySongItem>(
-            _songLibrary.GetAll().Select(s => new LibrarySongItem(s)));
+            _songLibrary.GetAll(SongSource.UserSaved).Select(s => new LibrarySongItem(s)));
 
         PlayPauseCommand = new RelayCommand(TogglePlayPause);
         StopCommand = new RelayCommand(() => ActiveEngine.Stop(), () => ActiveEngine.State != PlaybackState.Stopped);
@@ -154,7 +178,16 @@ public sealed class MainViewModel : ObservableObject
         PrevStationCommand = new RelayCommand(Prev, CanGoPrev);
         SwitchToRadioCommand = new RelayCommand(() => SetMode(PlayerMode.Radio));
         SwitchToLibraryCommand = new RelayCommand(() => SetMode(PlayerMode.Library));
+        SwitchToDjCommand = new RelayCommand(() => SetMode(PlayerMode.Dj));
         CurateCommand = new RelayCommand(() => _ = RunCurateAsync(), () => !IsCurating);
+        StartDjCommand = new RelayCommand(() => _ = StartDjAsync(),
+            () => !IsDjRunning && !string.IsNullOrWhiteSpace(DjPrompt));
+        StopDjCommand = new RelayCommand(StopDj, () => IsDjRunning);
+
+        // Staged progress for the three long AI waits, each with its own Cancel (UX audit).
+        SearchProgress = new StagedProgress { CancelCommand = new RelayCommand(() => _searchCts?.Cancel()) };
+        CurateProgress = new StagedProgress { CancelCommand = new RelayCommand(() => _curateCts?.Cancel()) };
+        DjProgress = new StagedProgress { CancelCommand = new RelayCommand(() => _djStartCts?.Cancel()) };
         PlayQueueItemCommand = new RelayCommand<CuratedQueueItem>(PlayQueueItem);
         PlayLibrarySongCommand = new RelayCommand<LibrarySongItem>(PlayLibrarySong);
         AddStationCommand = new RelayCommand(AddStation);
@@ -177,12 +210,41 @@ public sealed class MainViewModel : ObservableObject
         SaveSongCommand = new RelayCommand<SongHistoryEntry>(SaveSong, e => e?.CanSave == true);
         MarkForSaveCommand = new RelayCommand(ToggleMarkForSave, () => CanMarkForSave && !IsCurrentSongSaved);
 
+        // Every list panel's state is derived from its collection's count, so each collection
+        // drives its own panel's change notification (UX audit: PanelState).
+        WatchPanel(Stations, nameof(StationsPanelState));
+        WatchPanel(SearchResults, nameof(SearchPanelState));
+        WatchPanel(History, nameof(HistoryPanelState));
+        WatchPanel(CuratedQueue, nameof(CuratePanelState));
+        WatchPanel(LibrarySongs, nameof(LibrarySongsPanelState));
+        WatchPanel(DjHarvesters, nameof(DjSourcesPanelState));
+        WatchPanel(DjMix, nameof(DjMixPanelState));
+
+        // The Mix list is a view of the engine's queue, so it follows both "the queue changed"
+        // and "we moved within it".
+        _local.QueueChanged += (_, _) => SyncDjMix();
+
+        // Running dry is the normal condition whenever harvesting hasn't kept up — fall back to
+        // live radio rather than going quiet. The handover back happens on its own: appending a
+        // song restarts local playback, whose TrackChanged ends the bridge.
+        _local.QueueExhausted += (_, _) => BridgeIfDjMixRanDry();
+
+        // The Mix panel is Loading only while a session is actually starting up; DjProgress is
+        // reset once it has, after which an empty mix means "bridging" or "collecting".
+        DjProgress.Stages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(DjMixPanelState));
+
         // Show the selected station's preview from the very first frame instead of a bare
         // "Not playing" (Shared Framework Spec §4a) — SelectedStation was set on the backing
         // field above, bypassing the setter's own preview refresh.
         ApplyStoppedPreview();
         RefreshRecentOnStation();
     }
+
+    /// <summary>Re-raise <paramref name="statePropertyName"/> whenever the backing collection
+    /// gains or loses rows, so the panel's derived state follows its content.</summary>
+    private void WatchPanel(System.Collections.Specialized.INotifyCollectionChanged collection,
+        string statePropertyName) =>
+        collection.CollectionChanged += (_, _) => OnPropertyChanged(statePropertyName);
 
     // ===== AI-assisted station search =====
 
@@ -273,7 +335,7 @@ public sealed class MainViewModel : ObservableObject
     {
         var entry = History[index];
         if (entry.SegmentFile is not null)
-            StreamRecorder.TryDelete(StreamRecorder.PathFor(entry.SegmentFile));
+            StreamRecorder.TryDelete(_recorder.PathFor(entry.SegmentFile));
         History.RemoveAt(index);
     }
 
@@ -291,7 +353,7 @@ public sealed class MainViewModel : ObservableObject
         if (entry is null)
         {
             // No matching row (filtered or trimmed in the meantime) — don't keep orphan audio.
-            StreamRecorder.TryDelete(StreamRecorder.PathFor(seg.FileName));
+            StreamRecorder.TryDelete(_recorder.PathFor(seg.FileName));
             return;
         }
 
@@ -353,7 +415,7 @@ public sealed class MainViewModel : ObservableObject
             var entry = History[i];
             if (entry.SegmentFile is null)
                 continue;
-            StreamRecorder.TryDelete(StreamRecorder.PathFor(entry.SegmentFile));
+            StreamRecorder.TryDelete(_recorder.PathFor(entry.SegmentFile));
             total -= entry.SegmentBytes;
             entry.SegmentFile = null;
             entry.SegmentBytes = 0;
@@ -378,7 +440,7 @@ public sealed class MainViewModel : ObservableObject
             for (var n = 2; File.Exists(dest); n++)
                 dest = Path.Combine(_libraryFolder, $"{baseName} ({n}){ext}");
 
-            File.Copy(StreamRecorder.PathFor(entry.SegmentFile), dest);
+            File.Copy(_recorder.PathFor(entry.SegmentFile), dest);
             entry.SavedPath = dest;
             _historyStore.Save(History);
             SaveSongCommand.RaiseCanExecuteChanged();
@@ -401,7 +463,7 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[Save] failed: {ex.Message}");
+            AppLog.Error("[Save] failed", ex);
             StatusText = "Couldn't save the song — check the library folder in Options.";
         }
     }
@@ -450,6 +512,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 SearchCommand.RaiseCanExecuteChanged();
                 RaiseRegenerateCanExecute();
+                OnPropertyChanged(nameof(SearchPanelState));
             }
         }
     }
@@ -459,6 +522,164 @@ public sealed class MainViewModel : ObservableObject
         get => _selectedSearchResult;
         set => SetProperty(ref _selectedSearchResult, value);
     }
+
+    // ===== Panel states (UX audit) =====
+    //
+    // Each list panel publishes exactly one PanelState. Derived, never assigned, so Empty can
+    // never coexist with Loading (the class of bug the audit found in Library-Curate and DJ) —
+    // the precedence is encoded once, here, instead of in per-element visibility triggers.
+    // Change notification comes from the collections themselves (hooked in the constructor)
+    // plus the in-flight flags and error properties below.
+
+    public PanelState StationsPanelState =>
+        Stations.Count == 0 ? PanelState.Empty : PanelState.Content;
+
+    public PanelState SearchPanelState =>
+        IsSearching ? PanelState.Loading
+        : SearchError is not null ? PanelState.Error
+        : SearchResults.Count == 0 ? PanelState.Empty
+        : PanelState.Content;
+
+    public PanelState HistoryPanelState =>
+        History.Count == 0 ? PanelState.Empty : PanelState.Content;
+
+    public PanelState CuratePanelState =>
+        IsCurating ? PanelState.Loading
+        : CurateError is not null ? PanelState.Error
+        : CuratedQueue.Count == 0 ? PanelState.Empty
+        : PanelState.Content;
+
+    public PanelState LibrarySongsPanelState =>
+        LibrarySongs.Count == 0 ? PanelState.Empty : PanelState.Content;
+
+    /// <summary>Sources tab: a running session with no harvesters connected yet is still
+    /// starting up — that's Loading, not Empty.</summary>
+    public PanelState DjSourcesPanelState =>
+        DjError is not null ? PanelState.Error
+        : !IsDjRunning ? PanelState.Empty
+        : DjHarvesters.Count == 0 ? PanelState.Loading
+        : PanelState.Content;
+
+    /// <summary>
+    /// Mix tab. Loading means "a session is starting up" and shows the staged checklist — keyed
+    /// on the checklist actually having steps, since DjProgress is reset once startup finishes.
+    /// After that an empty mix isn't Loading: it's a running session that's bridging live or
+    /// still collecting, which <see cref="DjMixEmptyMessage"/> says in words.
+    /// </summary>
+    public PanelState DjMixPanelState =>
+        DjMix.Count > 0 ? PanelState.Content
+        : DjError is not null ? PanelState.Error
+        : DjProgress.Stages.Count > 0 ? PanelState.Loading
+        : PanelState.Empty;
+
+    /// <summary>
+    /// What the Mix tab says when it has no songs. Three genuinely different situations, and
+    /// telling someone to "describe a vibe above" while their session is running and bridging
+    /// live radio is the one thing it must not do.
+    /// </summary>
+    public string DjMixEmptyMessage
+    {
+        get
+        {
+            if (!IsDjRunning)
+                return "No mix yet — describe a vibe above and the DJ builds one from live radio, "
+                       + "playing as it collects.";
+            if (_djWarmingUp)
+            {
+                var station = _djHarvest.TopStation?.Name;
+                return station is null
+                    ? "Building the mix — playing live radio until the first songs are ready."
+                    : $"Building the mix — {station} is playing live until the first songs are ready.";
+            }
+            return "Collecting songs — the mix starts as soon as the first one lands.";
+        }
+    }
+
+    private string? _searchError;
+    /// <summary>Non-null puts the Search panel in its Error state. Cleared when a search starts.</summary>
+    public string? SearchError
+    {
+        get => _searchError;
+        private set
+        {
+            if (SetProperty(ref _searchError, value))
+                OnPropertyChanged(nameof(SearchPanelState));
+        }
+    }
+
+    private string? _curateError;
+    public string? CurateError
+    {
+        get => _curateError;
+        private set
+        {
+            if (SetProperty(ref _curateError, value))
+                OnPropertyChanged(nameof(CuratePanelState));
+        }
+    }
+
+    private string? _djError;
+    public string? DjError
+    {
+        get => _djError;
+        private set
+        {
+            if (SetProperty(ref _djError, value))
+                OnPropertyChanged(nameof(DjSourcesPanelState));
+        }
+    }
+
+    private string _searchEmptyMessage = DefaultSearchEmptyMessage;
+    private const string DefaultSearchEmptyMessage =
+        "Describe a vibe above and we'll find stations that actually play it.";
+
+    /// <summary>What the Search panel says when it has nothing to show — the opening invitation
+    /// before the first search, or why the last one came back empty.</summary>
+    public string SearchEmptyMessage
+    {
+        get => _searchEmptyMessage;
+        private set => SetProperty(ref _searchEmptyMessage, value);
+    }
+
+    private string _curateEmptyMessage = DefaultCurateEmptyMessage;
+    private const string DefaultCurateEmptyMessage =
+        "Describe a mood or vibe above and we'll build a set from your saved songs.";
+
+    public string CurateEmptyMessage
+    {
+        get => _curateEmptyMessage;
+        private set => SetProperty(ref _curateEmptyMessage, value);
+    }
+
+    private string _djSourcesEmptyMessage = DefaultDjSourcesEmptyMessage;
+    private const string DefaultDjSourcesEmptyMessage =
+        "No session yet — describe a vibe above to start one.";
+
+    public string DjSourcesEmptyMessage
+    {
+        get => _djSourcesEmptyMessage;
+        private set => SetProperty(ref _djSourcesEmptyMessage, value);
+    }
+
+    // ===== Staged progress for the long AI waits (UX audit) =====
+    //
+    // Each panel's Loading slot binds one of these instead of a bare spinner + sentence: named
+    // steps that tick off and stay on screen, so a 40-second search reads as progress rather
+    // than a possible hang, plus a Cancel for anything that can outstay its welcome.
+    // Stage labels are the user-facing copy; the pipeline calls Step() with the same strings.
+
+    private const string SearchStageDirectory = "Searching the station directory";
+    private const string SearchStageRank = "Picking the ones that fit";
+    private const string SearchStageWeb = "Casting a wider net on the web";
+    private const string SearchStageValidate = "Checking they actually play";
+
+    private const string DjStageFind = "Finding stations for your vibe";
+    private const string DjStageConnect = "Tuning in to them";
+    private const string DjStageRecord = "Recording the first songs";
+
+    public StagedProgress SearchProgress { get; }
+    public StagedProgress CurateProgress { get; }
+    public StagedProgress DjProgress { get; }
 
     private async Task RunSearchAsync(bool regenerate)
     {
@@ -481,21 +702,41 @@ public sealed class MainViewModel : ObservableObject
             _searchPage++;
         }
 
+        SearchError = null; // a new attempt clears the previous failure
+        SearchEmptyMessage = DefaultSearchEmptyMessage;
+        // The web stage is inserted by the pipeline only on runs that actually escalate.
+        SearchProgress.Begin(SearchStageDirectory, SearchStageRank, SearchStageValidate);
         IsSearching = true;
         SearchResults.Clear();
         SelectedSearchResult = null;
 
+        // One CTS per search so switching away from the Radio panel can abandon a slow
+        // pipeline (especially a web escalation) instead of letting it run to completion
+        // against a panel nobody is looking at.
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        var cts = _searchCts = new CancellationTokenSource();
+
         try
         {
-            await RunUnifiedSearchAsync(prompt, _searchPage);
+            await RunUnifiedSearchAsync(prompt, _searchPage, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Abandoned by Cancel or a mode switch — not an error; the panel falls back to its
+            // empty invitation rather than accusing the user of a failure.
+            SearchStatus = string.Empty;
+            SearchEmptyMessage = DefaultSearchEmptyMessage;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[Search] failed: {ex}");
-            SearchStatus = "The search hit a snag — please try again.";
+            AppLog.Error("[Search] failed", ex);
+            SearchStatus = string.Empty;                      // the panel says it now
+            SearchError = "The search hit a snag — please try again.";
         }
         finally
         {
+            SearchProgress.Reset();
             IsSearching = false;
             RaiseRegenerateCanExecute();
         }
@@ -517,32 +758,34 @@ public sealed class MainViewModel : ObservableObject
     /// "BBC Radio 1" is filled by the cheap sources and never pays for web; a niche
     /// genre/region/qualifier prompt comes back thin and escalates automatically.
     /// </summary>
-    private async Task RunUnifiedSearchAsync(string prompt, int page)
+    private async Task RunUnifiedSearchAsync(string prompt, int page, CancellationToken ct)
     {
         if (!_interpreter.IsConfigured && !_semanticSearch.IsAvailable && !_agenticSearch.IsConfigured)
         {
-            SearchStatus = "Add your Anthropic API key in Options to use AI search.";
+            SearchStatus = string.Empty;
+            SearchError = "Add your Anthropic API key in Options to use AI search.";
             return;
         }
 
         var isRegenerate = page > 0;
-        SearchStatus = isRegenerate ? "Looking for something different…" : "Scanning the airwaves…";
+        // Progress now lives in the panel's staged checklist (SearchProgress), not this line —
+        // SearchStatus is left for the result summary once the search finishes.
 
         // 1. Cheap recall sources, together: structured Radio Browser lookup + local semantic.
         //    Gather a larger semantic pool so the ranker has real choice. On regenerate, page
         //    deeper into the directory so Pattern A brings back rows we haven't shown yet.
-        var structuredTask = RunStructuredAsync(prompt, page * StructuredPageSize);
+        var structuredTask = RunStructuredAsync(prompt, page * StructuredPageSize, ct);
         var semanticTask = _semanticSearch.IsAvailable
-            ? _semanticSearch.SearchAsync(prompt, CandidatePoolSize)
+            ? _semanticSearch.SearchAsync(prompt, CandidatePoolSize, ct)
             : Task.FromResult<IReadOnlyList<SemanticResult>>([]);
 
         // Await each independently so one source failing doesn't sink the other.
         IReadOnlyList<StationCandidate> structured = [];
         IReadOnlyList<SemanticResult> semantic = [];
         try { structured = await structuredTask; }
-        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Search] structured failed: {ex.Message}"); }
+        catch (Exception ex) { AppLog.Debug($"[Search] structured failed: {ex.Message}"); }
         try { semantic = await semanticTask; }
-        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Search] semantic failed: {ex.Message}"); }
+        catch (Exception ex) { AppLog.Debug($"[Search] semantic failed: {ex.Message}"); }
 
         // Lazily enrich the structured finds (fire-and-forget) so the local side keeps growing.
         if (structured.Count > 0)
@@ -562,34 +805,39 @@ public sealed class MainViewModel : ObservableObject
             if (seen.Add(r.Station.Url))
                 pool.Add(new SearchResultItem(r.Station, r.Description, r.Country));
 
-        var shortlist = await RankOrMerge(prompt, pool, semantic);
+        var shortlist = await RankOrMerge(prompt, pool, semantic, ct);
 
         // 3. Escalate to web discovery only when the cheap sources came back thin.
         if (NeedsWebEscalation(shortlist) && _agenticSearch.IsConfigured)
         {
-            SearchStatus = "Casting a wider net on the web…";
+            SearchProgress.Step(SearchStageWeb); // inserted into the checklist only when it runs
             IReadOnlyList<RankedStation> web = [];
-            try { web = await _agenticSearch.SearchAsync(prompt); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Search] web failed: {ex.Message}"); }
+            try { web = await _agenticSearch.SearchAsync(prompt, MaxResults, ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { AppLog.Debug($"[Search] web failed: {ex.Message}"); }
 
             foreach (var r in web)
                 if (seen.Add(r.Station.Url))
                     pool.Add(new SearchResultItem(r.Station, r.Reason));
 
             // Re-rank the combined pool so web finds compete with the cheap ones on one signal.
-            shortlist = await RankOrMerge(prompt, pool, semantic);
+            shortlist = await RankOrMerge(prompt, pool, semantic, ct);
         }
 
         if (shortlist.Count == 0)
         {
-            SearchStatus = isRegenerate
+            // "Nothing found" is Empty, not Error — the panel says it, so the status line
+            // doesn't repeat it two inches above.
+            SearchEmptyMessage = isRegenerate
                 ? "That's everything I could find for this — try a new description."
                 : "Nothing turned up — try describing it differently.";
+            SearchStatus = string.Empty;
             return;
         }
 
         // 4. Validate streams before showing (drops dead/undecodable ones).
-        SearchStatus = "Making sure they actually play…";
+        ct.ThrowIfCancellationRequested();
+        SearchProgress.Step(SearchStageValidate);
         await AddValidatedAsync(shortlist);
 
         // Remember what we've shown so the next "Show different" surfaces new stations.
@@ -605,14 +853,14 @@ public sealed class MainViewModel : ObservableObject
     /// the prompt — there is no Broaden fallback any more; the pool's other sources and the
     /// re-ranker decide relevance, so a query that matches nothing simply contributes nothing.
     /// </summary>
-    private async Task<IReadOnlyList<StationCandidate>> RunStructuredAsync(string prompt, int offset)
+    private async Task<IReadOnlyList<StationCandidate>> RunStructuredAsync(string prompt, int offset, CancellationToken ct)
     {
         if (!_interpreter.IsConfigured)
             return [];
-        var query = await _interpreter.InterpretAsync(prompt);
+        var query = await _interpreter.InterpretAsync(prompt, ct);
         if (query is null)
             return [];
-        return await _searchService.SearchCandidatesAsync(query, offset);
+        return await _searchService.SearchCandidatesAsync(query, offset, ct);
     }
 
     /// <summary>
@@ -620,19 +868,20 @@ public sealed class MainViewModel : ObservableObject
     /// to the cosine-threshold heuristic when the ranker can't run (no key / transient error).
     /// </summary>
     private async Task<List<SearchResultItem>> RankOrMerge(
-        string prompt, List<SearchResultItem> pool, IReadOnlyList<SemanticResult> semantic)
+        string prompt, List<SearchResultItem> pool, IReadOnlyList<SemanticResult> semantic,
+        CancellationToken ct)
     {
         if (pool.Count == 0)
             return [];
 
         if (_ranker.IsConfigured)
         {
-            SearchStatus = "Finding the best matches…";
+            SearchProgress.Step(SearchStageRank);
             var candidates = pool.Select((p, i) => new RankCandidate(i, p.Station.Name, p.Reason ?? "", p.Country)).ToList();
-            var verdicts = await _ranker.RankAsync(prompt, candidates, ResultsToValidate);
+            var verdicts = await _ranker.RankAsync(prompt, candidates, ResultsToValidate, ct);
             if (verdicts is not null) // null = ranker couldn't run → fall back to heuristic
             {
-                System.Diagnostics.Debug.WriteLine($"[Rank] pool={pool.Count} -> kept {verdicts.Count}");
+                AppLog.Debug($"[Rank] pool={pool.Count} -> kept {verdicts.Count}");
                 return verdicts.Select(v => pool[v.Id]).ToList();
             }
         }
@@ -746,12 +995,20 @@ public sealed class MainViewModel : ObservableObject
         return parts.Length == 0 ? null : string.Join(" · ", parts.Take(5));
     }
 
-    private void SetResultStatus(bool isRegenerate) =>
-        SearchStatus = SearchResults.Count == 0
-            ? (isRegenerate
+    private void SetResultStatus(bool isRegenerate)
+    {
+        // Nothing survived validation → Empty state carries the message; otherwise the status
+        // line reports the win and the panel shows the rows.
+        if (SearchResults.Count == 0)
+        {
+            SearchEmptyMessage = isRegenerate
                 ? "No more new stations for this — try a new description."
-                : "Nothing playable came through — try describing it differently.")
-            : $"Found {SearchResults.Count} station{(SearchResults.Count == 1 ? "" : "s")} you can play.";
+                : "Nothing playable came through — try describing it differently.";
+            SearchStatus = string.Empty;
+            return;
+        }
+        SearchStatus = $"Found {SearchResults.Count} station{(SearchResults.Count == 1 ? "" : "s")} you can play.";
+    }
 
 
     /// <summary>
@@ -811,7 +1068,10 @@ public sealed class MainViewModel : ObservableObject
     // Phase D: mode switch + local library curation/playback.
     public RelayCommand SwitchToRadioCommand { get; }
     public RelayCommand SwitchToLibraryCommand { get; }
+    public RelayCommand SwitchToDjCommand { get; }
     public RelayCommand CurateCommand { get; }
+    public RelayCommand StartDjCommand { get; }
+    public RelayCommand StopDjCommand { get; }
     public RelayCommand<CuratedQueueItem> PlayQueueItemCommand { get; }
     public RelayCommand<LibrarySongItem> PlayLibrarySongCommand { get; }
 
@@ -841,15 +1101,39 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>The idle placeholder title. UX audit: idle must read quieter than a song title
+    /// (the view styles it down when <see cref="IsNowPlayingIdle"/>) and offer a next step
+    /// (<see cref="IdleHint"/>) instead of shouting an absence at 44px.</summary>
+    public const string IdleTitle = "Nothing playing";
+
     public string NowPlayingTitle
     {
         get => _nowPlayingTitle;
         private set
         {
             if (SetProperty(ref _nowPlayingTitle, value))
+            {
                 OnPropertyChanged(nameof(NowPlayingClipboardText));
+                OnPropertyChanged(nameof(IsNowPlayingIdle));
+            }
         }
     }
+
+    /// <summary>True while the title slot holds the idle placeholder — derived from the title
+    /// itself so it can never disagree with what's on screen.</summary>
+    public bool IsNowPlayingIdle => _nowPlayingTitle == IdleTitle;
+
+    /// <summary>Mode-specific next step shown under the idle title (UX audit). DJ mode has two
+    /// idle states and they need different words: no session at all, versus a running session
+    /// whose mix has nothing playable in it yet — telling someone to start a session they're
+    /// already in is how a stall reads as a dead app.</summary>
+    public string IdleHint => _mode switch
+    {
+        PlayerMode.Library => "Play a saved song, or curate a set.",
+        PlayerMode.Dj when IsDjRunning => "Still collecting — the mix will start on its own.",
+        PlayerMode.Dj => "Describe a vibe to start a session.",
+        _ => "Pick a station on the left."
+    };
 
     public string NowPlayingArtist
     {
@@ -891,11 +1175,13 @@ public sealed class MainViewModel : ObservableObject
         private set => SetProperty(ref _nowPlayingFormat, value);
     }
 
-    /// <summary>True while a stream is connecting/reconnecting (drives the loading spinner).</summary>
-    public bool IsBusy => IsRadioMode && _engine.State is PlaybackState.Buffering or PlaybackState.Reconnecting;
+    /// <summary>True while a stream is connecting/reconnecting (drives the loading spinner) —
+    /// genuine Radio mode, or DJ mode's live warm-up window (see <see cref="UsesRadioEngine"/>).</summary>
+    public bool IsBusy => UsesRadioEngine && _engine.State is PlaybackState.Buffering or PlaybackState.Reconnecting;
 
-    /// <summary>The LIVE badge is a radio-only affordance (local tracks show a seek timeline instead).</summary>
-    public bool ShowLiveBadge => IsPlaying && IsRadioMode;
+    /// <summary>The LIVE badge applies whenever RadioEngine is actually the one playing — genuine
+    /// Radio mode, or DJ mode's live warm-up (local tracks show a seek timeline instead).</summary>
+    public bool ShowLiveBadge => IsPlaying && UsesRadioEngine;
 
     /// <summary>True when there's real now-playing info worth copying.</summary>
     public bool HasTrackInfo
@@ -1011,7 +1297,7 @@ public sealed class MainViewModel : ObservableObject
 
             if (info is null)
             {
-                AboutError = "Couldn't find reliable notes on this track.";
+                AboutError = "Couldn't find reliable notes on this song.";
                 AboutState = AboutViewState.Error;
             }
             else
@@ -1026,7 +1312,7 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[TrackInfo] generation failed: {ex.Message}");
+            AppLog.Debug($"[TrackInfo] generation failed: {ex.Message}");
             if (!cts.IsCancellationRequested)
             {
                 AboutError = "Couldn't generate notes right now.";
@@ -1079,22 +1365,22 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Volume as a whole-number percent (0–100) for the readout next to the slider.</summary>
     public int VolumePercent => (int)Math.Round(_volume * 100);
 
-    // Transport prev/next route to the active mode: stations (wrapping) for radio, the curated
-    // queue for the library.
+    // Transport prev/next route to the active mode: stations (wrapping) for radio, the local
+    // queue for library/DJ (both share LocalPlaybackEngine's queue).
     private void Next()
     {
-        if (IsLibraryMode) _local.Next();
+        if (UsesLocalEngine) _local.Next();
         else NextStation();
     }
 
     private void Prev()
     {
-        if (IsLibraryMode) _local.Previous();
+        if (UsesLocalEngine) _local.Previous();
         else PrevStation();
     }
 
-    private bool CanGoNext() => IsLibraryMode ? _local.HasQueue : Stations.Count > 0;
-    private bool CanGoPrev() => IsLibraryMode ? _local.HasQueue : Stations.Count > 0;
+    private bool CanGoNext() => UsesLocalEngine ? _local.HasQueue : Stations.Count > 0;
+    private bool CanGoPrev() => UsesLocalEngine ? _local.HasQueue : Stations.Count > 0;
 
     private void NextStation()
     {
@@ -1202,7 +1488,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void TogglePlayPause()
     {
-        if (IsLibraryMode)
+        if (UsesLocalEngine)
         {
             // Stopped → (re)start the queue; otherwise pause/resume.
             if (_local.State is PlaybackState.Stopped && _local.HasQueue)
@@ -1292,7 +1578,7 @@ public sealed class MainViewModel : ObservableObject
                 // metadata, so a lingering "Connecting…/Reconnecting…" placeholder would
                 // otherwise stay until the next song's ICY title arrives. Restore the station
                 // name in that case; leave a real track title (set via metadata) untouched.
-                if (NowPlayingTitle is "Connecting..." or "Reconnecting..." or "Not playing")
+                if (NowPlayingTitle is "Connecting..." or "Reconnecting..." or IdleTitle)
                 {
                     NowPlayingTitle = _engine.CurrentStation?.Name ?? "Live stream";
                     NowPlayingArtist = string.Empty;
@@ -1314,7 +1600,7 @@ public sealed class MainViewModel : ObservableObject
     {
         var sel = SelectedStation;
         NowPlayingStation = sel?.Name ?? string.Empty;
-        NowPlayingTitle = sel?.Name ?? "Not playing";
+        NowPlayingTitle = sel?.Name ?? IdleTitle;
         NowPlayingArtist = sel?.Description ?? string.Empty;
         NowPlayingFormat = sel?.Format switch
         {
@@ -1343,8 +1629,14 @@ public sealed class MainViewModel : ObservableObject
 
     private PlayerMode _mode = PlayerMode.Radio;
 
-    /// <summary>The engine driving playback in the current mode.</summary>
-    private IPlaybackEngine ActiveEngine => IsLibraryMode ? _local : _engine;
+    // True during DJ mode's cold-start warm-up window: RadioEngine plays the top-ranked harvested
+    // station live (talk/ads acceptable — it's genuinely live radio) until the curated queue has
+    // its first song ready, at which point EndDjWarmupIfActive() hands over to LocalPlaybackEngine.
+    // See BeginDjWarmupLivePlayback/EndDjWarmupIfActive further down.
+    private bool _djWarmingUp;
+
+    /// <summary>The engine driving playback right now.</summary>
+    private IPlaybackEngine ActiveEngine => UsesRadioEngine ? _engine : _local;
 
     public PlayerMode Mode
     {
@@ -1354,28 +1646,75 @@ public sealed class MainViewModel : ObservableObject
             if (!SetProperty(ref _mode, value)) return;
             OnPropertyChanged(nameof(IsRadioMode));
             OnPropertyChanged(nameof(IsLibraryMode));
+            OnPropertyChanged(nameof(IsDjMode));
+            OnPropertyChanged(nameof(UsesLocalEngine));
+            OnPropertyChanged(nameof(UsesRadioEngine));
             OnPropertyChanged(nameof(ShowRadioPanel));
             OnPropertyChanged(nameof(ShowLibraryPanel));
+            OnPropertyChanged(nameof(ShowDjPanel));
             OnPropertyChanged(nameof(IsBusy));
             OnPropertyChanged(nameof(ShowLiveBadge));
             OnPropertyChanged(nameof(HasDuration));
             OnPropertyChanged(nameof(ShowRecentOnStation));
+            OnPropertyChanged(nameof(ShowDjIntro));
+            OnPropertyChanged(nameof(IdleHint));
         }
     }
 
     public bool IsRadioMode => _mode == PlayerMode.Radio;
     public bool IsLibraryMode => _mode == PlayerMode.Library;
+    public bool IsDjMode => _mode == PlayerMode.Dj;
+
+    /// <summary>True whenever LocalPlaybackEngine is the one actually producing audio right now —
+    /// genuine Library mode, or DJ mode once it's past its live warm-up window.</summary>
+    public bool UsesLocalEngine => IsLibraryMode || (IsDjMode && !_djWarmingUp);
+
+    /// <summary>True whenever RadioEngine is the one actually producing audio right now —
+    /// genuine Radio mode, or DJ mode's live warm-up window before the curated queue takes over.</summary>
+    public bool UsesRadioEngine => IsRadioMode || (IsDjMode && _djWarmingUp);
+
     public bool ShowRadioPanel => IsRadioMode;
     public bool ShowLibraryPanel => IsLibraryMode;
+    public bool ShowDjPanel => IsDjMode;
+
+    /// <summary>Flips <see cref="_djWarmingUp"/> and raises everything that depends on it —
+    /// centralized so BeginDjWarmupLivePlayback/EndDjWarmupIfActive/StopDj never forget a
+    /// cascade the Mode setter above already lists for the Mode-level equivalent.</summary>
+    private void SetDjWarmingUp(bool value)
+    {
+        if (_djWarmingUp == value) return;
+        _djWarmingUp = value;
+        OnPropertyChanged(nameof(UsesLocalEngine));
+        OnPropertyChanged(nameof(UsesRadioEngine));
+        OnPropertyChanged(nameof(IsBusy));
+        OnPropertyChanged(nameof(ShowLiveBadge));
+        OnPropertyChanged(nameof(HasDuration));
+        OnPropertyChanged(nameof(IsDjWarmingUp));
+        RaiseDjIndicatorChanged();
+        RefreshDjSessionMeta();
+    }
 
     /// <summary>Switch player modes. Either/or: the now-inactive engine is stopped and the
-    /// now-playing view reset, so only one thing ever plays.</summary>
+    /// now-playing view reset, so only one thing ever plays. Leaving DJ mode also stops its
+    /// background harvest/queue session — it has no visible presence once you've navigated away,
+    /// so it shouldn't keep running unseen.</summary>
     private void SetMode(PlayerMode mode)
     {
         if (_mode == mode) return;
 
+        _searchCts?.Cancel(); // abandon any in-flight station search — its panel is going away
+        if (_mode == PlayerMode.Dj) StopDj();
+
         Mode = mode; // set first so the stopped engine's handler no-ops (guards on mode)
-        if (mode == PlayerMode.Library) _engine.Stop(); else _local.Stop();
+
+        // BOTH engines, always. This used to stop only the one the new mode wouldn't use
+        // (_local when going to Radio, _engine otherwise), which silently assumed each mode owns
+        // a different engine — but Library and DJ SHARE _local. Switching between those two
+        // therefore stopped RadioEngine, which wasn't playing, and left the previous mode's queue
+        // running: the DJ mix kept playing under a Library panel reading "Nothing playing",
+        // because ResetNowPlaying() below clears the view unconditionally.
+        _engine.Stop();
+        _local.Stop();
 
         BackToNowPlaying();  // close any open About reading view
         ResetNowPlaying();
@@ -1398,7 +1737,7 @@ public sealed class MainViewModel : ObservableObject
     private void ResetNowPlaying()
     {
         IsPlaying = false;
-        NowPlayingTitle = "Not playing";
+        NowPlayingTitle = IdleTitle;
         NowPlayingArtist = string.Empty;
         NowPlayingStation = string.Empty;
         NowPlayingFormat = string.Empty;
@@ -1422,7 +1761,9 @@ public sealed class MainViewModel : ObservableObject
     private void RefreshLibrarySongs()
     {
         LibrarySongs.Clear();
-        foreach (var s in _songLibrary.GetAll())
+        // UserSaved only — DJ mode's harvested songs are indexed in the same library (so
+        // SongCurator's recall benefits from them) but shouldn't clutter the user's own list.
+        foreach (var s in _songLibrary.GetAll(SongSource.UserSaved))
             LibrarySongs.Add(new LibrarySongItem(s));
     }
 
@@ -1470,7 +1811,10 @@ public sealed class MainViewModel : ObservableObject
         private set
         {
             if (SetProperty(ref _isCurating, value))
+            {
                 CurateCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(CuratePanelState));
+            }
         }
     }
 
@@ -1481,31 +1825,43 @@ public sealed class MainViewModel : ObservableObject
             return;
         if (!_curator.IsAvailable)
         {
-            LibraryStatus = "Save some songs first — the library is empty.";
+            LibraryStatus = string.Empty;
+            CurateEmptyMessage = "Save some songs first — there's nothing to curate from yet.";
             return;
         }
 
         var prompt = LibraryPrompt;
+        CurateError = null; // a new attempt clears the previous failure
+        CurateEmptyMessage = DefaultCurateEmptyMessage;
+        CurateProgress.Begin("Building a set from your library");
         IsCurating = true;
-        LibraryStatus = "Curating a playlist…";
+        LibraryStatus = string.Empty; // the panel narrates while this runs
+        _curateCts?.Cancel();
+        _curateCts?.Dispose();
+        var curateCts = _curateCts = new CancellationTokenSource();
         try
         {
-            var songs = await _curator.CurateAsync(prompt, 20);
+            // Library mode keeps the "closest available" fallback: the user asked this library
+            // for a set and an empty result reads as broken. DJ mode is the opposite case.
+            var songs = await _curator.CurateAsync(prompt, 20, ct: curateCts.Token);
             CuratedQueue.Clear();
             foreach (var s in songs)
                 CuratedQueue.Add(new CuratedQueueItem(s));
 
             if (CuratedQueue.Count == 0)
             {
-                LibraryStatus = "Nothing in your library matched — try a different vibe.";
+                // Empty, not Error — the library simply had no match for this vibe.
+                CurateEmptyMessage = "Nothing in your library matched — try a different vibe.";
+                LibraryStatus = string.Empty;
                 OnPropertyChanged(nameof(HasCuratedPlaylist));
                 return;
             }
 
             // The context card's title, so "the thing I asked for" reads distinctly from the
-            // resulting track list (Shared Framework Spec §3).
-            CuratedPlaylistTitle = System.Globalization.CultureInfo.InvariantCulture.TextInfo
-                .ToTitleCase(prompt.ToLowerInvariant());
+            // resulting track list (Shared Framework Spec §3). Verbatim in quotes, NOT
+            // title-cased (UX audit): rewriting the user's own words — typos included — reads
+            // as a bug, while quoting them reads as "here's what you asked for."
+            CuratedPlaylistTitle = $"“{prompt.Trim()}”";
             OnPropertyChanged(nameof(CuratedPlaylistTitle));
             OnPropertyChanged(nameof(HasCuratedPlaylist));
 
@@ -1513,15 +1869,502 @@ public sealed class MainViewModel : ObservableObject
             _local.SetQueue(CuratedQueue.Select(ToLocalTrack).ToList(), 0);
             RaiseTransportCanExecute();
         }
+        catch (OperationCanceledException)
+        {
+            // Cancelled from the progress panel — back to the invitation, not an error.
+            LibraryStatus = string.Empty;
+            CurateEmptyMessage = DefaultCurateEmptyMessage;
+        }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[Curate] failed: {ex}");
-            LibraryStatus = "Curation hit a snag — please try again.";
+            AppLog.Error("[Curate] failed", ex);
+            LibraryStatus = string.Empty;
+            CurateError = "Curation hit a snag — please try again.";
         }
         finally
         {
+            CurateProgress.Reset();
             IsCurating = false;
         }
+    }
+
+    // ===== DJ mode: harvest + self-refilling queue =====
+
+    /// <summary>Currently-connected harvesters (Harvesting tab) — rebuilt wholesale each time
+    /// DjHarvestService.StatusChanged fires; dead harvesters are never in it (see DjHarvesterItem).</summary>
+    public ObservableCollection<DjHarvesterItem> DjHarvesters { get; } = new();
+
+    /// <summary>
+    /// The session's mix (Mix tab): the playback queue in order — played, playing, upcoming.
+    /// A direct view of <see cref="ILocalQueuePlayer.Queue"/>; the queue never drops played
+    /// tracks, so it doubles as the session record and there's no separate history list.
+    /// </summary>
+    public ObservableCollection<DjMixItem> DjMix { get; } = new();
+
+    /// <summary>The track after the current one, for the "Up next" line, or null at the end.</summary>
+    public string? UpNext
+    {
+        get
+        {
+            var next = _local.CurrentIndex + 1;
+            if (next <= 0 || next >= _local.Queue.Count) return null;
+            var track = _local.Queue[next];
+            return string.IsNullOrWhiteSpace(track.Artist) ? track.Title : $"{track.Title} — {track.Artist}";
+        }
+    }
+
+    public bool HasUpNext => IsDjMode && UpNext is not null;
+
+    /// <summary>
+    /// Rebuilds <see cref="DjMix"/> from the engine's queue. Appends in place when the existing
+    /// rows are still a prefix of the queue (the common case — a harvested song landing), so the
+    /// list doesn't reset its scroll position every time the mix grows.
+    /// </summary>
+    private void SyncDjMix()
+    {
+        // Library mode drives the same engine queue (curated playlists), so without this guard a
+        // curated set would show up as the DJ's "mix" the next time you opened the panel.
+        if (!IsDjMode) return;
+
+        var queue = _local.Queue;
+        if (DjMix.Count > queue.Count)
+            DjMix.Clear();
+
+        for (var i = 0; i < DjMix.Count; i++)
+        {
+            if (DjMix[i].Title == queue[i].Title && DjMix[i].Artist == queue[i].Artist)
+                continue;
+            DjMix.Clear(); // diverged — the queue was replaced, not appended to
+            break;
+        }
+
+        for (var i = DjMix.Count; i < queue.Count; i++)
+            DjMix.Add(new DjMixItem(queue[i].Title, queue[i].Artist));
+
+        MarkDjMixPosition();
+    }
+
+    /// <summary>Flags which mix row is playing and which are behind it.</summary>
+    private void MarkDjMixPosition()
+    {
+        var current = _local.CurrentIndex;
+        for (var i = 0; i < DjMix.Count; i++)
+        {
+            DjMix[i].IsCurrent = i == current;
+            DjMix[i].HasPlayed = current >= 0 && i < current;
+        }
+        OnPropertyChanged(nameof(UpNext));
+        OnPropertyChanged(nameof(HasUpNext));
+    }
+
+    private string _djPrompt = string.Empty;
+    public string DjPrompt
+    {
+        get => _djPrompt;
+        set
+        {
+            if (SetProperty(ref _djPrompt, value))
+                StartDjCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    private string _djStatus = string.Empty;
+    public string DjStatus
+    {
+        get => _djStatus;
+        private set => SetProperty(ref _djStatus, value);
+    }
+
+    private bool _isDjRunning;
+    public bool IsDjRunning
+    {
+        get => _isDjRunning;
+        private set
+        {
+            if (SetProperty(ref _isDjRunning, value))
+            {
+                StartDjCommand.RaiseCanExecuteChanged();
+                StopDjCommand.RaiseCanExecuteChanged();
+                RaiseDjIndicatorChanged();
+                OnPropertyChanged(nameof(DjSourcesPanelState));
+                OnPropertyChanged(nameof(DjMixPanelState));
+                OnPropertyChanged(nameof(IdleHint));
+            }
+        }
+    }
+
+    /// <summary>True while a live station is bridging until the mix fills. Public so the session
+    /// card and the Now Playing badge can distinguish "bridging" from "live".</summary>
+    public bool IsDjWarmingUp => _djWarmingUp;
+
+    /// <summary>Session running but nothing connected yet — the Sources panel shows the staged
+    /// checklist for this phase, so the status row stays out of its way.</summary>
+    private bool IsDjStartingUp => IsDjRunning && DjHarvesters.Count == 0;
+
+    /// <summary>Spinner only while genuinely waiting on something the status row owns: the
+    /// warm-up window, bridging live radio until the mix fills (UX audit: a spinner that never
+    /// stops means nothing).</summary>
+    public bool ShowDjSpinner => IsDjRunning && !IsDjStartingUp && _djWarmingUp;
+
+    /// <summary>Steady state gets the pulsing live dot instead — the session is healthy, not
+    /// loading.</summary>
+    public bool ShowDjLiveDot => IsDjRunning && !IsDjStartingUp && !_djWarmingUp;
+
+    /// <summary>Everything that depends on "which phase is this session in" — the status-row
+    /// indicator and the Mix tab's empty copy both change between bridging and steady.</summary>
+    private void RaiseDjIndicatorChanged()
+    {
+        OnPropertyChanged(nameof(ShowDjSpinner));
+        OnPropertyChanged(nameof(ShowDjLiveDot));
+        OnPropertyChanged(nameof(DjMixEmptyMessage));
+    }
+
+    // The prompt/vibe the current DJ session was started with — frozen at session start (not
+    // read live from DjPrompt) and given to the intro service as context for every track. Also
+    // what the session card shows, so the card records what was actually asked for.
+    private string? _djSessionVibe;
+
+    public string? DjSessionVibe
+    {
+        get => _djSessionVibe;
+        private set => SetProperty(ref _djSessionVibe, value);
+    }
+
+    private string? _djIntroLine;
+    /// <summary>Short "why this song" DJ patter for the current DJ Mode track, shown in Now
+    /// Playing. Null until generation completes (or if it fails/isn't configured) — the UI simply
+    /// omits the line rather than showing a placeholder.</summary>
+    public string? DjIntroLine
+    {
+        get => _djIntroLine;
+        private set
+        {
+            if (SetProperty(ref _djIntroLine, value))
+                OnPropertyChanged(nameof(ShowDjIntro));
+        }
+    }
+
+    public bool ShowDjIntro => IsDjMode && !string.IsNullOrWhiteSpace(DjIntroLine);
+
+    private CancellationTokenSource? _djIntroCts;
+
+    /// <summary>Starts a DJ session for the prompt: sources + connects the harvest pool, warm-
+    /// starts the queue from the existing library, and lets freshly harvested songs blend in as
+    /// they arrive. On a cold library (nothing to warm-start with), bridges the gap by playing
+    /// the top-ranked harvested station live via RadioEngine (talk/ads acceptable — it's genuinely
+    /// live radio) until the first harvested song is ready — see BeginDjWarmupLivePlayback.</summary>
+    private async Task StartDjAsync()
+    {
+        if (IsDjRunning || string.IsNullOrWhiteSpace(DjPrompt))
+            return;
+
+        var prompt = DjPrompt;
+        DjSessionVibe = prompt;
+        DjHarvesters.Clear();
+        DjMix.Clear();
+        DjIntroLine = null;
+        DjError = null; // a new attempt clears the previous failure
+        DjSourcesEmptyMessage = DefaultDjSourcesEmptyMessage;
+        DjProgress.Begin(DjStageFind, DjStageConnect, DjStageRecord);
+        _djLastStatus = null;
+
+        // Per-session diagnostics: what the pool actually produced vs what playback consumed.
+        // Best-effort and optional — the harvest path doesn't depend on it.
+        var settings = _settingsStore.Load();
+        _djSessionLog = DjSessionLog.Start(prompt, settings.DjHarvesterCount,
+            settings.DjHarvestReserveCount, settings.DjMaxHarvestCacheMb * 1024L * 1024L);
+        _djHarvest.SessionLog = _djSessionLog;
+
+        IsDjRunning = true;
+        StartDjSessionClock();
+        DjStatus = "Warming up the decks…";
+
+        _djStartCts?.Cancel();
+        _djStartCts?.Dispose();
+        var startCts = _djStartCts = new CancellationTokenSource();
+
+        // The service reports its own phases; map them to the checklist's copy here so the
+        // wording stays in the view model.
+        var stages = new Progress<HarvestStartStage>(stage => DjProgress.Step(stage switch
+        {
+            HarvestStartStage.Connecting => DjStageConnect,
+            _ => DjStageFind
+        }));
+
+        try
+        {
+            await _djHarvest.StartAsync(prompt, stages, startCts.Token).ConfigureAwait(true);
+            if (!_djHarvest.IsRunning)
+            {
+                // No matching stations is Empty, not Error — the panel invites another try.
+                DjSourcesEmptyMessage = "Nothing out there matched that vibe — try a different prompt.";
+                DjStatus = string.Empty;
+                EndDjSessionLog(); // never started harvesting, so the service won't close it
+                IsDjRunning = false;
+                return;
+            }
+            DjProgress.Step(DjStageRecord);
+            var seeded = await _djQueue.StartAsync(prompt, startCts.Token).ConfigureAwait(true);
+            AppLog.Info($"[Dj] session started · warm-start {(seeded ? "seeded the queue" : "was empty, bridging live")}");
+            if (!seeded)
+                BeginDjWarmupLivePlayback();
+            RaiseTransportCanExecute();
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled from the progress panel — tear the half-started session back down.
+            _djQueue.Stop();
+            _djHarvest.Stop();
+            DjStatus = string.Empty;
+            DjSourcesEmptyMessage = DefaultDjSourcesEmptyMessage;
+            EndDjSessionLog();
+            IsDjRunning = false;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("[Dj] start failed", ex);
+            DjStatus = string.Empty;
+            DjError = DescribeDjStartFailure(ex);
+            // Same teardown as the cancel path above. _djQueue.Stop() matters even though nothing
+            // may have started: a QC task already in flight can raise SegmentIndexed after the
+            // harvesters are stopped, and a still-subscribed queue would append it to _local and
+            // start playing with no session behind it.
+            _djQueue.Stop();
+            _djHarvest.Stop();
+            EndDjWarmupIfActive();
+            EndDjSessionLog();
+            IsDjRunning = false;
+        }
+        finally
+        {
+            DjProgress.Reset();
+        }
+    }
+
+    /// <summary>
+    /// Turns a start failure into something a listener can act on. The common case by far isn't a
+    /// bug in the app: the Radio Browser mirrors go down (a 503 sweep across every mirror was seen
+    /// on 2026-08-02), and "hit a snag" invites the user to retry immediately, which is exactly
+    /// what won't work. Anything genuinely unexpected keeps the generic wording.
+    /// </summary>
+    private static string DescribeDjStartFailure(Exception ex) =>
+        ex is HttpRequestException or TaskCanceledException or TimeoutException
+            ? "Couldn't reach the station directory — it may be down. Try again in a few minutes."
+            : "DJ mode hit a snag starting up — please try again.";
+
+    private void StopDj()
+    {
+        if (!IsDjRunning) return;
+
+        // Cancel the startup first. IsDjRunning goes true before StartDjAsync's first await, so
+        // stopping during startup used to leave that task running: it would finish sourcing and
+        // call DjQueueService.StartAsync, which does SetQueue on the local engine — resurrecting
+        // playback under whatever panel the user had switched to. Cancelling makes it bail out
+        // through its OperationCanceledException path, which tears down what it had built.
+        _djStartCts?.Cancel();
+
+        _djQueue.Stop();
+        _djHarvest.Stop();
+        EndDjWarmupIfActive();
+        _djIntroCts?.Cancel();
+        DjIntroLine = null;
+        DjSessionVibe = null;
+        _djSessionTimer?.Stop();
+        _djLastStatus = null;
+        DjMix.Clear(); // the session's record ends with the session
+
+        EndDjSessionLog();
+        IsDjRunning = false;
+        DjStatus = string.Empty;
+    }
+
+    /// <summary>Closes the session log (idempotent — DjHarvestService.Stop may already have) and
+    /// unhooks it, so a stale log can't collect events from the next session.</summary>
+    private void EndDjSessionLog()
+    {
+        _djSessionLog?.Finish();
+        _djSessionLog = null;
+        _djHarvest.SessionLog = null;
+    }
+
+    /// <summary>Generates the "why this song" intro line for the track that just started, if the
+    /// service is configured. Cancels any still-running generation for the previous track first —
+    /// a fast track change (e.g. skip) shouldn't leave a stale line from an earlier song landing
+    /// after the new one started. Best-effort: DjIntroLine simply stays null on any failure.
+    /// <paramref name="curatorNote"/> is the curator's own reason when the track came from a
+    /// curated playlist — it grounds the intro in the real selection logic.</summary>
+    private async Task GenerateDjIntroAsync(string title, string? artist, string? curatorNote)
+    {
+        _djIntroCts?.Cancel();
+        _djIntroCts?.Dispose();
+        var cts = _djIntroCts = new CancellationTokenSource();
+
+        DjIntroLine = null;
+        if (!_djIntro.IsConfigured || string.IsNullOrWhiteSpace(title))
+            return;
+
+        try
+        {
+            var line = await _djIntro.GetIntroAsync(title, artist, _djSessionVibe, curatorNote, cts.Token).ConfigureAwait(true);
+            if (!cts.IsCancellationRequested)
+                DjIntroLine = line;
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer track or the session stopped — leave DjIntroLine as-is.
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug($"[DjIntro] generation failed: {ex.Message}");
+        }
+    }
+
+    private void OnDjStatusChanged(HarvestStatus status)
+    {
+        if (!IsDjRunning) return;
+        _djLastStatus = status;
+        RefreshDjSessionMeta();
+
+        DjHarvesters.Clear();
+        foreach (var h in status.Harvesters)
+            DjHarvesters.Add(new DjHarvesterItem(h.Label, h.TitlesSeen, h.Kept, h.Rejected));
+        RaiseDjIndicatorChanged(); // harvester count feeds ShowDjSpinner/ShowDjLiveDot
+    }
+
+    private HarvestStatus? _djLastStatus;
+    private DateTime _djSessionStarted;
+    private System.Windows.Threading.DispatcherTimer? _djSessionTimer;
+    private DjSessionLog? _djSessionLog;
+
+    /// <summary>
+    /// The session card's one-line summary. Rebuilt both when the harvest pool reports in and on
+    /// a slow timer — otherwise the elapsed figure would only move when a song happened to land,
+    /// which is exactly when it looks stale.
+    /// </summary>
+    private void RefreshDjSessionMeta()
+    {
+        if (!IsDjRunning)
+        {
+            DjStatus = string.Empty;
+            return;
+        }
+
+        if (_djWarmingUp)
+        {
+            var station = _djHarvest.TopStation?.Name;
+            DjStatus = station is null
+                ? "Bridging a live station until the mix fills"
+                : $"Bridging {station} until the mix fills";
+            return;
+        }
+
+        if (_djLastStatus is not { } status)
+        {
+            DjStatus = "Warming up the decks…";
+            return;
+        }
+
+        var stations = $"{status.ActiveHarvesters} station{(status.ActiveHarvesters == 1 ? "" : "s")}";
+        var songs = $"{status.Kept} song{(status.Kept == 1 ? "" : "s")} in the mix";
+        DjStatus = $"Tuned into {stations} · {songs} · {DescribeElapsed()}";
+    }
+
+    private string DescribeElapsed()
+    {
+        var minutes = (int)(DateTime.Now - _djSessionStarted).TotalMinutes;
+        return minutes < 1 ? "just started" : $"{minutes} min";
+    }
+
+    private void StartDjSessionClock()
+    {
+        _djSessionStarted = DateTime.Now;
+        _djSessionTimer ??= new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(30)
+        };
+        _djSessionTimer.Tick -= OnDjSessionTick;
+        _djSessionTimer.Tick += OnDjSessionTick;
+        _djSessionTimer.Start();
+    }
+
+    private void OnDjSessionTick(object? sender, EventArgs e) => RefreshDjSessionMeta();
+
+    /// <summary>
+    /// Cold-start bridge: plays DjHarvestService's top-ranked station live via RadioEngine — a
+    /// SEPARATE connection from that station's own headless harvester, which keeps harvesting
+    /// regardless — while ActiveEngine temporarily reports _engine even though Mode == Dj.
+    /// EndDjWarmupIfActive() (hooked into OnLocalTrackChanged) hands over the instant the queue
+    /// actually starts playing for real.
+    /// </summary>
+    private void BeginDjWarmupLivePlayback()
+    {
+        var topStation = _djHarvest.TopStation;
+        if (topStation is null)
+            return; // nothing rankable to play live — fall back to the existing silent warm-up
+
+        SetDjWarmingUp(true);
+        NowPlayingTitle = "Connecting...";
+        NowPlayingArtist = topStation.Name;
+        NowPlayingStation = topStation.Name;
+        HasTrackInfo = false;
+        _engine.StateChanged += OnDjWarmupStateChanged;
+        _engine.MetadataChanged += OnDjWarmupMetadataChanged;
+        _engine.Play(topStation);
+        ActiveEngineChanged?.Invoke(ActiveEngine); // repoints SMTC at _engine for this window
+    }
+
+    /// <summary>
+    /// The mix ran out mid-session — go back to live radio until harvesting catches up.
+    ///
+    /// This is the same bridge the cold start uses, but running dry is not a cold-start-only
+    /// event: it happens whenever the library had nothing that fit the vibe, whenever the curator
+    /// declines to pad the queue with off-vibe filler, and whenever harvesting simply falls
+    /// behind playback. Silence is never the right answer to any of them.
+    /// </summary>
+    private void BridgeIfDjMixRanDry()
+    {
+        if (!IsDjMode || !IsDjRunning || _djWarmingUp)
+            return;
+        AppLog.Info("[Dj] mix ran dry — bridging live until it refills");
+        BeginDjWarmupLivePlayback();
+    }
+
+    /// <summary>No-ops if warm-up isn't active. Called both on a genuine handover (the queue's
+    /// first track landing) and when the DJ session is stopped mid-warm-up.</summary>
+    private void EndDjWarmupIfActive()
+    {
+        if (!_djWarmingUp) return;
+        _engine.StateChanged -= OnDjWarmupStateChanged;
+        _engine.MetadataChanged -= OnDjWarmupMetadataChanged;
+        _engine.Stop();
+        SetDjWarmingUp(false);
+        ActiveEngineChanged?.Invoke(ActiveEngine); // repoints SMTC back at _local
+    }
+
+    private void OnDjWarmupStateChanged(object? sender, PlaybackState state)
+    {
+        if (!_djWarmingUp) return;
+
+        IsPlaying = state == PlaybackState.Playing;
+        OnPropertyChanged(nameof(IsBusy));
+        NowPlayingUrl = state == PlaybackState.Playing ? _engine.CurrentStation?.Url : null;
+        StatusText = state switch
+        {
+            PlaybackState.Buffering => "Buffering...",
+            PlaybackState.Playing => "Playing",
+            PlaybackState.Reconnecting => "Reconnecting...",
+            _ => StatusText
+        };
+    }
+
+    private void OnDjWarmupMetadataChanged(object? sender, TrackMetadata meta)
+    {
+        if (!_djWarmingUp) return;
+
+        NowPlayingTitle = string.IsNullOrWhiteSpace(meta.Title) ? (meta.StationName ?? "Live stream") : meta.Title;
+        NowPlayingArtist = meta.Artist ?? string.Empty;
+        NowPlayingStation = meta.StationName ?? string.Empty;
+        HasTrackInfo = !string.IsNullOrWhiteSpace(NowPlayingTitle);
     }
 
     private void PlayQueueItem(CuratedQueueItem? item)
@@ -1549,7 +2392,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void OnLocalStateChanged(PlaybackState state)
     {
-        if (!IsLibraryMode) return;
+        if (!UsesLocalEngine) return;
 
         IsPlaying = state == PlaybackState.Playing;
         OnPropertyChanged(nameof(IsBusy));
@@ -1557,13 +2400,18 @@ public sealed class MainViewModel : ObservableObject
         if (state == PlaybackState.Stopped)
         {
             // Queue finished (or stopped): clear the now-playing header and row highlight.
+            // DjMix included — it was missed, so a stopped DJ session left an equalizer animating
+            // on the last-played row as if it were still going.
             foreach (var item in CuratedQueue) item.IsCurrent = false;
             foreach (var item in LibrarySongs) item.IsCurrent = false;
-            NowPlayingTitle = "Not playing";
+            MarkDjMixPosition();
+            NowPlayingTitle = IdleTitle;
             NowPlayingArtist = string.Empty;
             HasTrackInfo = false;
             PositionSeconds = 0;
             DurationSeconds = 0;
+            _djIntroCts?.Cancel();
+            DjIntroLine = null;
         }
 
         RaiseTransportCanExecute();
@@ -1571,7 +2419,13 @@ public sealed class MainViewModel : ObservableObject
 
     private void OnLocalTrackChanged(LocalTrack track)
     {
-        if (!IsLibraryMode) return;
+        // The queue just started playing for real (cold-start's first harvested/seeded song) —
+        // if DJ warm-up's live bridge was running, hand over now. Must run BEFORE the
+        // UsesLocalEngine check below: while warm-up is still active that property is false
+        // (RadioEngine is "the" engine until this call flips it), so ending warm-up first is what
+        // makes the rest of this method correctly apply to the track that just started.
+        EndDjWarmupIfActive();
+        if (!UsesLocalEngine) return;
 
         NowPlayingTitle = track.Title;
         NowPlayingArtist = track.Artist;
@@ -1579,6 +2433,13 @@ public sealed class MainViewModel : ObservableObject
         NowPlayingFormat = string.Empty;
         NowPlayingUrl = null;
         HasTrackInfo = !string.IsNullOrWhiteSpace(track.Title);
+
+        if (IsDjMode)
+        {
+            MarkDjMixPosition(); // move the equalizer down the mix and refresh "Up next"
+            _djSessionLog?.SongPlayed(track.Path, track.Title, track.Artist);
+            _ = GenerateDjIntroAsync(track.Title, track.Artist, track.Reason);
+        }
 
         // Highlight the playing row wherever it appears (Curate results and/or the full Songs
         // list) — matched by title+artist rather than the given index, since that index is only
@@ -1597,7 +2458,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void OnLocalPosition(double position, double duration)
     {
-        if (!IsLibraryMode) return;
+        if (!UsesLocalEngine) return;
         if (_suspendPositionUpdates) return;
 
         _applyingPosition = true;
@@ -1621,7 +2482,7 @@ public sealed class MainViewModel : ObservableObject
         {
             if (!SetProperty(ref _positionSeconds, value)) return;
             OnPropertyChanged(nameof(PositionText));
-            if (!_applyingPosition && IsLibraryMode)
+            if (!_applyingPosition && UsesLocalEngine)
                 _local.Seek(value);
         }
     }
@@ -1639,8 +2500,8 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    /// <summary>The seek timeline shows only in library mode with a track loaded.</summary>
-    public bool HasDuration => IsLibraryMode && _durationSeconds > 0;
+    /// <summary>The seek timeline shows only in library/DJ mode with a track loaded.</summary>
+    public bool HasDuration => UsesLocalEngine && _durationSeconds > 0;
 
     public string PositionText => FormatTime(_positionSeconds);
     public string DurationText => FormatTime(_durationSeconds);

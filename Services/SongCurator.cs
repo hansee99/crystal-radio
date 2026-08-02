@@ -14,23 +14,37 @@ namespace RadioPlayer.Services;
 /// </summary>
 public sealed class SongCurator : ISongCurator
 {
-    private const string Endpoint = "https://api.anthropic.com/v1/messages";
-    private const string AnthropicVersion = "2023-06-01";
-    private const string DefaultModel = "claude-haiku-4-5"; // light sequencing over a small pool
+    // Sonnet, not Haiku: arranging is light, but the selection half is genre-boundary judgment
+    // the listener directly hears (the "Pantera in a classic-rock set" class of mistake) —
+    // upgraded under the project's quality-over-token-cost principle for DJ/curation features.
+    private const string DefaultModel = AnthropicApi.SonnetModel;
     private const int RecallPoolSize = 40;                  // cosine candidates handed to the LLM
+
+    // Safety-net floor, not the primary quality mechanism (the LLM's own judgment, given real
+    // signal, is) — cosine score is included in what the model sees below, this just keeps
+    // genuinely-near-zero matches from being shown at all when the library is small. Starting
+    // point borrowed from MainViewModel.SemanticThreshold (station descriptions); untuned for
+    // song descriptions specifically — revisit if it turns out too strict/loose in practice.
+    private const double MinRelevanceScore = 0.30;
 
     private const string SystemPrompt = """
         You are a music curator building a playlist from a listener's personal library for a
         free-text request. You get the request and a numbered list of candidate songs (title,
-        artist, and a short description), pre-filtered by relevance.
+        artist, a short description, and a relevance score from semantic search — higher is a
+        closer match, but the score is a starting point, not a verdict: read the description and
+        judge genuine fit yourself, especially near genre boundaries.
 
-        Choose the songs that genuinely fit the request and ARRANGE them into a good listening
-        sequence — a sensible mood/energy arc, not just relevance order. Drop songs that don't
-        fit rather than padding. Order best-opening first.
+        Choose ONLY the songs that genuinely fit the request and ARRANGE them into a good
+        listening sequence — a sensible mood/energy arc, not just relevance order. A short
+        playlist of songs that truly fit beats a longer one padded with songs that don't —
+        drop anything that doesn't genuinely belong, even if that leaves very few songs. Only
+        include a clearly-off-genre or off-vibe song if there is truly nothing else remotely
+        close to the request in the candidate list. Order best-opening first.
 
         Respond with ONLY this JSON object (no prose, no markdown fences):
         { "playlist": [ { "id": <number>, "reason": "<= 8 words, why it fits / its role" } ] }
-        If none fit, return { "playlist": [] }.
+        If none genuinely fit, return { "playlist": [] } — an empty result is correct and expected
+        when nothing in the list actually matches, not a failure to fix by including weak matches.
         """;
 
     private readonly HttpClient _http;
@@ -54,6 +68,7 @@ public sealed class SongCurator : ISongCurator
     private bool CanRank => !string.IsNullOrWhiteSpace(_apiKey);
 
     public async Task<IReadOnlyList<CuratedSong>> CurateAsync(string prompt, int max = 20,
+        IReadOnlyCollection<string>? excludeKeys = null, bool requireRelevance = false,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(prompt))
@@ -61,10 +76,31 @@ public sealed class SongCurator : ISongCurator
 
         // Semantic recall over the library vectors (off the UI thread).
         var ranked = await Task.Run(() => RankByCosine(prompt), ct).ConfigureAwait(false);
-        if (ranked.Count == 0)
-            return FallbackRecent(max); // no embeddings yet → let the user play their library anyway
 
-        var pool = ranked.Take(RecallPoolSize).ToList();
+        // Drop already-used songs BEFORE the floor/pool cut, so a repeat call (DJ top-up)
+        // reaches deeper into the library instead of re-offering the same top matches the
+        // caller will just discard.
+        if (excludeKeys is { Count: > 0 })
+        {
+            var exclude = excludeKeys as ISet<string>
+                ?? new HashSet<string>(excludeKeys, StringComparer.OrdinalIgnoreCase);
+            ranked = ranked.Where(r => !exclude.Contains($"{r.Row.Artist}|{r.Row.Title}")).ToList();
+        }
+
+        // No embeddings yet → let the user play their library anyway. Except under
+        // requireRelevance, where recency says nothing about fit and the caller has a better
+        // answer than the wrong song.
+        if (ranked.Count == 0)
+            return requireRelevance ? [] : FallbackRecent(max, excludeKeys);
+
+        // Relevance floor: prefer genuinely-matching candidates over "closest available, however
+        // weak." Only fall through to the unfiltered top-K when literally nothing clears the
+        // floor — "unless nothing else is available" is a real carve-out, not the common case.
+        var aboveFloor = ranked.Where(r => r.Score >= MinRelevanceScore).ToList();
+        if (requireRelevance && aboveFloor.Count == 0)
+            return []; // nothing fits; the caller bridges live rather than playing filler
+
+        var pool = (aboveFloor.Count > 0 ? aboveFloor : ranked).Take(RecallPoolSize).ToList();
 
         // Let the LLM arrange a sequence with reasons; fall back to cosine order if it can't.
         if (CanRank)
@@ -99,22 +135,34 @@ public sealed class SongCurator : ISongCurator
         return scored;
     }
 
-    private IReadOnlyList<CuratedSong> FallbackRecent(int max) =>
-        _store.GetAll().Take(max)
+    // UserSaved only: this fallback's whole purpose is "let the user play their library anyway"
+    // when there's no embeddings index yet — a harvest-heavy cold start would defeat that if it
+    // surfaced DJ-mode's own ephemeral harvested songs (freshest timestamps) ahead of songs the
+    // user actually chose to save.
+    private IReadOnlyList<CuratedSong> FallbackRecent(int max, IReadOnlyCollection<string>? excludeKeys)
+    {
+        var exclude = excludeKeys is { Count: > 0 }
+            ? excludeKeys as ISet<string> ?? new HashSet<string>(excludeKeys, StringComparer.OrdinalIgnoreCase)
+            : null;
+        return _store.GetAll(SongSource.UserSaved)
+            .Where(s => exclude is null || !exclude.Contains($"{s.Artist}|{s.Title}"))
+            .Take(max)
             .Select(s => new CuratedSong(s.Path, s.Title, s.Artist, null))
             .ToList();
+    }
 
     private async Task<IReadOnlyList<CuratedSong>?> ArrangeAsync(
         string prompt, List<(SavedSongVector Row, double Score)> pool, int max, CancellationToken ct)
     {
         var sb = new StringBuilder();
-        sb.Append("Request: \"").Append(prompt).Append("\"\n\nCandidate songs:\n");
+        sb.Append("Request: \"").Append(prompt).Append("\"\n\nCandidate songs (with semantic-search relevance score):\n");
         for (var i = 0; i < pool.Count; i++)
         {
-            var r = pool[i].Row;
-            sb.Append('[').Append(i).Append("] ").Append(r.Artist).Append(" — ").Append(r.Title);
-            if (!string.IsNullOrWhiteSpace(r.Description))
-                sb.Append(" (").Append(Trim(r.Description!, 160)).Append(')');
+            var (row, score) = pool[i];
+            sb.Append('[').Append(i).Append("] ").Append(row.Artist).Append(" — ").Append(row.Title)
+              .Append(" [score ").Append(score.ToString("0.00")).Append(']');
+            if (!string.IsNullOrWhiteSpace(row.Description))
+                sb.Append(" (").Append(Trim(row.Description!, 160)).Append(')');
             sb.Append('\n');
         }
         sb.Append("\nReturn at most ").Append(max).Append(" songs, best-opening first.");
@@ -132,13 +180,7 @@ public sealed class SongCurator : ISongCurator
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint)
-            {
-                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-            };
-            request.Headers.Add("x-api-key", _apiKey);
-            request.Headers.Add("anthropic-version", AnthropicVersion);
-
+            using var request = AnthropicApi.CreateRequest(_apiKey, body);
             using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 return null;
@@ -148,7 +190,7 @@ public sealed class SongCurator : ISongCurator
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Curate] arrange failed: {ex.Message}");
+            AppLog.Debug($"[Curate] arrange failed: {ex.Message}");
             return null;
         }
     }
@@ -191,33 +233,7 @@ public sealed class SongCurator : ISongCurator
 
     private static string Trim(string s, int max) => s.Length <= max ? s : s[..max];
 
-    private static string? ExtractText(string responseBody)
-    {
-        try
-        {
-            var node = JsonNode.Parse(responseBody);
-            if (node?["content"] is not JsonArray content) return null;
-            foreach (var block in content)
-                if (block?["type"]?.GetValue<string>() == "text")
-                    return block["text"]?.GetValue<string>();
-        }
-        catch (System.Text.Json.JsonException) { }
-        return null;
-    }
+    private static string? ExtractText(string responseBody) => AnthropicApi.ExtractText(responseBody);
 
-    private static string? StripToJsonObject(string? text)
-    {
-        if (string.IsNullOrEmpty(text)) return null;
-        var trimmed = text.Trim();
-        if (trimmed.StartsWith("```", StringComparison.Ordinal))
-        {
-            var nl = trimmed.IndexOf('\n');
-            if (nl >= 0) trimmed = trimmed[(nl + 1)..];
-            var fence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-            if (fence >= 0) trimmed = trimmed[..fence];
-        }
-        var start = trimmed.IndexOf('{');
-        var end = trimmed.LastIndexOf('}');
-        return start < 0 || end <= start ? null : trimmed[start..(end + 1)];
-    }
+    private static string? StripToJsonObject(string? text) => AnthropicApi.StripToJsonObject(text);
 }
