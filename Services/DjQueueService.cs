@@ -76,6 +76,11 @@ public sealed class DjQueueService : IDisposable
             if (!_seen.Add(DedupKey(song.Artist, song.Title))) continue;
             seedTracks.Add(new LocalTrack(song.Path, song.Title, song.Artist, FormatFromExtension(song.Path), song.Reason));
         }
+        // SetQueue starts playback immediately, so check the token one last time: the session can
+        // be stopped (or the user can switch modes) while CurateAsync is in flight, and starting
+        // to play after that puts the DJ mix under someone else's panel.
+        ct.ThrowIfCancellationRequested();
+
         _local.SetQueue(seedTracks); // empty seed → cold start; Append below plays the first harvested song
 
         _harvest.SegmentIndexed += OnSegmentIndexed;

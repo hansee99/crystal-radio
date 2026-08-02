@@ -176,6 +176,33 @@ public sealed class DjQueueServiceTests : IDisposable
         Assert.Equal(3, curator.CallCount);
     }
 
+    /// <summary>
+    /// Stopping a session (which includes switching player modes) while the warm-start seed is
+    /// still being curated must not start playback afterwards. SetQueue plays immediately, so a
+    /// seed that lands after the user has moved to Library or Radio would put the DJ mix under
+    /// someone else's panel — the same wrong-audio-for-the-panel symptom as the mode switch that
+    /// left the local engine running, reached by a different route.
+    /// </summary>
+    [Fact]
+    public void StartCancelledMidCuration_NeverStartsPlayback()
+    {
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        var gate = curator.EnqueueGated();
+
+        using var cts = new CancellationTokenSource();
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 5);
+        var starting = sut.StartAsync("deep house for coding", cts.Token);
+
+        // The user leaves DJ mode while the curator is still thinking, then it answers anyway.
+        cts.Cancel();
+        gate.SetResult([Song(NewTempSongFile(), "Aurora", "Nightdrive")]);
+
+        Assert.Throws<OperationCanceledException>(() => starting.GetAwaiter().GetResult());
+        Assert.Empty(local.SetQueueCalls);
+    }
+
     [Fact]
     public void NeverStarve_QueueKeepsGrowingAcrossAPlausibleArrivalTimeline()
     {

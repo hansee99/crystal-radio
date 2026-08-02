@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using System.IO;
+using System.Net.Http;
 using RadioPlayer.Models;
 using RadioPlayer.Mvvm;
 using RadioPlayer.Services;
@@ -1705,7 +1706,15 @@ public sealed class MainViewModel : ObservableObject
         if (_mode == PlayerMode.Dj) StopDj();
 
         Mode = mode; // set first so the stopped engine's handler no-ops (guards on mode)
-        if (mode == PlayerMode.Radio) _local.Stop(); else _engine.Stop();
+
+        // BOTH engines, always. This used to stop only the one the new mode wouldn't use
+        // (_local when going to Radio, _engine otherwise), which silently assumed each mode owns
+        // a different engine — but Library and DJ SHARE _local. Switching between those two
+        // therefore stopped RadioEngine, which wasn't playing, and left the previous mode's queue
+        // running: the DJ mix kept playing under a Library panel reading "Nothing playing",
+        // because ResetNowPlaying() below clears the view unconditionally.
+        _engine.Stop();
+        _local.Stop();
 
         BackToNowPlaying();  // close any open About reading view
         ResetNowPlaying();
@@ -2115,8 +2124,14 @@ public sealed class MainViewModel : ObservableObject
         {
             AppLog.Error("[Dj] start failed", ex);
             DjStatus = string.Empty;
-            DjError = "DJ mode hit a snag starting up — please try again.";
+            DjError = DescribeDjStartFailure(ex);
+            // Same teardown as the cancel path above. _djQueue.Stop() matters even though nothing
+            // may have started: a QC task already in flight can raise SegmentIndexed after the
+            // harvesters are stopped, and a still-subscribed queue would append it to _local and
+            // start playing with no session behind it.
+            _djQueue.Stop();
             _djHarvest.Stop();
+            EndDjWarmupIfActive();
             EndDjSessionLog();
             IsDjRunning = false;
         }
@@ -2126,9 +2141,28 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Turns a start failure into something a listener can act on. The common case by far isn't a
+    /// bug in the app: the Radio Browser mirrors go down (a 503 sweep across every mirror was seen
+    /// on 2026-08-02), and "hit a snag" invites the user to retry immediately, which is exactly
+    /// what won't work. Anything genuinely unexpected keeps the generic wording.
+    /// </summary>
+    private static string DescribeDjStartFailure(Exception ex) =>
+        ex is HttpRequestException or TaskCanceledException or TimeoutException
+            ? "Couldn't reach the station directory — it may be down. Try again in a few minutes."
+            : "DJ mode hit a snag starting up — please try again.";
+
     private void StopDj()
     {
         if (!IsDjRunning) return;
+
+        // Cancel the startup first. IsDjRunning goes true before StartDjAsync's first await, so
+        // stopping during startup used to leave that task running: it would finish sourcing and
+        // call DjQueueService.StartAsync, which does SetQueue on the local engine — resurrecting
+        // playback under whatever panel the user had switched to. Cancelling makes it bail out
+        // through its OperationCanceledException path, which tears down what it had built.
+        _djStartCts?.Cancel();
+
         _djQueue.Stop();
         _djHarvest.Stop();
         EndDjWarmupIfActive();

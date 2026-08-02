@@ -16,11 +16,15 @@ public sealed class StationSearchService : IStationSearchService
     // Known public mirrors, tried in order: a request that fails at the transport level
     // (connect/timeout/5xx) advances to the next mirror and stays there — every AI feature
     // depends on this one API, so a single dead hostname must not take them all down.
+    // at1 was removed on 2026-08-02: the hostname no longer resolves at all ("No such host is
+    // known"), so it was a guaranteed-wasted retry on every failover — and with only three
+    // entries, a third of the budget. The directory's own /json/servers currently advertises de1
+    // alone; de2 still answers, so it stays as the one real fallback. This list going stale is
+    // the standing weakness of hardcoding it — see doc/BACKLOG.md for DNS-based discovery.
     private static readonly string[] DefaultMirrors =
     [
         "https://de1.api.radio-browser.info",
         "https://de2.api.radio-browser.info",
-        "https://at1.api.radio-browser.info",
     ];
 
     private const int ResultLimit = 30;
@@ -30,9 +34,16 @@ public sealed class StationSearchService : IStationSearchService
     private int _mirrorIndex; // sticky: advanced on failure, so later calls start at a live one
 
     public StationSearchService(HttpClient http, string? mirror = null)
+        : this(http, string.IsNullOrWhiteSpace(mirror) ? DefaultMirrors : [mirror.TrimEnd('/')])
+    {
+    }
+
+    /// <summary>Explicit mirror list — for tests that need to exercise failover across more
+    /// mirrors than the shipping default happens to carry.</summary>
+    internal StationSearchService(HttpClient http, string[] mirrors)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
-        _mirrors = string.IsNullOrWhiteSpace(mirror) ? DefaultMirrors : [mirror.TrimEnd('/')];
+        _mirrors = mirrors is { Length: > 0 } ? mirrors : DefaultMirrors;
 
         // The maintainers ask for a descriptive User-Agent for usage stats.
         if (!_http.DefaultRequestHeaders.UserAgent.Any())
@@ -171,13 +182,25 @@ public sealed class StationSearchService : IStationSearchService
     /// </summary>
     private async Task<IReadOnlyList<StationCandidate>> FetchAndMapAsync(string pathAndQuery, CancellationToken ct)
     {
+        // Snapshot the sticky start ONCE, then walk from it. Reading the shared counter afresh
+        // each attempt raced badly: SearchCandidatesAsync fans out one query per tag in parallel,
+        // so every concurrent call read the same index, all failed on the same host, and all
+        // incremented — advancing it by N per round. Mirrors got skipped, the index wrapped back
+        // onto the dead host, and each call still burned its whole retry budget without ever
+        // reaching a live mirror. A 503 sweep on one mirror then failed the entire DJ start
+        // (seen 2026-08-02) even though another mirror was up the whole time.
+        var start = Volatile.Read(ref _mirrorIndex);
+
         for (var attempt = 0; ; attempt++)
         {
-            var mirror = _mirrors[_mirrorIndex % _mirrors.Length];
+            var index = (start + attempt) % _mirrors.Length;
+            var mirror = _mirrors[index];
             try
             {
                 var results = await _http.GetFromJsonAsync<List<RadioBrowserStation>>(mirror + pathAndQuery, ct)
                               ?? new List<RadioBrowserStation>();
+                // Stick to one that actually WORKED, rather than to whatever followed a failure.
+                Volatile.Write(ref _mirrorIndex, index);
                 return MapCandidates(results);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -187,7 +210,6 @@ public sealed class StationSearchService : IStationSearchService
             catch (Exception ex) when (attempt < _mirrors.Length - 1)
             {
                 AppLog.Debug($"[RadioBrowser] {mirror} failed ({ex.Message}) — trying next mirror");
-                _mirrorIndex++; // sticky failover: later calls start at the mirror that worked
             }
         }
     }

@@ -12,9 +12,28 @@ namespace RadioPlayer.Tests.Fakes;
 public sealed class FakeHttpMessageHandler : HttpMessageHandler
 {
     private readonly Queue<Func<HttpRequestMessage, HttpResponseMessage>> _responses = new();
+    private readonly object _gate = new();
 
     /// <summary>Bodies of the requests that were actually sent, in order.</summary>
     public List<string> Requests { get; } = new();
+
+    /// <summary>URLs of the requests that were actually sent, in order — for tests about which
+    /// host was reached rather than which reply came back.</summary>
+    public List<Uri> RequestUris { get; } = new();
+
+    /// <summary>
+    /// Answers anything the scripted queue doesn't cover, keyed on the request. Use for tests
+    /// that care about the URL rather than the call order — e.g. "this mirror is down, that one
+    /// is up" — where a fixed queue can't express the rule.
+    /// </summary>
+    public Func<HttpRequestMessage, HttpResponseMessage>? Fallback { get; set; }
+
+    /// <summary>
+    /// Artificial delay before each response. Without it a fake handler completes inline, so
+    /// "parallel" callers actually run one after another and no interleaving is ever exercised —
+    /// which silently makes a concurrency test prove nothing.
+    /// </summary>
+    public TimeSpan Latency { get; set; }
 
     public int CallCount => Requests.Count;
 
@@ -55,14 +74,27 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Requests.Add(request.Content is null
+        var body = request.Content is null
             ? ""
-            : await request.Content.ReadAsStringAsync(cancellationToken));
+            : await request.Content.ReadAsStringAsync(cancellationToken);
 
-        if (_responses.Count == 0)
-            throw new InvalidOperationException(
-                $"FakeHttpMessageHandler ran out of scripted responses after {Requests.Count} request(s).");
+        if (Latency > TimeSpan.Zero)
+            await Task.Delay(Latency, cancellationToken);
 
-        return _responses.Dequeue()(request);
+        // StationSearchService fans out several queries at once, so this really is called
+        // concurrently — the queue and the logs both need guarding.
+        lock (_gate)
+        {
+            RequestUris.Add(request.RequestUri!);
+            Requests.Add(body);
+
+            if (_responses.Count > 0)
+                return _responses.Dequeue()(request);
+        }
+
+        if (Fallback is not null)
+            return Fallback(request);
+        throw new InvalidOperationException(
+            $"FakeHttpMessageHandler ran out of scripted responses after {Requests.Count} request(s).");
     }
 }
