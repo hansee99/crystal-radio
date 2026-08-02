@@ -20,7 +20,13 @@ public interface ISongCurator
     /// <paramref name="excludeKeys"/> — optional case-insensitive "Artist|Title" keys to leave
     /// out of recall entirely (songs the caller has already queued/played), so repeat calls
     /// reach deeper into the library instead of returning the same top matches again.
+    /// <paramref name="requireRelevance"/> — return nothing rather than fall back to the closest
+    /// available songs when none genuinely fit. DJ mode sets this: the library accumulates
+    /// harvested songs from every past session, so "closest available" happily serves last
+    /// week's happy hardcore into a deep-house set. An empty result is useful there — the caller
+    /// bridges live radio instead, which beats playing the wrong thing.
     /// </summary>
     Task<IReadOnlyList<CuratedSong>> CurateAsync(string prompt, int max = 20,
-        IReadOnlyCollection<string>? excludeKeys = null, CancellationToken ct = default);
+        IReadOnlyCollection<string>? excludeKeys = null, bool requireRelevance = false,
+        CancellationToken ct = default);
 }

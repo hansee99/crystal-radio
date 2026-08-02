@@ -989,7 +989,7 @@
                             <DockPanel Visibility="{Binding IsChecked, ElementName=DjMixTab,
                                        Converter={StaticResource BoolToVis}}">
                                 <ctl:StatePanel State="{Binding DjMixPanelState}"
-                                                EmptyContent="No mix yet — describe a vibe above and the DJ builds one from live radio, playing as it collects."
+                                                EmptyContent="{Binding DjMixEmptyMessage}"
                                                 EmptyContentTemplate="{StaticResource PanelMessage}"
                                                 LoadingContent="{Binding DjProgress}"
                                                 LoadingContentTemplate="{StaticResource PanelProgress}"

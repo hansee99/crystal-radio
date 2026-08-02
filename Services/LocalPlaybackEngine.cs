@@ -118,6 +118,13 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     /// <see cref="TrackChanged"/>, which fires when the position within it moves.</summary>
     public event EventHandler? QueueChanged;
 
+    /// <summary>
+    /// Raised when playback stops because the queue ran out — NOT when someone pressed Stop.
+    /// DJ mode uses this to fall back to live radio: running dry is the normal condition
+    /// whenever harvesting hasn't kept up, and silence is never the right answer to it.
+    /// </summary>
+    public event EventHandler? QueueExhausted;
+
     /// <summary>Replace the queue and start playing from <paramref name="startIndex"/>.</summary>
     public void SetQueue(IReadOnlyList<LocalTrack> tracks, int startIndex = 0)
     {
@@ -229,6 +236,8 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         _index = -1;
         _ranDry = ranDry;
         SetState(PlaybackState.Stopped);
+        if (ranDry)
+            QueueExhausted?.Invoke(this, EventArgs.Empty);
     }
 
     // --- Position / seek ------------------------------------------------------

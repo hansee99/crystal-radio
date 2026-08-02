@@ -28,7 +28,8 @@ public sealed class FakeSongCurator : ISongCurator
     }
 
     public Task<IReadOnlyList<CuratedSong>> CurateAsync(string prompt, int max = 20,
-        IReadOnlyCollection<string>? excludeKeys = null, CancellationToken ct = default)
+        IReadOnlyCollection<string>? excludeKeys = null, bool requireRelevance = false,
+        CancellationToken ct = default)
     {
         CallCount++;
         if (_responses.Count > 0)

@@ -223,6 +223,15 @@ public sealed class MainViewModel : ObservableObject
         // and "we moved within it".
         _local.QueueChanged += (_, _) => SyncDjMix();
 
+        // Running dry is the normal condition whenever harvesting hasn't kept up — fall back to
+        // live radio rather than going quiet. The handover back happens on its own: appending a
+        // song restarts local playback, whose TrackChanged ends the bridge.
+        _local.QueueExhausted += (_, _) => BridgeIfDjMixRanDry();
+
+        // The Mix panel is Loading only while a session is actually starting up; DjProgress is
+        // reset once it has, after which an empty mix means "bridging" or "collecting".
+        DjProgress.Stages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(DjMixPanelState));
+
         // Show the selected station's preview from the very first frame instead of a bare
         // "Not playing" (Shared Framework Spec §4a) — SelectedStation was set on the backing
         // field above, bypassing the setter's own preview refresh.
@@ -550,14 +559,40 @@ public sealed class MainViewModel : ObservableObject
         : DjHarvesters.Count == 0 ? PanelState.Loading
         : PanelState.Content;
 
-    /// <summary>Mix tab: the warm-up checklist lives here (it's the space that used to say
-    /// "nothing yet" while a session was demonstrably starting), so a running session with an
-    /// empty queue is Loading, not Empty.</summary>
+    /// <summary>
+    /// Mix tab. Loading means "a session is starting up" and shows the staged checklist — keyed
+    /// on the checklist actually having steps, since DjProgress is reset once startup finishes.
+    /// After that an empty mix isn't Loading: it's a running session that's bridging live or
+    /// still collecting, which <see cref="DjMixEmptyMessage"/> says in words.
+    /// </summary>
     public PanelState DjMixPanelState =>
         DjMix.Count > 0 ? PanelState.Content
         : DjError is not null ? PanelState.Error
-        : IsDjRunning ? PanelState.Loading
+        : DjProgress.Stages.Count > 0 ? PanelState.Loading
         : PanelState.Empty;
+
+    /// <summary>
+    /// What the Mix tab says when it has no songs. Three genuinely different situations, and
+    /// telling someone to "describe a vibe above" while their session is running and bridging
+    /// live radio is the one thing it must not do.
+    /// </summary>
+    public string DjMixEmptyMessage
+    {
+        get
+        {
+            if (!IsDjRunning)
+                return "No mix yet — describe a vibe above and the DJ builds one from live radio, "
+                       + "playing as it collects.";
+            if (_djWarmingUp)
+            {
+                var station = _djHarvest.TopStation?.Name;
+                return station is null
+                    ? "Building the mix — playing live radio until the first songs are ready."
+                    : $"Building the mix — {station} is playing live until the first songs are ready.";
+            }
+            return "Collecting songs — the mix starts as soon as the first one lands.";
+        }
+    }
 
     private string? _searchError;
     /// <summary>Non-null puts the Search panel in its Error state. Cleared when a search starts.</summary>
@@ -1797,7 +1832,9 @@ public sealed class MainViewModel : ObservableObject
         var curateCts = _curateCts = new CancellationTokenSource();
         try
         {
-            var songs = await _curator.CurateAsync(prompt, 20, null, curateCts.Token);
+            // Library mode keeps the "closest available" fallback: the user asked this library
+            // for a set and an empty result reads as broken. DJ mode is the opposite case.
+            var songs = await _curator.CurateAsync(prompt, 20, ct: curateCts.Token);
             CuratedQueue.Clear();
             foreach (var s in songs)
                 CuratedQueue.Add(new CuratedQueueItem(s));
@@ -1964,10 +2001,13 @@ public sealed class MainViewModel : ObservableObject
     /// loading.</summary>
     public bool ShowDjLiveDot => IsDjRunning && !IsDjStartingUp && !_djWarmingUp;
 
+    /// <summary>Everything that depends on "which phase is this session in" — the status-row
+    /// indicator and the Mix tab's empty copy both change between bridging and steady.</summary>
     private void RaiseDjIndicatorChanged()
     {
         OnPropertyChanged(nameof(ShowDjSpinner));
         OnPropertyChanged(nameof(ShowDjLiveDot));
+        OnPropertyChanged(nameof(DjMixEmptyMessage));
     }
 
     // The prompt/vibe the current DJ session was started with — frozen at session start (not
@@ -2237,6 +2277,22 @@ public sealed class MainViewModel : ObservableObject
         _engine.MetadataChanged += OnDjWarmupMetadataChanged;
         _engine.Play(topStation);
         ActiveEngineChanged?.Invoke(ActiveEngine); // repoints SMTC at _engine for this window
+    }
+
+    /// <summary>
+    /// The mix ran out mid-session — go back to live radio until harvesting catches up.
+    ///
+    /// This is the same bridge the cold start uses, but running dry is not a cold-start-only
+    /// event: it happens whenever the library had nothing that fit the vibe, whenever the curator
+    /// declines to pad the queue with off-vibe filler, and whenever harvesting simply falls
+    /// behind playback. Silence is never the right answer to any of them.
+    /// </summary>
+    private void BridgeIfDjMixRanDry()
+    {
+        if (!IsDjMode || !IsDjRunning || _djWarmingUp)
+            return;
+        AppLog.Info("[Dj] mix ran dry — bridging live until it refills");
+        BeginDjWarmupLivePlayback();
     }
 
     /// <summary>No-ops if warm-up isn't active. Called both on a genuine handover (the queue's

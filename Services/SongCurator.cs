@@ -68,7 +68,8 @@ public sealed class SongCurator : ISongCurator
     private bool CanRank => !string.IsNullOrWhiteSpace(_apiKey);
 
     public async Task<IReadOnlyList<CuratedSong>> CurateAsync(string prompt, int max = 20,
-        IReadOnlyCollection<string>? excludeKeys = null, CancellationToken ct = default)
+        IReadOnlyCollection<string>? excludeKeys = null, bool requireRelevance = false,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(prompt))
             return [];
@@ -86,13 +87,19 @@ public sealed class SongCurator : ISongCurator
             ranked = ranked.Where(r => !exclude.Contains($"{r.Row.Artist}|{r.Row.Title}")).ToList();
         }
 
+        // No embeddings yet → let the user play their library anyway. Except under
+        // requireRelevance, where recency says nothing about fit and the caller has a better
+        // answer than the wrong song.
         if (ranked.Count == 0)
-            return FallbackRecent(max, excludeKeys); // no embeddings yet → let the user play their library anyway
+            return requireRelevance ? [] : FallbackRecent(max, excludeKeys);
 
         // Relevance floor: prefer genuinely-matching candidates over "closest available, however
         // weak." Only fall through to the unfiltered top-K when literally nothing clears the
         // floor — "unless nothing else is available" is a real carve-out, not the common case.
         var aboveFloor = ranked.Where(r => r.Score >= MinRelevanceScore).ToList();
+        if (requireRelevance && aboveFloor.Count == 0)
+            return []; // nothing fits; the caller bridges live rather than playing filler
+
         var pool = (aboveFloor.Count > 0 ? aboveFloor : ranked).Take(RecallPoolSize).ToList();
 
         // Let the LLM arrange a sequence with reasons; fall back to cosine order if it can't.

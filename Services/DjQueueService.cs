@@ -63,7 +63,12 @@ public sealed class DjQueueService : IDisposable
         _seen.Clear();
         _libraryExhausted = false;
 
-        var seed = await _curator.CurateAsync(prompt, _maxSeed, null, ct).ConfigureAwait(true);
+        // requireRelevance: the library holds harvested songs from every previous session, so
+        // without it a deep-house prompt happily seeds itself with last week's happy hardcore.
+        // An empty seed is a fine answer — StartAsync returns false and the caller bridges live.
+        var seed = await _curator
+            .CurateAsync(prompt, _maxSeed, requireRelevance: true, ct: ct)
+            .ConfigureAwait(true);
         var seedTracks = new List<LocalTrack>();
         foreach (var song in seed)
         {
@@ -118,7 +123,9 @@ public sealed class DjQueueService : IDisposable
             // Snapshot _seen on this (dispatcher) thread — the curator reads the exclusion set
             // on a worker thread, and _seen is mutated here whenever a harvested song lands.
             var exclude = _seen.ToArray();
-            var more = await _curator.CurateAsync(_prompt, _maxSeed, exclude).ConfigureAwait(true);
+            var more = await _curator
+                .CurateAsync(_prompt, _maxSeed, exclude, requireRelevance: true)
+                .ConfigureAwait(true);
             var fresh = new List<LocalTrack>();
             foreach (var song in more)
             {
