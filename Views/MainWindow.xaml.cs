@@ -76,7 +76,9 @@ public partial class MainWindow : Window
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadioPlayer", "harvest");
         _djHarvest = new DjHarvestService(searchService, interpreter, agenticSearch, ranker, enrichment, songLibrary, harvestDir,
             harvesterCount: djSettings.DjHarvesterCount, reserveCount: djSettings.DjHarvestReserveCount,
-            offsetSeconds: 0.0, rejectBelow: 0.30, trimEdges: true,
+            offsetSeconds: 0.0, trimEdges: true,
+            rejectBelow: djSettings.DjMusicFractionFloor,   // 0 = off; see SegmentQualityChecker
+            minSongSeconds: djSettings.DjMinSongSeconds,
             maxHarvestCacheBytes: djSettings.DjMaxHarvestCacheMb * 1024L * 1024L,
             maxRejectedCacheBytes: djSettings.DjRejectedCacheMb * 1024L * 1024L);
 

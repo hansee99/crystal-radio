@@ -12,25 +12,56 @@ public sealed record SegmentVerdict(
 /// Offline, whole-file segment QC backstop for DJ Mode harvesting (DJ-MODE-SPEC-HARVEST.md §6.4):
 /// the boundary-cut + ICY-metadata filter is the primary purity guarantee, so this never runs
 /// under real-time pressure — it decodes a completed segment, classifies it with
-/// <see cref="MusicDetector"/>, rejects clear talk, and — the actual fix for "song starts
-/// abruptly / has talk (or the next song) bled into the tail" — applies the detector's own
-/// lead/tail edge-trim measurement to the audio bytes rather than just reporting it. Promoted
-/// from tools/DjHarvest's <c>Qc</c> PoC class into an instantiable, testable service.
+/// <see cref="MusicDetector"/>, edge-trims the non-music run at each end, and drops what isn't
+/// a song. Promoted from tools/DjHarvest's <c>Qc</c> PoC class.
+///
+/// <para><b>Why rejection is by duration, not music fraction.</b> It originally rejected any
+/// segment scoring below a whole-file music fraction. Measured sessions showed that failing
+/// badly on everything percussive-electronic: 92% of a deep-house session was rejected, and
+/// tracks confirmed by ear to be perfectly good scored 0.00 — the same as a confirmed advert.
+/// Two classes occupying one point cannot be separated by any threshold, so that gate is off by
+/// default (see <c>DjMusicFractionFloor</c>) until the detector gains a pulse-strength feature
+/// and is re-fitted.</para>
+///
+/// <para>The edge-trim, by contrast, is doing real work — it correctly stripped a talk outro
+/// from a track a listener confirmed. It measures a LOCAL run of non-music rather than averaging
+/// over the whole file, which is why it survives material the fraction can't judge. So the trim
+/// now drives the decision too: whatever is left after trimming has to be long enough to be a
+/// song. An ad break trims away to nothing; a song with a talk outro keeps its music.</para>
 /// </summary>
 public sealed class SegmentQualityChecker
 {
     private readonly MusicDetector _detector = new();
     private readonly double _rejectBelow;
+    private readonly double _minKeptSeconds;
     private readonly bool _trimEdges;
 
-    /// <param name="rejectBelow">Reject a segment whose music fraction falls below this (0
-    /// disables rejection — everything decodable is kept, still edge-trimmed).</param>
+    /// <param name="rejectBelow">Reject a segment whose whole-file music fraction falls below
+    /// this. <b>0 disables it</b>, which is the shipping default — see the class remarks.</param>
     /// <param name="trimEdges">Apply the detector's lead/tail edge-trim to kept segments'
     /// audio bytes rather than just measuring it.</param>
-    public SegmentQualityChecker(double rejectBelow = 0.30, bool trimEdges = true)
+    /// <param name="minKeptSeconds">Minimum audio remaining AFTER the edge-trim for a segment to
+    /// count as a song. The primary gate.</param>
+    public SegmentQualityChecker(double rejectBelow = 0, bool trimEdges = true,
+        double minKeptSeconds = 60)
     {
         _rejectBelow = rejectBelow;
+        _minKeptSeconds = minKeptSeconds;
         _trimEdges = trimEdges;
+    }
+
+    /// <summary>
+    /// How much audio survives the edge-trim. This is what decides keep/reject: the trim measures
+    /// a LOCAL run of non-music at each end and does it well, whereas the whole-file music
+    /// fraction cannot tell a deep-house track from an advert (both have scored 0.00 on real
+    /// material). An ad break trims away to nothing; a song with a talk outro keeps its music.
+    /// </summary>
+    internal static double KeptSeconds(FileResult res)
+    {
+        if (res.Windows.Count == 0)
+            return 0;
+        var total = res.Windows[^1].TStart + MusicDetector.WindowSeconds;
+        return Math.Max(0, total - res.LeadTalkSeconds - res.TailTalkSeconds);
     }
 
     /// <summary>
@@ -53,8 +84,17 @@ public sealed class SegmentQualityChecker
             var res = _detector.Analyze(mono, rate);
             var pct = res.MusicFraction * 100;
 
-            if (res.MusicFraction < _rejectBelow)
-                return new SegmentVerdict(false, res.Verdict, pct, res.LeadTalkSeconds, res.TailTalkSeconds, "QC rejected");
+            // Primary gate: is there enough music left once the non-music edges come off?
+            var kept = KeptSeconds(res);
+            if (kept < _minKeptSeconds)
+                return new SegmentVerdict(false, res.Verdict, pct, res.LeadTalkSeconds,
+                    res.TailTalkSeconds, $"only {kept:0}s of music");
+
+            // Secondary gate, off by default: the whole-file fraction can't separate the classes
+            // on real material, so it stays available for A/B work but doesn't ship enabled.
+            if (_rejectBelow > 0 && res.MusicFraction < _rejectBelow)
+                return new SegmentVerdict(false, res.Verdict, pct, res.LeadTalkSeconds,
+                    res.TailTalkSeconds, $"below the {_rejectBelow:P0} music floor");
 
             var didTrim = _trimEdges
                 && (res.LeadTalkSeconds > 0 || res.TailTalkSeconds > 0)

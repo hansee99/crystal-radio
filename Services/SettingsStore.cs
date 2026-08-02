@@ -59,6 +59,24 @@ public sealed class AppSettings
     /// </summary>
     public int DjRejectedCacheMb { get; set; } = 250;
 
+    /// <summary>
+    /// A harvested segment must have at least this many seconds of audio left after the edge-trim
+    /// to count as a song. This is the primary QC gate: it uses the trim, which measures a LOCAL
+    /// run of non-music and does that well, rather than a whole-file music fraction, which does
+    /// not (see <see cref="DjMusicFractionFloor"/>). An ad break trims away to nothing and is
+    /// rejected; a track with a talk outro keeps its music and loses the outro.
+    /// </summary>
+    public int DjMinSongSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Reject a segment whose whole-file music fraction is below this. <b>0 disables it, which is
+    /// the current default.</b> Listening tests found confirmed-good deep house scoring 0.00 —
+    /// the same as a confirmed ad break — so the two classes are not separable by this number and
+    /// no threshold on it can be right. Re-enable once the detector gains a pulse-strength
+    /// feature and is re-fitted; the knob stays so that can be A/B'd without a rebuild.
+    /// </summary>
+    public double DjMusicFractionFloor { get; set; }
+
     /// <summary>Resolved library folder (the stored value or the default).</summary>
     public string ResolveLibraryFolder() =>
         string.IsNullOrWhiteSpace(LibraryFolder)
@@ -97,6 +115,8 @@ public sealed class SettingsStore
                     settings.DjQueueLowWatermark = Math.Clamp(settings.DjQueueLowWatermark, 1, 50);
                     settings.DjMaxHarvestCacheMb = Math.Clamp(settings.DjMaxHarvestCacheMb, 50, 20_000);
                     settings.DjRejectedCacheMb = Math.Clamp(settings.DjRejectedCacheMb, 0, 20_000);
+                    settings.DjMinSongSeconds = Math.Clamp(settings.DjMinSongSeconds, 0, 600);
+                    settings.DjMusicFractionFloor = Math.Clamp(settings.DjMusicFractionFloor, 0, 1);
                     return settings;
                 }
             }

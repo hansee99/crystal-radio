@@ -106,7 +106,8 @@ public sealed class DjSessionLog
     /// music off the songs it does keep — silently, unless it's recorded here.
     /// </summary>
     public void SegmentCompleted(string station, string? title, bool kept, double confidence,
-        double seconds, string? verdict = null, double leadTrim = 0, double tailTrim = 0)
+        double seconds, string? verdict = null, double leadTrim = 0, double tailTrim = 0,
+        string? note = null)
     {
         lock (_gate)
         {
@@ -134,6 +135,8 @@ public sealed class DjSessionLog
                       .Append(leadTrim.ToString("0.0", CultureInfo.InvariantCulture)).Append("s+")
                       .Append(tailTrim.ToString("0.0", CultureInfo.InvariantCulture)).Append('s');
             detail.Append(')');
+            if (!string.IsNullOrWhiteSpace(note))
+                detail.Append(" — ").Append(note); // why it was rejected, or what the trim did
 
             Write(kept ? "kept" : "rejected", detail.ToString());
         }

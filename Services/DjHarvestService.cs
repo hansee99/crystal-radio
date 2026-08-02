@@ -118,8 +118,9 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         int harvesterCount = 4,
         int reserveCount = 15,
         double offsetSeconds = 0.0,
-        double rejectBelow = 0.30,
+        double rejectBelow = 0,
         bool trimEdges = true,
+        double minSongSeconds = 60,
         long maxHarvestCacheBytes = 500L * 1024 * 1024,
         long maxRejectedCacheBytes = 250L * 1024 * 1024)
     {
@@ -137,7 +138,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         _offsetSeconds = offsetSeconds;
         _maxHarvestCacheBytes = maxHarvestCacheBytes;
         _maxRejectedCacheBytes = maxRejectedCacheBytes;
-        _qc = new SegmentQualityChecker(rejectBelow, trimEdges);
+        _qc = new SegmentQualityChecker(rejectBelow, trimEdges, minSongSeconds);
     }
 
     public bool IsRunning => _running;
@@ -356,7 +357,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             // Recording is real-time, so the wall-clock span the segment covered is its length.
             SessionLog?.SegmentCompleted(label, seg.Title, verdict.Kept, verdict.MusicPercent,
                 (DateTime.Now - seg.StartedAt).TotalSeconds,
-                verdict.Verdict, verdict.LeadTrimSeconds, verdict.TailTrimSeconds);
+                verdict.Verdict, verdict.LeadTrimSeconds, verdict.TailTrimSeconds, verdict.Note);
 
             var tally = _tallies.GetOrAdd(label, _ => new StationTally());
 
