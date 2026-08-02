@@ -237,11 +237,15 @@
                 </Rectangle.Fill>
             </Rectangle>
             <!-- bottom scrim (UX audit): a solid floor under the transport, seek times and
-                 volume row, which otherwise cross the brightest part of the artwork. -->
-            <Rectangle VerticalAlignment="Bottom" Height="200">
+                 volume, which otherwise cross the brightest part of the artwork. Starts high
+                 (280px) and ramps slowly: at 200px it was still light where the transport strip
+                 began, so the strip's own tone arrived as a step. The strip now fades in over its
+                 top 62px and meets an already-darkening artwork, leaving no visible band. -->
+            <Rectangle VerticalAlignment="Bottom" Height="280">
                 <Rectangle.Fill>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                         <GradientStop Color="#00050D0C" Offset="0"/>
+                        <GradientStop Color="#63050D0C" Offset="0.45"/>
                         <GradientStop Color="#E6050D0C" Offset="1"/>
                     </LinearGradientBrush>
                 </Rectangle.Fill>
@@ -1601,10 +1605,24 @@
                      straight through this area, and a gradient scrim alone still left the
                      controls looking like they floated on it. Negative margins cancel the
                      pane's padding so the strip reaches the window edges; Padding restores the
-                     inner spacing. -->
-                <Border Grid.Row="1" Margin="-44,0,-44,-30" Padding="44,18,44,30"
-                        Background="#B8040B0A" BorderBrush="{StaticResource HairlineSoft}"
-                        BorderThickness="0,1,0,0">
+                     inner spacing.
+
+                     The strip FADES IN over its top 62px rather than starting at full opacity
+                     behind a hairline, which drew a hard band across the artwork. MappingMode
+                     Absolute is what makes that work: the strip's height changes with the mode
+                     (seek row and Up next come and go), so a proportional gradient would move the
+                     boundary around, while SpreadMethod=Pad holds the solid tone everywhere below
+                     62px whatever the height. The top padding matches the fade so no control ever
+                     sits in the ramp. -->
+                <Border Grid.Row="1" Margin="-44,0,-44,-30" Padding="44,62,44,30">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,62"
+                                             MappingMode="Absolute" SpreadMethod="Pad">
+                            <GradientStop Offset="0" Color="#00040B0A"/>
+                            <GradientStop Offset="0.55" Color="#78040B0A"/>
+                            <GradientStop Offset="1" Color="#B8040B0A"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
                 <StackPanel>
                     <!-- Seek bar (library mode only; radio streams have no timeline) -->
                     <Grid Margin="0,0,0,18" Width="440" HorizontalAlignment="Left"
@@ -1616,7 +1634,7 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{Binding PositionText}" FontSize="11.5"
                                    Foreground="#FF8AA39E" VerticalAlignment="Center" MinWidth="34"/>
-                        <Slider x:Name="SeekSlider" Grid.Column="1" Style="{StaticResource VolumeSlider}"
+                        <Slider x:Name="SeekSlider" Grid.Column="1" Style="{StaticResource SeekBarSlider}"
                                 Margin="12,0" Minimum="0" Maximum="{Binding DurationSeconds}"
                                 Value="{Binding PositionSeconds, Mode=TwoWay}"/>
                         <TextBlock Grid.Column="2" Text="{Binding DurationText}" FontSize="11.5"
@@ -1624,49 +1642,77 @@
                                    TextAlignment="Right"/>
                     </Grid>
 
-                    <StackPanel Orientation="Horizontal">
-                        <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
-                                Command="{Binding PrevStationCommand}"
-                                Content="{StaticResource PrevGeometry}" ToolTip="Previous"/>
-                        <Button Command="{Binding PlayPauseCommand}" ToolTip="{Binding PlayPauseLabel}"
-                                VerticalAlignment="Center" Margin="16,0">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource PlayButton}">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsPlaying}" Value="True">
-                                            <Setter Property="Content" Value="{StaticResource PauseGeometry}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                        <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
-                                Command="{Binding NextStationCommand}"
-                                Content="{StaticResource NextGeometry}" ToolTip="Next"/>
-                        <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
-                                Command="{Binding StopCommand}" Margin="16,0,0,0"
-                                Content="{StaticResource StopGeometry}" ToolTip="Stop"/>
-                    </StackPanel>
-
-                    <!-- Volume (explicit width so the * slider column doesn't collapse) -->
-                    <Grid Margin="0,24,0,0" Width="440" HorizontalAlignment="Left">
+                    <!-- Transport, with volume on the SAME row, right-aligned (design review
+                         "Volume Control Options", option A). Volume used to own a full row styled
+                         identically to the seek bar, which read as "these two matter equally";
+                         it's set once a session. Moving it up buys back a row of artwork and is
+                         the standard desktop-player arrangement. Width 440 aligns the group's
+                         right edge with the seek bar's end above, so the controls read as one
+                         block rather than drifting to the far pane edge. -->
+                    <Grid Width="440" HorizontalAlignment="Left">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="34"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <Path Grid.Column="0" Data="{StaticResource VolumeGeometry}" Stretch="Uniform"
-                              Width="18" Height="18" Fill="#FF8AA39E" VerticalAlignment="Center"/>
-                        <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}" Margin="12,0"
-                                Minimum="0" Maximum="1" SmallChange="0.05" LargeChange="0.1"
-                                Value="{Binding Volume, Mode=TwoWay}"/>
-                        <TextBlock Grid.Column="2" Text="{Binding VolumePercent}" FontSize="12"
-                                   Foreground="#FF8AA39E" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
+                                    Command="{Binding PrevStationCommand}"
+                                    Content="{StaticResource PrevGeometry}" ToolTip="Previous"/>
+                            <Button Command="{Binding PlayPauseCommand}" ToolTip="{Binding PlayPauseLabel}"
+                                    VerticalAlignment="Center" Margin="16,0">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource PlayButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                                <Setter Property="Content" Value="{StaticResource PauseGeometry}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
+                                    Command="{Binding NextStationCommand}"
+                                    Content="{StaticResource NextGeometry}" ToolTip="Next"/>
+                            <Button Style="{StaticResource RoundGhostButton}" VerticalAlignment="Center"
+                                    Command="{Binding StopCommand}" Margin="16,0,0,0"
+                                    Content="{StaticResource StopGeometry}" ToolTip="Stop"/>
+                        </StackPanel>
+
+                        <!-- Volume group. The readout appears on hover only: a permanently visible
+                             "100" tells the user a number they set themselves. The tooltip keeps
+                             it readable without hovering the slider itself. -->
+                        <StackPanel x:Name="VolumeGroup" Grid.Column="2" Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    ToolTip="{Binding VolumePercent, StringFormat=Volume {0}}">
+                            <Path Data="{StaticResource VolumeGeometry}" Stretch="Uniform"
+                                  Width="16" Height="16" Fill="#FF8AA39E" VerticalAlignment="Center"/>
+                            <Slider Style="{StaticResource MutedSlider}" Width="96" Margin="10,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Minimum="0" Maximum="1" SmallChange="0.05" LargeChange="0.1"
+                                    Value="{Binding Volume, Mode=TwoWay}"/>
+                            <TextBlock Text="{Binding VolumePercent}" FontSize="11" Width="26"
+                                       Margin="8,0,0,0" TextAlignment="Right"
+                                       Foreground="#FF8AA39E" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Opacity" Value="0"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Value="True" Binding="{Binding IsMouseOver,
+                                                         ElementName=VolumeGroup}">
+                                                <Setter Property="Opacity" Value="1"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
                     </Grid>
 
                     <!-- "Up next" (DJ mode): the thing a listener most often wants to know
                          without switching panels. Only when there's actually a next track. -->
-                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0"
+                    <StackPanel Orientation="Horizontal" Margin="0,18,0,0"
                                 Visibility="{Binding HasUpNext, Converter={StaticResource BoolToVis}}">
                         <TextBlock Text="UP NEXT" FontSize="10" FontWeight="SemiBold"
                                    Foreground="#FF6F8C87" VerticalAlignment="Center"/>

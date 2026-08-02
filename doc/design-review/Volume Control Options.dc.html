@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300;0,400;0,500;0,600;0,700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#0A1211; }
+  body { font-family:'Hanken Grotesk', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#56C7BA; text-decoration:none; }
+  a:hover { color:#8FE0D5; }
+</style>
+</helmet>
+
+<div style="background:#0A1211;min-height:100vh;box-sizing:border-box;min-width:1100px;padding:44px 44px 90px;display:flex;flex-direction:column;gap:30px">
+
+  <div style="width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:9px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.18em;color:#7D938E;text-transform:uppercase">DJ mode · transport strip</div>
+    <div style="font-size:27px;color:#F3F9F7;font-weight:400;letter-spacing:-0.01em">Quietening the volume slider</div>
+    <div style="font-size:14.5px;color:#8A9F9A;max-width:78ch;line-height:1.65;text-wrap:pretty">You're right that it's too loud. The cause isn't really the width — it's that volume is styled <em style="font-style:normal;color:#BCCCC8">identically to the seek bar</em>: same teal fill, same thumb, same track height, on its own full row. That says "these two controls matter equally," but seek is touched constantly and volume is set once a session. Three options below, live — drag any slider, hover the hidden ones.</div>
+  </div>
+
+  <sc-for list="{{ variants }}" as="v" hint-placeholder-count="3">
+    <div style="width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:0;border-radius:14px;overflow:hidden;border:1px solid {{ v.borderColor }}">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:15px 22px;background:{{ v.headBg }};border-bottom:1px solid rgba(255,255,255,0.07)">
+        <div style="display:flex;align-items:center;gap:13px;min-width:0">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.1em;color:{{ v.tagColor }}">{{ v.tag }}</span>
+          <span style="font-size:16px;color:#F3F9F7;font-weight:500">{{ v.name }}</span>
+          <sc-if value="{{ v.isPick }}" hint-placeholder-val="{{ false }}">
+            <span style="padding:3px 9px 4px;border-radius:6px;background:rgba(86,199,186,0.16);border:1px solid rgba(86,199,186,0.45);color:#7FDDD0;font-size:9.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase">Recommended</span>
+          </sc-if>
+        </div>
+        <div style="font-size:12.5px;color:#8A9F9A;font-family:'IBM Plex Mono',monospace">{{ v.rowNote }}</div>
+      </div>
+
+      <div style="position:relative;height:230px;background:linear-gradient(118deg,#0B1A18 0%,#123029 34%,#22453A 52%,#4E6A54 72%,#9FA88A 100%)">
+        <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,13,12,0.55) 0%,rgba(5,13,12,0.88) 55%,rgba(5,13,12,0.96) 100%)"></div>
+        <div style="position:absolute;left:0;right:0;bottom:0;padding:0 34px 26px;display:flex;flex-direction:column;gap:14px">
+          {{ v.strip }}
+        </div>
+      </div>
+
+      <div style="padding:18px 22px;background:rgba(4,11,10,0.6);display:flex;gap:26px">
+        <div style="flex:1;display:flex;flex-direction:column;gap:7px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">How it works</div>
+          <div style="font-size:13.5px;line-height:1.65;color:#BCCCC8">{{ v.how }}</div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:7px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#8A9F9A">Trade-off</div>
+          <div style="font-size:13.5px;line-height:1.65;color:#BCCCC8">{{ v.tradeoff }}</div>
+        </div>
+      </div>
+    </div>
+  </sc-for>
+
+  <div style="width:1000px;margin:0 auto;box-sizing:border-box;padding:22px 24px;border-radius:12px;border:1px solid rgba(86,199,186,0.25);background:rgba(86,199,186,0.05);display:flex;flex-direction:column;gap:11px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Whichever you pick</div>
+    <div style="font-size:14px;line-height:1.7;color:#D8E5E1;text-wrap:pretty">Give volume a <em style="font-style:normal;color:#F3F9F7">neutral</em> track — <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">#8A9F9A</span> fill on <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#CDEEE7">rgba(255,255,255,0.14)</span>, 3px tall, 10px thumb. Teal is your "this is live / this is the thing" colour; spending it on a volume slider is what makes it shout. The seek bar keeps teal, 4px, and a 12px thumb, so the two stop looking like siblings. Keep the numeric readout on hover/drag only — a permanently visible "100" is telling the user a number they set themselves.</div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1100,&quot;height&quot;:1250}}">
+class Component extends DCLogic {
+  state = { vol: { a: 100, b: 72, c: 84 }, open: {}, drag: null };
+
+  h = React.createElement;
+
+  setVol(key, val) {
+    this.setState((s) => ({ vol: Object.assign({}, s.vol, { [key]: Math.max(0, Math.min(100, Math.round(val))) }) }));
+  }
+
+  trackFromEvent(e, key) {
+    const el = e.currentTarget.getBoundingClientRect();
+    this.setVol(key, ((e.clientX - el.left) / el.width) * 100);
+  }
+
+  icon(level) {
+    if (level === 0) return '🔇';
+    if (level < 40) return '🔈';
+    if (level < 75) return '🔉';
+    return '🔊';
+  }
+
+  // shared seek row — identical in all three so the comparison is fair
+  seekRow() {
+    const h = this.h;
+    return h('div', { style: { display: 'flex', alignItems: 'center', gap: '13px' } },
+      h('span', { style: { fontSize: '11px', color: '#8A9F9A', fontFamily: "'IBM Plex Mono',monospace", width: '32px', flex: 'none' } }, '0:26'),
+      h('div', { style: { flex: 1, height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.16)', position: 'relative' } },
+        h('div', { style: { width: '10%', height: '100%', background: '#56C7BA', borderRadius: '2px' } }),
+        h('div', { style: { position: 'absolute', left: '10%', top: '50%', width: '12px', height: '12px', marginLeft: '-6px', marginTop: '-6px', borderRadius: '50%', background: '#56C7BA', boxShadow: '0 0 10px rgba(86,199,186,0.5)' } })
+      ),
+      h('span', { style: { fontSize: '11px', color: '#8A9F9A', fontFamily: "'IBM Plex Mono',monospace", width: '32px', flex: 'none', textAlign: 'right' } }, '4:19')
+    );
+  }
+
+  transportButtons(size) {
+    const h = this.h;
+    const ghost = (glyph, dim) => h('div', {
+      style: {
+        width: dim + 'px', height: dim + 'px', borderRadius: '50%', flex: 'none',
+        border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.03)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: '#BCCCC8', fontSize: (dim * 0.35) + 'px', cursor: 'pointer',
+      },
+    }, glyph);
+    return h('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
+      ghost('⏮', size.ghost),
+      h('div', {
+        style: {
+          width: size.play + 'px', height: size.play + 'px', borderRadius: '50%', flex: 'none',
+          background: '#56C7BA', boxShadow: '0 0 26px rgba(86,199,186,0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#04100E', fontSize: (size.play * 0.3) + 'px', cursor: 'pointer',
+        },
+      }, '❚❚'),
+      ghost('⏭', size.ghost),
+      ghost('◼', size.ghost)
+    );
+  }
+
+  volSlider(key, width, opts) {
+    const h = this.h;
+    const val = this.state.vol[key];
+    const o = opts || {};
+    return h('div', {
+      onMouseDown: (e) => { this.setState({ drag: key }); this.trackFromEvent(e, key); },
+      onMouseMove: (e) => { if (this.state.drag === key) this.trackFromEvent(e, key); },
+      onMouseUp: () => this.setState({ drag: null }),
+      onMouseLeave: () => this.setState({ drag: null }),
+      style: {
+        width: width, height: '16px', flex: 'none', display: 'flex', alignItems: 'center',
+        cursor: 'pointer', position: 'relative',
+        transition: 'width 160ms ease, opacity 160ms ease',
+        opacity: o.opacity == null ? 1 : o.opacity,
+      },
+    },
+      h('div', { style: { width: '100%', height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.14)', position: 'relative' } },
+        h('div', { style: { width: val + '%', height: '100%', background: '#8A9F9A', borderRadius: '2px' } }),
+        h('div', {
+          style: {
+            position: 'absolute', left: val + '%', top: '50%', width: '10px', height: '10px',
+            marginLeft: '-5px', marginTop: '-5px', borderRadius: '50%', background: '#BCCCC8',
+          },
+        })
+      )
+    );
+  }
+
+  volIcon(key, onClick, active) {
+    const h = this.h;
+    return h('div', {
+      onClick,
+      title: 'Volume ' + this.state.vol[key],
+      style: {
+        width: '32px', height: '32px', flex: 'none', borderRadius: '8px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: active ? '#CDEEE7' : '#BCCCC8', fontSize: '14px', cursor: 'pointer',
+        background: active ? 'rgba(255,255,255,0.07)' : 'transparent',
+      },
+    }, this.icon(this.state.vol[key]));
+  }
+
+  readout(key, show) {
+    const h = this.h;
+    return h('span', {
+      style: {
+        fontSize: '11px', fontFamily: "'IBM Plex Mono',monospace", color: '#8A9F9A',
+        width: '26px', flex: 'none', textAlign: 'right',
+        opacity: show ? 1 : 0, transition: 'opacity 140ms ease',
+      },
+    }, this.state.vol[key]);
+  }
+
+  // A — volume joins the transport row, right-aligned and neutral
+  stripA() {
+    const h = this.h;
+    const hot = this.state.open.a || this.state.drag === 'a';
+    return [
+      this.seekRow(),
+      h('div', { key: 'row', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '24px' } },
+        this.transportButtons({ play: 52, ghost: 38 }),
+        h('div', {
+          onMouseEnter: () => this.setState({ open: { a: true } }),
+          onMouseLeave: () => this.setState({ open: {} }),
+          style: { display: 'flex', alignItems: 'center', gap: '9px' },
+        },
+          this.volIcon('a', null, hot),
+          this.volSlider('a', '96px'),
+          this.readout('a', hot)
+        )
+      ),
+    ];
+  }
+
+  // B — icon only; slider expands on hover/focus
+  stripB() {
+    const h = this.h;
+    const hot = this.state.open.b || this.state.drag === 'b';
+    return [
+      this.seekRow(),
+      h('div', { key: 'row', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '24px' } },
+        this.transportButtons({ play: 52, ghost: 38 }),
+        h('div', {
+          onMouseEnter: () => this.setState({ open: { b: true } }),
+          onMouseLeave: () => this.setState({ open: {} }),
+          style: { display: 'flex', alignItems: 'center', gap: '9px', justifyContent: 'flex-end', minWidth: '150px' },
+        },
+          this.volSlider('b', hot ? '104px' : '0px', { opacity: hot ? 1 : 0 }),
+          this.readout('b', hot),
+          this.volIcon('b', null, hot)
+        )
+      ),
+    ];
+  }
+
+  // C — keep the third row, but demote it and let it carry Up next
+  stripC() {
+    const h = this.h;
+    const hot = this.state.open.c || this.state.drag === 'c';
+    return [
+      this.seekRow(),
+      h('div', { key: 'row', style: { display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+        this.transportButtons({ play: 52, ghost: 38 })
+      ),
+      h('div', { key: 'foot', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '24px', paddingTop: '2px' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0 } },
+          h('span', { style: { fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#56C7BA', flex: 'none' } }, 'Up next'),
+          h('span', { style: { fontSize: '12.5px', color: '#BCCCC8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, 'Moonshake — Can')
+        ),
+        h('div', {
+          onMouseEnter: () => this.setState({ open: { c: true } }),
+          onMouseLeave: () => this.setState({ open: {} }),
+          style: { display: 'flex', alignItems: 'center', gap: '9px' },
+        },
+          this.volIcon('c', null, hot),
+          this.volSlider('c', '96px'),
+          this.readout('c', hot)
+        )
+      ),
+    ];
+  }
+
+  renderVals() {
+    return {
+      variants: [
+        {
+          tag: 'A',
+          name: 'Onto the transport row',
+          isPick: true,
+          rowNote: '2 rows · saves 38px',
+          tagColor: '#56C7BA',
+          borderColor: 'rgba(86,199,186,0.3)',
+          headBg: 'rgba(86,199,186,0.06)',
+          strip: this.stripA(),
+          how: 'Volume moves up beside the transport, right-aligned: 32px speaker button, 96px neutral track, readout only on hover or drag. The transport buttons stay left-aligned so the play button holds its position on the grid.',
+          tradeoff: 'Nothing lost — the control is still one click away and always visible. This is the standard desktop-player arrangement, and it buys back a whole row of artwork.',
+        },
+        {
+          tag: 'B',
+          name: 'Icon only, expands on hover',
+          isPick: false,
+          rowNote: '2 rows · quietest',
+          tagColor: '#8A9F9A',
+          borderColor: 'rgba(255,255,255,0.09)',
+          headBg: 'rgba(255,255,255,0.03)',
+          strip: this.stripB(),
+          how: 'Only the speaker icon shows at rest; the track slides out on hover or keyboard focus. The icon itself reflects the level, so you can still read volume at a glance without the slider.',
+          tradeoff: 'Hidden controls are harder to discover and need the hover to be forgiving. Worth it only if you want the transport as minimal as possible — scroll-to-adjust on the icon should come with it.',
+        },
+        {
+          tag: 'C',
+          name: 'Keep the row, demote it',
+          isPick: false,
+          rowNote: '3 rows · adds Up next',
+          tagColor: '#8A9F9A',
+          borderColor: 'rgba(255,255,255,0.09)',
+          headBg: 'rgba(255,255,255,0.03)',
+          strip: this.stripC(),
+          how: 'The third row survives but stops being about volume alone: it carries "Up next" on the left and a shortened neutral slider on the right, with the transport centred above it.',
+          tradeoff: 'Keeps the full-height strip, so the artwork stays cropped. Pick this one if you want Up next (c04) on screen more than you want the vertical space back.',
+        },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -101,8 +101,16 @@
     <!-- Back chevron (stroke) for the About reading-view header. -->
     <PathGeometry x:Key="BackGeometry" Figures="M14 6 L8 12 L14 18"/>
 
-    <!-- Sparkle / 4-point star (fill) — "About this track" pill, eyebrow, regenerate. -->
-    <PathGeometry x:Key="SparkleGeometry" Figures="M12 3 L13.5 10.5 L21 12 L13.5 13.5 L12 21 L10.5 13.5 L3 12 L10.5 10.5 Z"/>
+    <!-- Sparkle (fill) — the mark for every AI action: "About this track" pill, the About
+         eyebrow, regenerate, and DJ mode's "YOUR DJ" attribution.
+         The arms are QUADRATIC, not straight. The previous version joined the four tips with
+         straight lines, which at 12-16px rendered as a plus — indistinguishable from the
+         save-to-library glyph, so the two most different actions on the screen carried the same
+         mark. Concave arms plus the small second star read unmistakably as a sparkle at icon
+         size, which is the whole job of this shape. -->
+    <PathGeometry x:Key="SparkleGeometry"
+                  Figures="M10 2.2 Q11.3 8.7 17.8 10 Q11.3 11.3 10 17.8 Q8.7 11.3 2.2 10 Q8.7 8.7 10 2.2 Z
+                           M18.4 14.6 Q19 17.4 21.8 18 Q19 18.6 18.4 21.4 Q17.8 18.6 15 18 Q17.8 17.4 18.4 14.6 Z"/>
 
     <!-- Fill icons -->
     <PathGeometry x:Key="PlayGeometry" Figures="M8 5 L19 12 L8 19 Z"/>
@@ -390,7 +398,7 @@
     </Style>
 
     <!-- Volume slider: gradient-filled track (via the Track's decrease button) + glowing thumb. -->
-    <Style x:Key="VolumeSlider" TargetType="Slider">
+    <Style x:Key="SeekBarSlider" TargetType="Slider">
         <Setter Property="Height" Value="14"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -435,6 +443,61 @@
                             </Track.Thumb>
                         </Track>
                     </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Volume slider: deliberately NOT a sibling of the seek bar above it.
+         Both used to share one style — same teal fill, same 4px track, same 14px thumb — which
+         said the two controls matter equally. Seek is touched constantly; volume is set once a
+         session. So this one is neutral grey, thinner (3px) and smaller-thumbed (10px), and teal
+         is kept for "this is live": the seek bar and the play button. -->
+    <Style x:Key="MutedSlider" TargetType="Slider">
+        <Setter Property="Height" Value="12"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid VerticalAlignment="Center" Background="Transparent">
+                        <Border Height="3" CornerRadius="2" Background="#24FFFFFF"/>
+                        <Track x:Name="PART_Track" Minimum="{TemplateBinding Minimum}"
+                               Maximum="{TemplateBinding Maximum}" Value="{TemplateBinding Value}">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Height="3" CornerRadius="2" Background="#FF8A9F9A"/>
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="Slider.IncreaseLarge" Focusable="False" Opacity="0">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Background="Transparent"/>
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb x:Name="PART_Thumb" Width="10" Height="10" Opacity="0.8">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Ellipse Fill="#FFBCCCC8"/>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <!-- Brightens to match the label/readout appearing on hover, so the whole
+                             group wakes up together rather than the number alone. -->
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="PART_Thumb" Property="Opacity" Value="1"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
