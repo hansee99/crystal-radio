@@ -108,8 +108,10 @@ saved songs are never touched.
 See [doc/TECHNICAL.md](doc/TECHNICAL.md) for the full architecture, the AI search patterns
 (structured output, agentic loop, local enrichment, semantic search), the offline curated
 playlists, and the design decisions behind them. DJ mode has its own spec in
-[doc/DJ-MODE-SPEC-HARVEST.md](doc/DJ-MODE-SPEC-HARVEST.md); known gaps and deferred ideas
-live in [doc/BACKLOG.md](doc/BACKLOG.md).
+[doc/DJ-MODE-SPEC-HARVEST.md](doc/DJ-MODE-SPEC-HARVEST.md). Diagnosed-but-unfixed problems and
+decisions about what deliberately isn't built are in
+[doc/KNOWN-LIMITATIONS.md](doc/KNOWN-LIMITATIONS.md); outstanding work is tracked in
+[GitHub issues](https://github.com/hansee99/crystal-radio/issues).
 
 ## License
 

@@ -9,7 +9,7 @@ namespace RadioPlayer.Tests;
 /// <summary>
 /// Unit tests for DjQueueService's warm-start / low-watermark refill / dedup / never-starve
 /// logic (DJ-MODE-SPEC-HARVEST.md §9), using fakes so nothing here touches BASS or the network —
-/// deferred from the DJ-mode production pass per doc/BACKLOG.md, picked up here.
+/// deferred from the DJ-mode production pass, picked up here.
 ///
 /// Threading note: DjQueueService marshals its event handlers through a captured Dispatcher
 /// (matching StreamRecorder/LocalPlaybackEngine/SmtcController's idiom), which only actually runs

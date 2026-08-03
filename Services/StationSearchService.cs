@@ -20,7 +20,7 @@ public sealed class StationSearchService : IStationSearchService
     // known"), so it was a guaranteed-wasted retry on every failover — and with only three
     // entries, a third of the budget. The directory's own /json/servers currently advertises de1
     // alone; de2 still answers, so it stays as the one real fallback. This list going stale is
-    // the standing weakness of hardcoding it — see doc/BACKLOG.md for DNS-based discovery.
+    // the standing weakness of hardcoding it — see issue #25 for DNS-based discovery.
     private static readonly string[] DefaultMirrors =
     [
         "https://de1.api.radio-browser.info",
