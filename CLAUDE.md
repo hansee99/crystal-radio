@@ -538,8 +538,12 @@ This settles a whole class of trade-offs, so reach for it rather than re-derivin
   The saved library is a by-product.
 
 The one place this inverts: a song the user **explicitly saved** is theirs. Heuristics that got
-stricter afterwards may not delete or degrade it (see `SongLibraryService.RetireIfNoLongerSongLike`,
-scoped to harvested rows only).
+stricter afterwards may not delete or degrade it. Both retirement paths in `SongLibraryService`
+are scoped to `SongSource.Harvested` for this reason: `RetireIfNoLongerSongLike` (re-judges rows
+against the current `SongHistoryFilter` on startup) and the `is_song` verdict that rides along on
+the enrichment call. The latter is the only gate with general world knowledge — the filter can
+only catch shapes someone anticipated — so it is asked to be conservative and every unclear answer
+reads as "keep": a wrong "no" deletes real music, a wrong "yes" costs one bad track in a mix.
 
 ## Conventions
 

@@ -29,8 +29,18 @@ public sealed class SongLibraryService : ISongLibraryService
         still give a best-effort description from the title's style — never invent specific facts
         (labels, years, chart positions) you are unsure of.
 
+        Some entries are not music at all. They are recorded off live radio, and stations leak
+        non-music into the track metadata: adverts, station idents, news bulletins, traffic and
+        weather, competition promos, and playout-system cart IDs such as ADBREAK_120000 or
+        ADWTAG_122000. Say so when the title and artist plainly describe one of those.
+
+        Be conservative. Set "is_song" to false ONLY when it is obvious. An unfamiliar, obscure,
+        non-English or oddly punctuated title is still a song — a wrong "false" deletes real
+        music, while a wrong "true" only leaves one bad track in a mix.
+
         Respond with ONLY this JSON object — no prose, no code fences:
         {
+          "is_song": true,     // false ONLY for plainly non-music: advert, ident, news, cart ID
           "description": "1-2 sentences: the song's style, mood, and era — concrete, no fluff. Written so it can be matched against a listener's free-text request.",
           "genres": ["..."],   // [] if unsure
           "moods": ["..."],    // e.g. "melancholic", "energetic"; [] if unsure
@@ -67,7 +77,7 @@ public sealed class SongLibraryService : ISongLibraryService
     {
         ArgumentNullException.ThrowIfNull(song);
         _store.Upsert(song);               // persist core metadata immediately
-        EnrichInBackground(song.Path, song.Title, song.Artist);
+        EnrichInBackground(song);
     }
 
     public void BackfillInBackground()
@@ -97,7 +107,7 @@ public sealed class SongLibraryService : ISongLibraryService
                     }
                     // 2. Enrich rows still missing a description.
                     if (string.IsNullOrWhiteSpace(song.Description))
-                        EnrichInBackground(song.Path, song.Title, song.Artist);
+                        EnrichInBackground(song);
                 }
 
                 // 3. Embed rows that have a description but no current-model vector.
@@ -128,15 +138,44 @@ public sealed class SongLibraryService : ISongLibraryService
         if (SongHistoryFilter.IsLikelySong(song.Title, song.Artist, song.Station))
             return false;
 
-        AppLog.Info($"[Library] retiring harvested \"{song.Artist} - {song.Title}\" "
-                    + $"({song.Station}) — the song filter no longer accepts it");
-        _store.Remove(song.Path);
-        try { File.Delete(song.Path); } catch { /* the cache cap would have taken it anyway */ }
+        RetireHarvested(song, "the song filter no longer accepts it");
         return true;
     }
 
-    private void EnrichInBackground(string path, string title, string artist)
+    /// <summary>
+    /// Drops a harvested row and its audio file. Harvested audio is ephemeral by design — it
+    /// lives in a size-capped folder and gets evicted anyway — so discarding one costs nothing,
+    /// and the playback engine already skips a file that has gone missing under a queued track.
+    ///
+    /// Only ever called for <see cref="SongSource.Harvested"/>: a song the user deliberately
+    /// saved is theirs, and no heuristic of ours gets to delete it.
+    /// </summary>
+    private void RetireHarvested(SavedSong song, string reason)
     {
+        AppLog.Info($"[Library] retiring harvested \"{song.Artist} - {song.Title}\" "
+                    + $"({song.Station}) — {reason}");
+        _store.Remove(song.Path);
+        try { File.Delete(song.Path); } catch { /* the cache cap would have taken it anyway */ }
+    }
+
+    /// <summary>
+    /// Describes a row in the background, and — for harvested rows only — drops it if the model
+    /// says it isn't music.
+    ///
+    /// <para>This call already happens for every harvested segment, so the verdict rides along
+    /// for the price of one extra field. It is worth having because it is the only gate in the
+    /// pipeline with general world knowledge: <see cref="SongHistoryFilter"/> can only catch
+    /// shapes we anticipated, whereas a model that knows music can tell that ADWTAG_122000 is
+    /// not an artist and that Blink_182 is, without either being written down anywhere.</para>
+    ///
+    /// <para>It is not, strictly, a gate before playback — the harvest raises SegmentIndexed the
+    /// moment the row lands, so the song joins the queue while this is still in flight. But the
+    /// queue appends to the tail and this is a one-shot Haiku call, so in practice the verdict
+    /// arrives minutes before the song could reach the front. Worst case it is a cleanup.</para>
+    /// </summary>
+    private void EnrichInBackground(SavedSong song)
+    {
+        var (path, title, artist) = (song.Path, song.Title, song.Artist);
         if (!_inFlight.TryAdd(path, 0))
             return; // already working on this one
 
@@ -146,6 +185,20 @@ public sealed class SongLibraryService : ISongLibraryService
             try
             {
                 var distilled = CanDistill ? await DistillAsync(title, artist).ConfigureAwait(false) : null;
+
+                if (distilled is { IsSong: false })
+                {
+                    if (song.Source == SongSource.Harvested)
+                    {
+                        RetireHarvested(song, "the description model says it isn't music");
+                        return; // nothing left to describe or embed
+                    }
+                    // The user saved this one deliberately, so the verdict is advice, not a
+                    // licence to delete. Describe it like anything else.
+                    AppLog.Debug($"[Library] model doubts \"{artist} - {title}\" is music — "
+                                 + "keeping it, the user saved it");
+                }
+
                 var description = distilled?.Description;
                 if (string.IsNullOrWhiteSpace(description))
                     description = BuildFallbackDescription(title, artist); // no key / model failed
@@ -211,7 +264,7 @@ public sealed class SongLibraryService : ISongLibraryService
         return ParseDistill(text);
     }
 
-    private static DistillResult? ParseDistill(string? modelText)
+    internal static DistillResult? ParseDistill(string? modelText)
     {
         var json = StripToJsonObject(modelText);
         if (json is null) return null;
@@ -220,9 +273,11 @@ public sealed class SongLibraryService : ISongLibraryService
         try { node = JsonNode.Parse(json); }
         catch (System.Text.Json.JsonException) { return null; }
 
+        var isSong = ReadIsSong(node);
+
         var description = node?["description"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(description))
-            return null;
+            return isSong ? null : new DistillResult("", null, IsSong: false);
 
         var facets = new JsonObject
         {
@@ -230,10 +285,30 @@ public sealed class SongLibraryService : ISongLibraryService
             ["moods"] = node?["moods"]?.DeepClone() ?? new JsonArray(),
             ["era"] = node?["era"]?.DeepClone()
         };
-        return new DistillResult(description.Trim(), facets.ToJsonString());
+        return new DistillResult(description.Trim(), facets.ToJsonString(), isSong);
+    }
+
+    /// <summary>
+    /// Reads the model's "is this music at all" verdict. Everything unclear reads as true: a
+    /// missing field, a null, a number, a word we don't recognise. This decides whether a file
+    /// gets deleted, so silence must never be taken for a "no".
+    /// </summary>
+    private static bool ReadIsSong(JsonNode? node)
+    {
+        var value = node?["is_song"];
+        if (value is null) return true;
+
+        // Every other shape — a number, an array, a word we don't know — falls to the default.
+        return value.GetValueKind() switch
+        {
+            System.Text.Json.JsonValueKind.False => false,
+            System.Text.Json.JsonValueKind.String =>
+                !string.Equals(value.GetValue<string>(), "false", StringComparison.OrdinalIgnoreCase),
+            _ => true,
+        };
     }
 
     private static string? StripToJsonObject(string? text) => AnthropicApi.StripToJsonObject(text);
 
-    private sealed record DistillResult(string Description, string? FacetsJson);
+    internal sealed record DistillResult(string Description, string? FacetsJson, bool IsSong = true);
 }
