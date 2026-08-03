@@ -57,6 +57,25 @@ dotnet run
 The core player works with no extra setup. AI search needs an API key — see
 [Enabling AI search](#enabling-ai-search).
 
+### Installing a build to test with
+
+`build-release.ps1` publishes Release into `C:\Program Files\crystal-radio` — one fixed
+folder, no version in the name, overwritten each time, so a shortcut to it keeps working.
+Run it from an elevated terminal:
+
+```powershell
+.uild-release.ps1                                    # test, publish, install
+.uild-release.ps1 -SkipTests -Force                  # skip tests, stop a running instance
+.uild-release.ps1 -Destination C:\Temp\cr -SkipTests # a throwaway install, no elevation
+```
+
+It refuses rather than half-installing: no elevation, failing tests, or the installed
+build still running each stop it before anything is overwritten.
+
+Note that an installed build and a dev build **share their user data** — `settings.json`,
+`library.db` and the harvest cache all live under `%LocalAppData%\RadioPlayer`. Fine for
+running one at a time; running both at once means two processes writing one SQLite file.
+
 ### Native dependencies
 
 `bass.dll` and `bass_aac.dll` (x64) are tracked under `native/x64/` and copied to the
