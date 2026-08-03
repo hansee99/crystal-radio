@@ -375,20 +375,35 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     }
 
     /// <summary>One harvester's stream identity, for the duplicate check.</summary>
-    internal readonly record struct StreamIdentity(string? StreamName, DateTime ConnectedAt);
+    internal readonly record struct StreamIdentity(
+        string? StreamName, DateTime ConnectedAt, IReadOnlyCollection<string>? RecentTitles = null);
+
+    /// <summary>
+    /// How many titles two harvesters must have in common before the titles alone are taken as
+    /// proof of one stream. One is not enough: two pop stations can genuinely be playing the same
+    /// chart single at the same moment. Two is: agreeing on a second song as well means they are
+    /// carrying the same programme, and even a true simulcast is just as redundant to harvest from.
+    /// </summary>
+    private const int SharedTitlesForDuplicate = 2;
 
     /// <summary>
     /// Indices of harvesters listening to the same audio as another one, and so worth replacing.
-    /// The directory lists the same stream more than once under different names and different
-    /// URLs — pre-connect deduplication (resolved URL, cleaned name) can't see it, but the
-    /// stream's own <c>icy-name</c> can. Observed 2026-08-02: "Liquid DnB"
-    /// (<c>antares.dribbcast.com/proxy/dave1/</c>) and "DnB Liquified"
-    /// (<c>antares.dribbcast.com:5000</c>) held two of four slots on one stream for a whole
-    /// session. Duplicates are worth dropping even when productive — the queue dedupes on
-    /// artist+title, so the second copy is discarded after being harvested, enriched and embedded.
+    /// A directory lists the same broadcast several times, and pre-connect deduplication (resolved
+    /// URL, identity key) can't always see it. Two observed cases, each defeating a different key:
+    /// <list type="bullet">
+    /// <item>2026-08-02 — "Liquid DnB" (<c>antares.dribbcast.com/proxy/dave1/</c>) and
+    /// "DnB Liquified" (<c>antares.dribbcast.com:5000</c>): different names AND different URLs,
+    /// but one <c>icy-name</c>.</item>
+    /// <item>2026-08-03 — "FM4 | ORF" and "FM4 | ORF | HQ": <b>no icy-name at all</b>, and URLs
+    /// differing only in <c>q1a</c>/<c>q2a</c>. Invisible to every key, identifiable only by the
+    /// titles they announce.</item>
+    /// </list>
+    /// So both signals are consulted, icy-name first. Duplicates are worth dropping even when
+    /// productive — the queue dedupes on artist+title, so the second copy is harvested, enriched
+    /// and embedded only to be thrown away.
     ///
-    /// Keeps the earliest-connected of each group (it has the most history) and never treats a
-    /// blank icy-name as matching anything.
+    /// Keeps the earliest-connected of each group (it has the most history), and never treats a
+    /// blank name or an empty title history as matching anything.
     /// </summary>
     internal static List<int> FindDuplicateStreams(IReadOnlyList<StreamIdentity> harvesters)
     {
@@ -399,7 +414,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         {
             var name = harvesters[i].StreamName?.Trim();
             if (string.IsNullOrEmpty(name))
-                continue; // no identity to compare — can't be judged a duplicate
+                continue; // no icy-name — the title pass below is the only way to judge this one
 
             if (!keptPerName.TryGetValue(name, out var incumbent))
             {
@@ -419,8 +434,43 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             }
         }
 
+        // Second pass, for streams the first one couldn't judge: identical titles. ORF's feeds
+        // serve no icy-name whatsoever, so "FM4 | ORF" and "FM4 | ORF | HQ" were invisible to the
+        // name check while announcing byte-identical StreamTitles from one broadcast. Only
+        // consulted when a pair isn't already settled by name, so it can never override it.
+        for (var i = 0; i < harvesters.Count; i++)
+        {
+            if (duplicates.Contains(i))
+                continue;
+            for (var j = i + 1; j < harvesters.Count; j++)
+            {
+                if (duplicates.Contains(j))
+                    continue;
+                if (HasName(harvesters[i]) && HasName(harvesters[j]))
+                    continue; // the name pass had both and kept them apart — trust it
+                if (SharedTitleCount(harvesters[i], harvesters[j]) < SharedTitlesForDuplicate)
+                    continue;
+
+                var later = harvesters[j].ConnectedAt < harvesters[i].ConnectedAt ? i : j;
+                duplicates.Add(later);
+                if (later == i)
+                    break; // i is gone; nothing else to compare it against
+            }
+        }
+
         duplicates.Sort();
         return duplicates;
+    }
+
+    private static bool HasName(StreamIdentity h) => !string.IsNullOrWhiteSpace(h.StreamName);
+
+    private static int SharedTitleCount(StreamIdentity a, StreamIdentity b)
+    {
+        if (a.RecentTitles is not { Count: > 0 } x || b.RecentTitles is not { Count: > 0 } y)
+            return 0;
+        var seen = new HashSet<string>(x.Where(t => !string.IsNullOrWhiteSpace(t)),
+            StringComparer.OrdinalIgnoreCase);
+        return y.Count(t => !string.IsNullOrWhiteSpace(t) && seen.Contains(t));
     }
 
     /// <summary>Drops harvesters that turned out to be on a stream another one already has.</summary>
@@ -437,16 +487,21 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             foreach (var h in _active)
                 h.RefreshStreamName();
 
-            var identities = _active.Select(h => new StreamIdentity(h.StreamName, h.ConnectedAt)).ToList();
+            var identities = _active
+                .Select(h => new StreamIdentity(h.StreamName, h.ConnectedAt, h.RecentTitles))
+                .ToList();
             var dropping = FindDuplicateStreams(identities);
             foreach (var i in dropping)
             {
-                // Name the one we're keeping in the log line: same stream name, not itself, and
-                // not another harvester we're about to drop (matters when three share a stream).
-                var keeper = _active.Where((h, j) => j != i && !dropping.Contains(j)
-                        && string.Equals(h.StreamName?.Trim(), _active[i].StreamName?.Trim(),
-                            StringComparison.OrdinalIgnoreCase))
-                    .Select(h => h.Label)
+                // Name the one we're keeping in the log line: whichever surviving harvester this
+                // one matched, by name or by title (matters when three share a stream).
+                var keeper = Enumerable.Range(0, _active.Count)
+                    .Where(j => j != i && !dropping.Contains(j))
+                    .Where(j => (HasName(identities[i]) && HasName(identities[j])
+                                 && string.Equals(identities[i].StreamName?.Trim(),
+                                     identities[j].StreamName?.Trim(), StringComparison.OrdinalIgnoreCase))
+                                || SharedTitleCount(identities[i], identities[j]) >= SharedTitlesForDuplicate)
+                    .Select(j => _active[j].Label)
                     .FirstOrDefault() ?? "another harvester";
                 victims.Add((_active[i], keeper));
             }
@@ -454,8 +509,12 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
 
         foreach (var (harvester, of) in victims)
         {
+            // Say WHICH signal matched — the two cases need different follow-up if this ever
+            // misfires, and a shared title is the weaker of the two.
             AppLog.Info($"[Dj] dropping {harvester.Label}: same stream as {of} "
-                        + $"(both serve icy-name \"{harvester.StreamName}\")");
+                        + (harvester.StreamName is { Length: > 0 } n
+                            ? $"(both serve icy-name \"{n}\")"
+                            : "(no icy-name; matched on identical track titles)"));
             Retire(harvester, $"duplicate of {of}");
         }
     }
@@ -777,7 +836,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             // Both keys go in the same set; the prefixes keep a URL from ever colliding with a name.
             if (!seen.Add("url:" + c.Station.Url))
                 continue;
-            if (!seen.Add("name:" + StationNameFormatter.Clean(c.Station.Name).ToLowerInvariant()))
+            if (!seen.Add("name:" + StationNameFormatter.IdentityKey(c.Station.Name)))
                 continue;
             pool.Add(c);
         }

@@ -16,6 +16,10 @@ public class DuplicateStreamTests
     private static DjHarvestService.StreamIdentity At(string? name, double minutes) =>
         new(name, T0.AddMinutes(minutes));
 
+    /// <summary>A harvester with no icy-name — only the titles it has heard identify it.</summary>
+    private static DjHarvestService.StreamIdentity Anon(double minutes, params string[] titles) =>
+        new(null, T0.AddMinutes(minutes), titles);
+
     [Fact]
     public void DropsTheLaterOfTwoHarvestersOnTheSameStream()
     {
@@ -98,5 +102,98 @@ public class DuplicateStreamTests
     public void HandlesAnEmptyPool()
     {
         Assert.Empty(DjHarvestService.FindDuplicateStreams([]));
+    }
+
+    // --- Streams that serve NO icy-name (GitHub #2) -------------------------------------------
+    // ORF's feeds return "icy-name: (absent)". "FM4 | ORF" and "FM4 | ORF | HQ" took two of four
+    // harvester slots for a whole session: different names, URLs differing only in q1a/q2a, and no
+    // icy-name — so every identity key was blind. The titles they announce are the only signal.
+
+    [Fact]
+    public void MatchesOnTitlesWhenNeitherStreamServesAnIcyName()
+    {
+        var dupes = DjHarvestService.FindDuplicateStreams([
+            Anon(0, "Ben Kidson - life's relentless", "Wolf Alice - Bloom Baby Bloom"),
+            Anon(2, "Wolf Alice - Bloom Baby Bloom", "Ben Kidson - life's relentless")
+        ]);
+
+        Assert.Equal([1], dupes);   // later connection loses
+    }
+
+    /// <summary>One shared title is not proof: two pop stations can be playing the same chart
+    /// single at the same moment. Agreeing on a second song as well is proof.</summary>
+    [Fact]
+    public void OneSharedTitleIsNotEnough()
+    {
+        Assert.Empty(DjHarvestService.FindDuplicateStreams([
+            Anon(0, "Chappell Roan - Pink Pony Club", "Wolf Alice - Bloom Baby Bloom"),
+            Anon(2, "Chappell Roan - Pink Pony Club", "Die Toten Hosen - Nur nach vorn")
+        ]));
+    }
+
+    [Fact]
+    public void AHarvesterWithNoTitlesYetIsNeverJudgedADuplicate()
+    {
+        // Just connected, or a station between songs. Silence is not evidence.
+        Assert.Empty(DjHarvestService.FindDuplicateStreams([
+            Anon(0),
+            Anon(1, "Wolf Alice - Bloom Baby Bloom", "Ben Kidson - life's relentless")
+        ]));
+    }
+
+    [Fact]
+    public void MatchesOnTitlesWhenOnlyOneSideServesAnIcyName()
+    {
+        // A named and an unnamed feed of one broadcast can't be name-compared at all, so the
+        // title pass has to cover the mixed case too.
+        var dupes = DjHarvestService.FindDuplicateStreams([
+            new("FM4", T0, ["A - one", "B - two"]),
+            Anon(3, "B - two", "A - one")
+        ]);
+
+        Assert.Equal([1], dupes);
+    }
+
+    /// <summary>icy-name stays authoritative. Two stations that the name pass deliberately kept
+    /// apart must not then be collapsed by a coincidental title overlap.</summary>
+    [Fact]
+    public void TitlesNeverOverrideTwoDifferentIcyNames()
+    {
+        Assert.Empty(DjHarvestService.FindDuplicateStreams([
+            new("Hitradio Ö3", T0, ["A - one", "B - two"]),
+            new("FM4", T0.AddMinutes(1), ["A - one", "B - two"])
+        ]));
+    }
+
+    [Fact]
+    public void TitleMatchingIsCaseInsensitive()
+    {
+        var dupes = DjHarvestService.FindDuplicateStreams([
+            Anon(0, "Wolf Alice - Bloom Baby Bloom", "Ben Kidson - Life's Relentless"),
+            Anon(2, "WOLF ALICE - BLOOM BABY BLOOM", "ben kidson - life's relentless")
+        ]);
+
+        Assert.Equal([1], dupes);
+    }
+
+    [Fact]
+    public void DropsOnlyOneOfThreeFeedsOfTheSameUnnamedBroadcast()
+    {
+        var dupes = DjHarvestService.FindDuplicateStreams([
+            Anon(5, "A - one", "B - two"),
+            Anon(1, "A - one", "B - two"),
+            Anon(9, "A - one", "B - two")
+        ]);
+
+        Assert.Equal([0, 2], dupes);   // index 1 connected first and survives
+    }
+
+    [Fact]
+    public void LeavesTwoGenuinelyDifferentUnnamedStationsAlone()
+    {
+        Assert.Empty(DjHarvestService.FindDuplicateStreams([
+            Anon(0, "Wolf Alice - Bloom Baby Bloom", "Mattiel - Count Your Blessings"),
+            Anon(1, "Die Toten Hosen - Nur nach vorn", "Pizzera & Jaus - Klesch Koids Bier")
+        ]));
     }
 }

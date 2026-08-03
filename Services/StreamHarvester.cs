@@ -37,6 +37,12 @@ public sealed class StreamHarvester : IDisposable
     private int _reconnects;
     private volatile bool _dead;
 
+    // Bounded title history for the duplicate check. Read from the harvest dispatcher (the
+    // watchdog) and written from it too, but the lock is cheap and keeps the contract obvious.
+    private const int TitleHistory = 8;
+    private readonly object _titleLock = new();
+    private readonly LinkedList<string> _recentTitles = new();
+
     public string Label { get; }
     public bool Dead => _dead;
     public int TitlesSeen => Volatile.Read(ref _titles);
@@ -68,6 +74,18 @@ public sealed class StreamHarvester : IDisposable
     /// station serves no icy-name, in which case it simply can't be compared.
     /// </summary>
     public string? StreamName { get; private set; }
+
+    /// <summary>
+    /// The most recent ICY titles this harvester has seen, newest first. The duplicate check's
+    /// fallback when <see cref="StreamName"/> is unavailable: two harvesters on one stream see the
+    /// same titles, and ORF's feeds serve no icy-name at all — measured 2026-08-03, both FM4
+    /// bitrates returned <c>icy-name: (absent)</c> with byte-identical StreamTitles, so nothing
+    /// else could tell they were one broadcast.
+    /// </summary>
+    public IReadOnlyCollection<string> RecentTitles
+    {
+        get { lock (_titleLock) return _recentTitles.ToArray(); }
+    }
 
     /// <summary>Raised on the harvest dispatcher thread for each complete, song-like segment —
     /// unfiltered by QC (the caller decides reject/trim/keep).</summary>
@@ -166,6 +184,18 @@ public sealed class StreamHarvester : IDisposable
         }
 
         Interlocked.Increment(ref _titles);
+
+        lock (_titleLock)
+        {
+            // Keep the raw "Artist - Title" — it's what makes a shared title strong evidence.
+            // A repeated announcement of the same title mustn't fill the history.
+            if (_recentTitles.First?.Value != title)
+            {
+                _recentTitles.AddFirst(title);
+                while (_recentTitles.Count > TitleHistory)
+                    _recentTitles.RemoveLast();
+            }
+        }
 
         double bps = 0;
         if (Bass.ChannelGetAttribute(_handle, ChannelAttribute.Bitrate, out var kbps) && kbps > 0)

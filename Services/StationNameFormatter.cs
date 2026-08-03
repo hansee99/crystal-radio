@@ -36,6 +36,16 @@ public static partial class StationNameFormatter
     [GeneratedRegex(@"^\s*[-–|/+]+\s*|\s*[-–|/+]+\s*$|\s{2,}")]
     private static partial Regex TidyRegex();
 
+    // Quality decorations that distinguish two feeds of the SAME broadcast: "FM4 | ORF" and
+    // "FM4 | ORF | HQ" are one station at two bitrates. Only stripped for identity, never for
+    // display — in the visible search those two are distinct, playable choices and collapsing
+    // their labels would leave the user with two identical rows.
+    [GeneratedRegex(@"\b(?:hq|lq|hi-?fi|high|low)\s*(?:quality|bitrate)?\b|\bquality\b", RegexOptions.IgnoreCase)]
+    private static partial Regex QualityTokenRegex();
+
+    [GeneratedRegex(@"[^\p{L}\p{N}]+")]
+    private static partial Regex NonAlphanumericRegex();
+
     /// <summary>Returns a display-friendly name, or the trimmed original if cleaning empties it.</summary>
     public static string Clean(string? name)
     {
@@ -47,5 +57,28 @@ public static partial class StationNameFormatter
         s = TidyRegex().Replace(s, " ").Trim();
 
         return string.IsNullOrWhiteSpace(s) ? name.Trim() : s;
+    }
+
+    /// <summary>
+    /// A comparison key for "is this the same station?", as opposed to <see cref="Clean"/>'s
+    /// "what should this be called?". On top of the codec/bitrate stripping it drops quality
+    /// decorations and every non-alphanumeric character, so all of these collapse to one key:
+    /// <c>FM4 | ORF</c>, <c>FM4 | ORF | HQ</c>, <c>fm4-orf (192k MP3)</c>.
+    ///
+    /// <para>Needed because a directory lists the same broadcast several times and the obvious
+    /// keys don't catch it. Observed 2026-08-03: <c>FM4 | ORF</c> and <c>FM4 | ORF | HQ</c> took two
+    /// of four harvester slots — different names, and URLs differing only in <c>q1a</c> vs
+    /// <c>q2a</c>, so neither name nor URL deduplication saw them. Same for
+    /// <c>ORF Hitradio Ö3</c> / <c>… | HQ</c>. Four slots yielded two stations' worth of songs.</para>
+    ///
+    /// Returns the lower-cased alphanumeric run, or empty when nothing survives.
+    /// </summary>
+    public static string IdentityKey(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return string.Empty;
+
+        var s = QualityTokenRegex().Replace(Clean(name), " ");
+        return NonAlphanumericRegex().Replace(s, "").ToLowerInvariant();
     }
 }

@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace RadioPlayer.Services;
 
 /// <summary>
@@ -16,7 +14,7 @@ namespace RadioPlayer.Services;
 /// detector separates those, so when a station labels a segment as itself, that label is the
 /// only usable evidence and it must not be missed.</para>
 /// </summary>
-public static partial class SongHistoryFilter
+public static class SongHistoryFilter
 {
     // Lower-case markers that flag obvious non-song content in either field.
     private static readonly string[] AdMarkers =
@@ -27,9 +25,6 @@ public static partial class SongHistoryFilter
     /// abbreviation rule below from firing on a couple of incidental characters.
     /// </summary>
     private const int MinIdentLength = 6;
-
-    [GeneratedRegex(@"[^\p{L}\p{N}]+")]
-    private static partial Regex NonAlphanumericRegex();
 
     public static bool IsLikelySong(string? title, string? artist, string? stationName)
     {
@@ -93,8 +88,8 @@ public static partial class SongHistoryFilter
         return a.Length >= MinIdentLength && s.Length >= MinIdentLength && s.Contains(a);
     }
 
-    /// <summary>Letters and digits, lower-cased, with the codec/bitrate decoration stripped
-    /// first — so "ORF Hitradio Ö3 | HQ" and "HITRADIO Ö3" reduce to comparable forms.</summary>
-    private static string Normalize(string s) =>
-        NonAlphanumericRegex().Replace(StationNameFormatter.Clean(s), "").ToLowerInvariant();
+    /// <summary>The same identity key the harvest pool compares stations with — letters and digits
+    /// only, with codec/bitrate/quality decoration stripped — so "ORF Hitradio Ö3 | HQ" and
+    /// "HITRADIO Ö3" reduce to comparable forms.</summary>
+    private static string Normalize(string s) => StationNameFormatter.IdentityKey(s);
 }

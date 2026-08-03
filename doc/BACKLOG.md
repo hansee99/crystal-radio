@@ -5,6 +5,34 @@ just enough context to pick back up later. Add new items at the top.
 
 ---
 
+## DJ mode: crossfade the bridge → mix handover
+
+*Originally filed as GitHub issue #1; moved here and the issue closed.*
+
+**What:** in DJ mode, when the live bridge is playing and the first mix song becomes available,
+playback cuts from the station to the local file abruptly. Song-to-song transitions inside the mix
+already crossfade, so the one seam a listener always hears on a cold start is the only hard cut.
+The same applies in reverse when the mix runs dry and `BridgeIfDjMixRanDry` hands back to live.
+
+**Why it isn't a parameter.** The mix crossfade works because both tracks live in one engine:
+`LocalPlaybackEngine` overlaps two BASS streams and ramps their volumes. The bridge handover crosses
+*engines* — `RadioEngine` (real output device) to `LocalPlaybackEngine` — and `EndDjWarmupIfActive`
+currently does a hard `_engine.Stop()`, after which the local queue starts. To crossfade, both
+engines must be producing audio at once with independent volume ramps, which touches:
+
+- `EndDjWarmupIfActive` — must not stop RadioEngine until the fade completes.
+- Volume: `MainViewModel.Volume` is applied per-engine; a fade needs a per-engine *multiplier*
+  layered under the user's setting, so the ramp can't fight or overwrite it.
+- `ActiveEngineChanged` / SMTC — during the overlap two engines are live, but exactly one should own
+  the OS media controls. Probably repoint at the end of the fade rather than the start.
+- The reverse direction, which is harder: `LocalPlaybackEngine` running dry is discovered *after*
+  the fact (`QueueExhausted`), so there's no lookahead to fade out against. Fading in the station
+  under the last few seconds of the final track needs the queue to know it's the last one.
+
+**Cheaper interim option** worth considering first: a short fade-out of the bridge plus a fade-in of
+the first mix track, with a deliberate ~200 ms gap between them. Not a true crossfade, but it
+removes the abrupt cut without needing two engines audible simultaneously.
+
 ## The music detector cannot tell speech from music (needs a pulse feature + re-fit)
 
 **The finding, measured rather than suspected.** Five files from one real session
