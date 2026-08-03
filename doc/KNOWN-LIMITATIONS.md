@@ -11,77 +11,66 @@ deliberately declined. Delete one when it stops being true.
 
 ---
 
-## The music detector cannot tell speech from music
+## The music detector: fixed for the observed cases, still thin on negatives
 
-**Measured, not suspected.** Five files from one real session (2026-08-03, Austrian pop stations)
-through `tools/DjDetector`:
+**The original problem, for the record.** Five files from one real session (2026-08-03) showed the
+detector could not tell speech from music at all: Ö3's five-minute `Nachrichten, Wetter und Verkehr`
+scored **3% music**, and Ace of Base's `The Sign` scored **3%** too. Every real song was classified
+TALK. No threshold on the old feature set separated those classes, because every feature described
+how energy is *distributed* and none described whether it *repeats*.
 
-| file | content | verdict | music % | longest music run |
-| --- | --- | --- | --- | --- |
-| `HITRADIO Ö3 - Nachrichten, Wetter und Verkehr` | 5 min of pure speech | TALK | **3%** | 0.0s |
-| `Ace of Base - The Sign` | a real song | TALK | **3%** | 1.5s |
-| `HITRADIO Ö3 - Livestream` | talk + ads | TALK | 7% | 2.0s |
-| `Simon Lewis - Break Your Wall` | a real song | TALK | 18% | 8.5s |
-| `Katy Perry - I Kissed a Girl` | a real song | TALK | 33% | 5.0s |
+**What fixed it** (issue #8): `PulseStrength` — the peak-to-mean of the envelope spectrum over
+0.5–8 Hz (30–480 BPM), computed over an 8-second context because a 1-second window holds about two
+beats and periodicity can't be established from two cycles. Plus a re-fit on a corpus enlarged from
+106 to 226 files. Per-FILE verdicts, before → after:
 
-A news bulletin and an Ace of Base single score **identically**, and every real song is classified
-TALK. This is not a threshold that needs nudging: no cut on music fraction, on longest contiguous
-run, or on any monotone function of the current confidences separates these classes — and
-re-fitting the existing weights cannot either, because they are not linearly separable in the
-present feature space. Consistent with the earlier deep-house finding (confirmed-good tracks at
-0.00, identical to a confirmed ad break).
+| subset | before | after |
+| --- | --- | --- |
+| original clips, music (27) | 92.6% | 96.3% |
+| original clips, non-music (42) | 92.9% | 97.6% |
+| 121 real harvested songs | 59.5% | **95.0%** |
+| 21 confirmed electronic tracks | 9.5% | **81.0%** |
+| 15 Ö3 idents / news bulletins | 100% | 100% |
 
-**Why it hasn't hurt more.** The QC gate keys on post-trim duration, not music fraction, and
-`DjMusicFractionFloor` is 0 (off). The trim is a *local* run-length measure and works acceptably;
-the *global* fraction is the useless part. The two failures on 2026-08-03 were caught at the
-metadata layer instead — `SongHistoryFilter` spotted that the station had labelled them as itself.
-That only works when the station is honest about the label; **an ad break under a plausible
-artist/title still gets through**, and nothing downstream will catch it.
+Nothing was traded away — talk rejection improved alongside music recognition. Music fraction is a
+usable signal again: songs now sit at a median 0.895 where they used to sit near 0.03.
 
-**The missing feature was pulse/beat strength, and it is now measured.** Every existing feature
-describes how energy is *distributed* (spectral shape, zero crossings, how much sits near 4 Hz);
-none describes whether it *repeats*. `MusicDetector.PulseStrength` (added for issue #8) takes the
-peak-to-mean of the envelope spectrum over 0.5–8 Hz — 30–480 BPM — over an 8-second context, since
-a 1-second window holds about two beats and periodicity can't be established from two cycles.
+**Also fixed: a single window could defeat the whole edge trim.** The scan stopped at the first
+window over the threshold, so one 0.528 window at the end of a segment left a 70-second talk outro
+completely untrimmed — and the same thing at the front is why those Ö3 bulletins reported lead trims
+of 0.5s and kept five minutes of speech. It now needs two consecutive music windows. Measured: talk
+segments trimmed away entirely went from 5 to 10 of 15, median trim 23.5s → 35.5s, with the median
+song trim still 0.0s.
 
-Measured on 121 real played songs against 15 confirmed talk segments:
+### What is still not solved
 
-| | min | median | max |
-| --- | --- | --- | --- |
-| talk (n=15) | 2.627 | 2.938 | 3.913 |
-| songs (n=121) | 3.174 | 5.187 | 12.761 |
+**Generalisation to unseen genres is real but partial.** Refitting with the electronic set held out
+*entirely* still moves it from 10% to 52% — so the gain is the feature, not memorisation — but a
+genre absent from the corpus is recognised far worse than one present in it. Expect new genres to
+need adding.
 
-Best single cut **97.1%** — zero songs lost, 4 of 15 talk admitted; or at zero-talk-admitted, 10%
-of songs sacrificed. For contrast, `mod4Hz` — documented above as "the primary discriminator" —
-manages **70.4%** on the same material and admits every talk file, because the talk range sits
-entirely inside the music range.
+**The negative class is thin.** 226 files, but ~6:1 music:non-music by window count, and the
+non-music side is almost all ads, jingles, DJ links and Ö3 idents. Real-world talk that isn't one of
+those is unrepresented.
 
-**The weight is nevertheless 0.** The feature is computed and written to the CSV, and changes no
-verdict, because putting it to work needs a re-fit and the re-fit is blocked — see below.
+**`DjMusicFractionFloor` is still 0 (off).** A floor is now viable — at 0.20 it would catch 12 of 15
+idents for 1.4% of songs — but those idents are *already* caught for free by `SongHistoryFilter`'s
+metadata check, so the floor's benefit is unmeasured while its cost is measured. Turn it on when
+there's a case it actually catches.
 
-**The re-fit is blocked: the negative class is missing from the repo.** The committed corpus CSVs
-(`tools/DjDetector/corpus/`) hold **only music** — 19,717 music windows across 42 SomaFM/harvest
-files, plus one unlabelled test file. The 69-clip corpus of ads, talk and jingles that the current
-weights were fitted against was never committed, so the existing fit cannot be reproduced and a new
-one has nothing to learn "not music" from. Adding `pulseStrength` also invalidates the old CSVs for
-fitting purposes: they have 14 columns and no pulse value, so they can't be merged with new ones.
+**An ad break under a plausible artist/title** remains the open hole. Nothing has demonstrated one
+occurring: a sweep of 121 played songs found no ad or bulletin among them (see issue #27).
 
-What exists today is ~15 confirmed talk files, nearly all Ö3 idents — thin, and homogeneous enough
-that the talk maximum above shouldn't be trusted as a bound. The predictable failure is **talk over
-a music bed**, which has a real beat; a DJ speaking over an intro would score like music.
+**Speech recognition was tried and rejected** for this job — issue #27 has the measurements. Short
+version: Whisper's `NoSpeechProbability` costs 26% of real songs at the zero-talk-admitted operating
+point, because radio segments are mixtures. Songs carry speech-like vocals (rap, dialect, shouted
+punk) and idents carry music beds.
 
-**The cheap way out is already half-built.** `SongHistoryFilter` identifies station idents at cut
-time and `StreamRecorder` now reports them as `NotSongLike` discards. Quarantining those the way
-QC-rejected segments are quarantined would accumulate a diverse, automatically-labelled negative
-corpus from real sessions across every station — which is exactly what the fit needs, and what the
-note below has been asking for since the first fit.
-
-**Gotcha for anyone touching the corpus:** `fit_logreg.py` parses the feature CSV **right-anchored**
-on purpose, because filenames contain commas and the CSV is unquoted. Don't "fix" that by quoting
-the writer without changing the parser — and don't parse those CSVs with a naive `split(',')` in
-ad-hoc analysis either. Doing exactly that during the 2026-08-03 investigation shifted every column
-and produced impossible values (a ratio reading 1.4e7) that looked like a numeric blow-up in the
-detector itself.
+**Corpus gotcha:** `fit_logreg.py` parses the feature CSV **right-anchored**, because filenames
+contain commas and the CSV is unquoted. Don't quote the writer without changing the parser, and
+don't parse those CSVs with a naive `split(',')` in ad-hoc analysis — doing exactly that during the
+investigation shifted every column and produced impossible values (a ratio reading 1.4e7) that
+looked like a numeric blow-up in the detector itself. See `tools/DjDetector/corpus/README.md`.
 
 ---
 

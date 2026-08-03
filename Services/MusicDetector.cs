@@ -47,36 +47,52 @@ internal sealed class MusicDetector
     private const double PulseLowHz = 0.5;
     private const double PulseHighHz = 8.0;
 
-    // Music confidence = sigmoid(bias + Σ wᵢ·featureᵢ). A class-weighted logistic regression
-    // fitted to a labelled corpus of 106 clips (~41.6k windows): the original 69-clip corpus
-    // (mainstream pop/rock/disco + ads/talk/jingles) plus 37 whole harvested songs across
-    // DroneZone/Groove Salad/indiepop/Radio Paradise, added specifically to close a genre gap —
-    // quiet/sparse downtempo and indie tracks were misread as speech-like by the first fit.
-    // Class weighting (inverse label frequency) keeps the now-3:1 music:nonmusic window ratio
-    // from skewing the boundary toward "music" by default.
-    // Honest estimate: 5-fold file-grouped CV, 85.4% overall ± 3.8 (music 85.3% ± 7.3, non-music
-    // 84.2% ± 7.5) — a small corpus (106 files) means real fold-to-fold variance; comparable to
-    // the prior fit (84.4% ± 4.9) but measurably more balanced across classes.
-    // Re-fit with tools/DjDetector's fit_logreg.py as the corpus grows (more nonmusic diversity
-    // — not just more music — is the highest-value next addition).
+    // Music confidence = sigmoid(bias + Σ wᵢ·featureᵢ). Class-weighted logistic regression over
+    // 11 features, fitted on 226 files / ~84.5k windows (tools/DjDetector/corpus/): the original
+    // 69 clips (mainstream pop/rock/disco vs radio ads, PSAs, jingle montages and real UK DJ links
+    // — the last of which are talk OVER a music bed, the hardest negative), 121 whole harvested
+    // songs from real sessions across 15 stations, 21 confirmed electronic tracks the previous fit
+    // got wrong, and 15 confirmed Ö3 idents/news bulletins.
+    //
+    // This fit exists because PulseStrength was added (issue #8) and because the previous corpus
+    // had almost no electronic music. Per-FILE verdicts, previous weights → these:
+    //     original clips, music      92.6% → 96.3%
+    //     original clips, non-music  92.9% → 97.6%
+    //     121 real harvested songs   59.5% → 95.0%
+    //     21 electronic tracks        9.5% → 81.0%
+    //     15 Ö3 idents/news         100.0% → 100.0%
+    // Nothing was traded away: talk rejection improved alongside music recognition.
+    //
+    // Generalisation, honestly: refitting with the electronic set held out ENTIRELY still moves it
+    // from 10% to 52%, so the gain is the feature and not memorisation — but a genre absent from
+    // the corpus is still recognised far worse than one present in it. Per-window 5-fold
+    // file-grouped CV is 83.5% ± 2.9 (music 83.2% ± 3.4, non-music 83.9% ± 5.2): lower variance
+    // and better balance than the previous fit's ± 3.8 / ± 7.3 / ± 7.5, though the headline number
+    // is not comparable across different corpora. Per-window accuracy also understates per-file
+    // verdicts, which is what QC actually uses.
+    //
+    // Class weighting (inverse label frequency) matters more than before: the corpus is now ~6:1
+    // music:non-music by window count.
+    // Re-fit with fit_logreg.py as the corpus grows — more non-music diversity is still the
+    // highest-value addition.
     internal const double MusicThreshold = 0.5;   // confidence ≥ this ⇒ music
 
-    private const double LrBias = 8.7579313;
-    private const double Lr_Mod4Hz = -0.91245206;
-    private const double Lr_ZcrMean = 0.0013854667;
-    private const double Lr_ZcrVar = -1.474332e-07;
-    private const double Lr_LowEnergyRatio = -5.0558876;
-    private const double Lr_FluxMean = -25.067923;
-    private const double Lr_FluxVar = -15.693825;
-    private const double Lr_CentroidMean = -0.0012438604;
-    private const double Lr_CentroidVar = -8.0104721e-07;
-    private const double Lr_RolloffMean = -0.00026307206;
-    private const double Lr_Flatness = 9.9606074e-09;
-    // Zero until a re-fit earns it a value (issue #8). The feature is computed and dumped to
-    // CSV so its separation can be measured, but it must not shift a single verdict before
-    // that: DjMusicFractionFloor already had to be disabled once for silently rejecting whole
-    // genres, and shipping an unfitted weight is the same mistake.
-    private const double Lr_PulseStrength = 0.0;
+    /// <summary>Consecutive music windows the edge-trim scan needs before it stops. Measured; see
+    /// the comment at the scan in <c>Summarize</c> for why it's 2 and not 1 or 6.</summary>
+    private const int TrimStopRun = 2;
+
+    private const double LrBias = 2.5001012;
+    private const double Lr_Mod4Hz = -4.1045931;
+    private const double Lr_ZcrMean = 0.00063936365;
+    private const double Lr_ZcrVar = -1.0468556e-07;
+    private const double Lr_LowEnergyRatio = -5.5053692;
+    private const double Lr_FluxMean = -28.189889;
+    private const double Lr_FluxVar = 66.569986;
+    private const double Lr_CentroidMean = -0.00059962118;
+    private const double Lr_CentroidVar = -3.3100546e-07;
+    private const double Lr_RolloffMean = 0.00012923647;
+    private const double Lr_Flatness = 5.5935045e-09;
+    private const double Lr_PulseStrength = 1.1315929;
 
     public FileResult Analyze(float[] mono, int sampleRate)
     {
@@ -312,14 +328,52 @@ internal sealed class MusicDetector
         // (Observed: a 3:20 segment reporting 196s + 196s. TryTrimAndCopy's sanity guard caught
         // it and fell back to a plain copy, so nothing was damaged — but the measurement was
         // nonsense, and it fed the session log's trim totals.)
-        var lead = 0;
-        while (lead < windows.Count && windows[lead].Confidence < MusicThreshold) lead++;
-        var tail = 0;
-        while (tail < windows.Count - lead && windows[^(tail + 1)].Confidence < MusicThreshold) tail++;
+        // A single music-looking window must not stop the scan. It used to: one window at 0.528
+        // at the very end of a segment left a 70-second talk outro completely untrimmed, and the
+        // same thing at the front is why Ö3 news bulletins reported lead trims of 0.5s and kept
+        // five minutes of speech. The scan now needs TrimStopRun windows in a row before it
+        // accepts that music has started.
+        //
+        // 2 is measured, not guessed: across 121 real songs and 15 confirmed talk segments it
+        // doubles the talk caught (5 → 10 of 15 trimmed away entirely, median trim 23.5s → 35.5s)
+        // while leaving the median song trim at 0.0s. Higher values buy almost no extra talk and
+        // start eating real songs — at 6, seven songs lose over 30 seconds.
+        var lead = LeadingNonMusicWindows(windows);
+        var tail = Math.Min(TrailingNonMusicWindows(windows), windows.Count - lead);
 
         var verdict = frac >= 0.85 ? "MUSIC" : frac >= 0.4 ? "MIXED" : "TALK";
         // Windows overlap 50%, so each advances WindowHopSeconds of audio.
         return new FileResult(windows, frac, lead * WindowHopSeconds, tail * WindowHopSeconds, verdict);
+    }
+
+    /// <summary>
+    /// Windows before music sustains itself — i.e. the index of the first run of
+    /// <see cref="TrimStopRun"/> consecutive music windows. Returns the whole count when music
+    /// never sustains, which the caller bounds against the tail scan.
+    /// </summary>
+    private static int LeadingNonMusicWindows(List<WindowFeatures> windows)
+    {
+        for (var i = 0; i + TrimStopRun <= windows.Count; i++)
+            if (IsSustainedMusicAt(windows, i))
+                return i;
+        return windows.Count;
+    }
+
+    /// <summary>The same scan from the end: trailing windows before music sustains itself.</summary>
+    private static int TrailingNonMusicWindows(List<WindowFeatures> windows)
+    {
+        for (var t = 0; t + TrimStopRun <= windows.Count; t++)
+            if (IsSustainedMusicAt(windows, windows.Count - t - TrimStopRun))
+                return t;
+        return windows.Count;
+    }
+
+    private static bool IsSustainedMusicAt(List<WindowFeatures> windows, int start)
+    {
+        for (var j = 0; j < TrimStopRun; j++)
+            if (windows[start + j].Confidence < MusicThreshold)
+                return false;
+        return true;
     }
 
     /// <summary>CSV header matching <see cref="WindowFeatures"/> (plus file + label columns added by the caller).</summary>

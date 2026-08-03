@@ -27,17 +27,27 @@ public class MusicDetectorTrimTests
             buffer[i] = 0.5f * MathF.Sin(2 * MathF.PI * 220f * i / Rate);
     }
 
-    /// <summary>Noise bursting at ~4 Hz with gaps between: the syllabic rate, gappy, and
-    /// spectrally churning — everything the model was fitted to call speech.</summary>
+    /// <summary>Noise bursting at an irregular 2.5-6 Hz with gaps between: syllabic rate, gappy,
+    /// spectrally churning and — critically — NOT periodic. Everything the model calls speech.</summary>
     private static void FillSpeechLike(float[] buffer, double fromSec, double toSec)
     {
         var (from, to) = Range(buffer, fromSec, toSec);
         var rng = new Random(1234); // deterministic
-        var period = Rate / 4;      // 4 bursts per second
-        for (var i = from; i < to; i++)
-            buffer[i] = i % period < period / 2
-                ? (float)(rng.NextDouble() * 2 - 1) * 0.5f
-                : 0f;
+        // Syllable-like bursts at a JITTERED 2.5-6 Hz, not a fixed 4 Hz.
+        //
+        // The jitter is load-bearing — do not "simplify" this back to `i % period`. A fixed period
+        // is a metronome: perfectly periodic, which PulseStrength (added in issue #8) correctly
+        // reads as a beat and therefore as MUSIC. Real speech has envelope energy near 4 Hz but no
+        // steady period, and that irregularity is exactly what the feature keys on. A clean modulo
+        // here makes these tests assert the opposite of what they claim.
+        var i = from;
+        while (i < to)
+        {
+            var period = (int)(Rate / (2.5 + rng.NextDouble() * 3.5)); // 2.5-6 Hz
+            var voiced = (int)(period * (0.35 + rng.NextDouble() * 0.35));
+            for (var j = 0; j < period && i < to; j++, i++)
+                buffer[i] = j < voiced ? (float)(rng.NextDouble() * 2 - 1) * 0.5f : 0f;
+        }
     }
 
     private static (int From, int To) Range(float[] buffer, double fromSec, double toSec) =>
