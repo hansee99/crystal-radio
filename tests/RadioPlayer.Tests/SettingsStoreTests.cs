@@ -58,7 +58,7 @@ public class SettingsStoreTests
 
         var migrated = SettingsStore.Migrate(old);
 
-        Assert.Equal(0.20, migrated.DjMusicFractionFloor);
+        Assert.Equal(0.15, migrated.DjMusicFractionFloor);
         Assert.Equal(1, migrated.SettingsVersion);
     }
 
@@ -87,7 +87,7 @@ public class SettingsStoreTests
         var s = SettingsStore.Migrate(new AppSettings { SettingsVersion = 0, DjMusicFractionFloor = 0 });
         var twice = SettingsStore.Migrate(s);
 
-        Assert.Equal(0.20, twice.DjMusicFractionFloor);
+        Assert.Equal(0.15, twice.DjMusicFractionFloor);
         Assert.Equal(1, twice.SettingsVersion);
     }
 }

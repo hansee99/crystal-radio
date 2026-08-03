@@ -19,10 +19,10 @@ public sealed record SegmentVerdict(
 /// the only gate, and it failed badly on everything percussive-electronic: 92% of a deep-house
 /// session was rejected, and tracks confirmed by ear to be perfectly good scored 0.00 — the same
 /// as a confirmed advert. Two classes occupying one point cannot be separated by any threshold,
-/// so it was turned off. The detector has since gained pulse strength and been re-fitted
-/// (electronic recall 9.5% → 81.0%), which pulls those two classes apart again, so the floor is
-/// back on at a deliberately low 0.20 (see <c>DjMusicFractionFloor</c>) as a backstop under the
-/// duration gate — not as the primary check.</para>
+/// so it was turned off. The pulse-strength re-fit (electronic recall 9.5% → 81.0%) narrowed
+/// the overlap but did not remove it — a measured ad break scores 37.4% while a measured song
+/// scores 21.6% — so the floor is back on only at 0.15 (see <c>DjMusicFractionFloor</c>), as a
+/// backstop for the obviously non-musical. It is not the primary check and cannot be one.</para>
 ///
 /// <para>The edge-trim, by contrast, is doing real work — it correctly stripped a talk outro
 /// from a track a listener confirmed. It measures a LOCAL run of non-music rather than averaging
@@ -38,7 +38,7 @@ public sealed class SegmentQualityChecker
     private readonly bool _trimEdges;
 
     /// <param name="rejectBelow">Reject a segment whose whole-file music fraction falls below
-    /// this. 0 disables it; the shipping default is 0.20 — see the class remarks.</param>
+    /// this. 0 disables it; the shipping default is 0.15 — see the class remarks.</param>
     /// <param name="trimEdges">Apply the detector's lead/tail edge-trim to kept segments'
     /// audio bytes rather than just measuring it.</param>
     /// <param name="minKeptSeconds">Minimum audio remaining AFTER the edge-trim for a segment to

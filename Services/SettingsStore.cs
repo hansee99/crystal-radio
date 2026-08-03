@@ -141,14 +141,26 @@ public sealed class AppSettings
     /// confirmed-good deep house scored 0.00 — the same as a confirmed ad break — so no threshold
     /// on this number could be right.</para>
     ///
-    /// <para>0.20 now, on measured evidence. In one real session two ad breaks reached the mix at
-    /// 5.8% and 11.3% music while the lowest genuine song scored 37.4% — a 26-point gap, and any
-    /// floor between 15% and 30% separates them exactly. Across a wider 142-song sample a 0.20
-    /// floor costs 1.4% of songs. The detector had called both ads TALK; they survived only
-    /// because the post-trim duration gate is the primary check and the trim left them just over
-    /// the minimum.</para>
+    /// <para>0.15 now, and deliberately modest. Across every session since the re-fit, the
+    /// sub-40% keeps were:</para>
+    /// <code>
+    ///  5.8%  THIS STATION WILL CONTINUE AFTER THIS BREAK   ad
+    /// 11.3%  ADBREAK_120000 2                              ad
+    /// 21.6%  All I Need                                    song (hip hop)
+    /// 29.7%  HOUSE OF 1,000 PLEASURES
+    /// 36.6%  Cry Baby Cry                                  song
+    /// 37.4%  ADBREAK_120000 4                              ad
+    /// 38.0%  Valley Of The Kings                           song
+    /// </code>
+    /// <para>An ad at 37.4% sits between two songs, so <b>the classes still overlap and no
+    /// threshold separates them.</b> The floor is therefore only a backstop for the obviously
+    /// non-musical, not a classifier: 0.15 clears both low ads while leaving 6.6 points under the
+    /// lowest genuine song. It buys little on its own — the title filter and the enrichment
+    /// <c>is_song</c> verdict catch all three of those ads by name — and it is set this low
+    /// because the one song near it is hip hop, a beat-driven genre the detector has always
+    /// underrated. Raise it only against a corpus that includes such genres.</para>
     /// </summary>
-    public double DjMusicFractionFloor { get; set; } = 0.20;
+    public double DjMusicFractionFloor { get; set; } = 0.15;
 
     /// <summary>
     /// Bumped whenever a default changes in a way an existing settings file should adopt. Without
@@ -228,7 +240,7 @@ public sealed class SettingsStore
             // existing installs should pick up the new default rather than keep the disabled value.
             // Only if it is still at the old default: a deliberate non-zero choice is left alone.
             if (settings.DjMusicFractionFloor == 0)
-                settings.DjMusicFractionFloor = 0.20;
+                settings.DjMusicFractionFloor = 0.15;
         }
 
         settings.SettingsVersion = CurrentSettingsVersion;
