@@ -65,11 +65,11 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     private readonly string _harvestDir;
     private readonly string _scratchDir;
     private readonly string _rejectedDir;
-    private readonly int _harvesterCount;
+    private int _harvesterCount;
     private readonly int _reserveCount;
     private readonly double _offsetSeconds;
-    private readonly long _maxHarvestCacheBytes;
-    private readonly long _maxRejectedCacheBytes;
+    private long _maxHarvestCacheBytes;
+    private long _maxRejectedCacheBytes;
 
     // Mutated only on the harvest dispatcher thread (StartHarvester/OnHarvesterDied/Stop), but
     // read from OnSegmentCompleted's background Task.Run continuation too (for RaiseStatus's
@@ -163,6 +163,36 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     /// it entirely and nothing in the harvest path depends on it.
     /// </summary>
     public DjSessionLog? SessionLog { get; set; }
+
+    /// <summary>
+    /// How many stations are listened to at once. Read when a session starts and when the vibe
+    /// changes, so a change from the options dialog takes effect on the next session rather than
+    /// re-pooling a running one — you cannot re-deal harvesters mid-mix without dropping the
+    /// segments already in the QC pipeline.
+    /// </summary>
+    public int HarvesterCount
+    {
+        get => _harvesterCount;
+        set => _harvesterCount = Math.Max(1, value);
+    }
+
+    /// <summary>
+    /// The disk budget, split by <c>AppSettings.ResolveHarvestCacheBytes</c>/<c>...Rejected...</c>.
+    /// Unlike <see cref="HarvesterCount"/> these ARE live: eviction consults them on every
+    /// completed segment, so lowering the cap starts reclaiming space within a song or two.
+    /// </summary>
+    public long MaxHarvestCacheBytes
+    {
+        get => _maxHarvestCacheBytes;
+        set => _maxHarvestCacheBytes = Math.Max(0, value);
+    }
+
+    /// <inheritdoc cref="MaxHarvestCacheBytes"/>
+    public long MaxRejectedCacheBytes
+    {
+        get => _maxRejectedCacheBytes;
+        set => _maxRejectedCacheBytes = Math.Max(0, value);
+    }
 
     /// <summary>The single best-ranked station from the most recent <see cref="StartAsync"/> —
     /// the one already-connected harvester most worth playing live during warm-up (see

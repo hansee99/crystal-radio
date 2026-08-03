@@ -51,23 +51,23 @@ public sealed class SongLibraryService : ISongLibraryService
     private readonly HttpClient _http;
     private readonly LibraryStore _store;
     private readonly IEmbeddingProvider _embeddings;
-    private readonly string? _apiKey;
+    private readonly ApiKeySource _apiKey;
     private readonly string _model;
 
     private readonly SemaphoreSlim _gate = new(MaxConcurrent);
     private readonly ConcurrentDictionary<string, byte> _inFlight = new();
 
     public SongLibraryService(HttpClient http, LibraryStore store, IEmbeddingProvider embeddings,
-        string? apiKey, string model = DefaultModel)
+        ApiKeySource? apiKey, string model = DefaultModel)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
-        _apiKey = apiKey;
+        _apiKey = apiKey ?? new ApiKeySource();
         _model = model;
     }
 
-    private bool CanDistill => !string.IsNullOrWhiteSpace(_apiKey);
+    private bool CanDistill => _apiKey.IsConfigured;
 
     public IReadOnlyList<SavedSong> GetAll(SongSource? source = null) => _store.GetAll(source);
 
@@ -255,7 +255,7 @@ public sealed class SongLibraryService : ISongLibraryService
             }
         };
 
-        using var request = AnthropicApi.CreateRequest(_apiKey, body);
+        using var request = AnthropicApi.CreateRequest(_apiKey.Current, body);
         using var response = await _http.SendAsync(request).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             return null;

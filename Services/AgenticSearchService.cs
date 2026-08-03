@@ -56,20 +56,20 @@ public sealed class AgenticSearchService : IAgenticSearchService
     private readonly HttpClient _http;
     private readonly IStationSearchService _search;
     private readonly IEnrichmentService _enrichment;
-    private readonly string? _apiKey;
+    private readonly ApiKeySource _apiKey;
     private readonly string _model;
 
     public AgenticSearchService(HttpClient http, IStationSearchService search,
-        IEnrichmentService enrichment, string? apiKey, string model = DefaultModel)
+        IEnrichmentService enrichment, ApiKeySource? apiKey, string model = DefaultModel)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _search = search ?? throw new ArgumentNullException(nameof(search));
         _enrichment = enrichment ?? throw new ArgumentNullException(nameof(enrichment));
-        _apiKey = apiKey;
+        _apiKey = apiKey ?? new ApiKeySource();
         _model = model;
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
+    public bool IsConfigured => _apiKey.IsConfigured;
 
     public async Task<IReadOnlyList<RankedStation>> SearchAsync(string prompt,
         int maxResults = DefaultMaxResults, CancellationToken ct = default)
@@ -159,7 +159,7 @@ public sealed class AgenticSearchService : IAgenticSearchService
             ["messages"] = msgArray
         };
 
-        using var request = AnthropicApi.CreateRequest(_apiKey, body);
+        using var request = AnthropicApi.CreateRequest(_apiKey.Current, body);
         using var response = await _http.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)

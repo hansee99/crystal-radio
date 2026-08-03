@@ -66,6 +66,22 @@ public class DjIntroServiceTests
         Assert.Contains(marker, Assert.Single(http.Requests), StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>The voice used to be baked into a prompt string in the constructor, so changing it
+    /// in the options dialog did nothing until relaunch.</summary>
+    [Fact]
+    public async Task ChangingThePersonaAffectsTheVeryNextLine()
+    {
+        var http = Handler();
+        var sut = Service(http, DjPersonality.Professional);
+
+        await sut.GetIntroAsync("Track", "Artist", "vibe");
+        sut.Personality = DjPersonality.Wry;
+        await sut.GetIntroAsync("Another Track", "Another Artist", "vibe");
+
+        Assert.DoesNotContain("sardonic", http.Requests[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("sardonic", http.Requests[1], StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task DoesNotSendAnotherPersonasWording()
     {

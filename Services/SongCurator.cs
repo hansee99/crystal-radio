@@ -50,22 +50,22 @@ public sealed class SongCurator : ISongCurator
     private readonly HttpClient _http;
     private readonly LibraryStore _store;
     private readonly IEmbeddingProvider _embeddings;
-    private readonly string? _apiKey;
+    private readonly ApiKeySource _apiKey;
     private readonly string _model;
 
     public SongCurator(HttpClient http, LibraryStore store, IEmbeddingProvider embeddings,
-        string? apiKey, string model = DefaultModel)
+        ApiKeySource? apiKey, string model = DefaultModel)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
-        _apiKey = apiKey;
+        _apiKey = apiKey ?? new ApiKeySource();
         _model = model;
     }
 
     public bool IsAvailable => _embeddings.IsAvailable;
 
-    private bool CanRank => !string.IsNullOrWhiteSpace(_apiKey);
+    private bool CanRank => _apiKey.IsConfigured;
 
     public async Task<IReadOnlyList<CuratedSong>> CurateAsync(string prompt, int max = 20,
         IReadOnlyCollection<string>? excludeKeys = null, bool requireRelevance = false,
@@ -180,7 +180,7 @@ public sealed class SongCurator : ISongCurator
 
         try
         {
-            using var request = AnthropicApi.CreateRequest(_apiKey, body);
+            using var request = AnthropicApi.CreateRequest(_apiKey.Current, body);
             using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 return null;

@@ -15,7 +15,18 @@ public sealed class MainViewModel : ObservableObject
     private readonly SongHistoryStore _historyStore;
     private readonly StreamRecorder _recorder;
     private readonly long _cacheCapBytes;
-    private readonly string _libraryFolder;
+    // Not readonly: the options dialog can move it mid-session. Only read at the moment a song
+    // is saved, so there is nothing to migrate — the next save simply lands in the new folder.
+    private string _libraryFolder;
+
+    /// <summary>Where saved songs land. Settable so the options dialog applies without a
+    /// restart; existing files stay where they are.</summary>
+    public string LibraryFolder
+    {
+        get => _libraryFolder;
+        set { if (!string.IsNullOrWhiteSpace(value)) _libraryFolder = value; }
+    }
+
     private readonly IStationDialog _stationDialog;
     private readonly IPromptInterpreter _interpreter;
     private readonly IStationSearchService _searchService;

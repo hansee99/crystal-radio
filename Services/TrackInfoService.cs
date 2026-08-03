@@ -51,7 +51,7 @@ public sealed class TrackInfoService : ITrackInfoService
         """;
 
     private readonly HttpClient _http;
-    private readonly string? _apiKey;
+    private readonly ApiKeySource _apiKey;
     private readonly string _model;
 
     // Per-session cache keyed by normalized "artist|title". ConcurrentDictionary because a
@@ -59,14 +59,14 @@ public sealed class TrackInfoService : ITrackInfoService
     private readonly ConcurrentDictionary<string, TrackInfo> _cache = new();
     private readonly ConcurrentQueue<string> _cacheOrder = new();
 
-    public TrackInfoService(HttpClient http, string? apiKey, string model = DefaultModel)
+    public TrackInfoService(HttpClient http, ApiKeySource? apiKey, string model = DefaultModel)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
-        _apiKey = apiKey;
+        _apiKey = apiKey ?? new ApiKeySource();
         _model = model;
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
+    public bool IsConfigured => _apiKey.IsConfigured;
 
     public async Task<TrackInfo?> GetTrackInfoAsync(string title, string? artist, string? station,
         bool forceRefresh = false, CancellationToken ct = default)
@@ -147,7 +147,7 @@ public sealed class TrackInfoService : ITrackInfoService
             ["messages"] = msgArray
         };
 
-        using var request = AnthropicApi.CreateRequest(_apiKey, body);
+        using var request = AnthropicApi.CreateRequest(_apiKey.Current, body);
         using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         var responseBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)

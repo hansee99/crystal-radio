@@ -24,6 +24,8 @@ public partial class MainWindow : Window
     private readonly LibraryStore _libraryStore;
     private readonly MiniLmEmbeddingProvider _embeddingProvider;
     private readonly DjHarvestService _djHarvest;
+    private readonly DjIntroService _djIntro;
+    private readonly ApiKeySource _apiKeys;
     private SmtcController? _smtc;
 
     public MainWindow()
@@ -45,7 +47,10 @@ public partial class MainWindow : Window
 
         // AI-assisted search services (raw HttpClient; key never committed). Prefer the key
         // saved in-app (DPAPI-encrypted), then fall back to the ANTHROPIC_API_KEY env var.
-        var apiKey = _settingsStore.GetApiKey() ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        // Shared by reference, not copied: every service below reads this same slot, so saving a
+        // key in the options dialog reaches all of them without a restart. See ApiKeySource.
+        _apiKeys = new ApiKeySource(ResolveApiKey());
+        var apiKey = _apiKeys;
         var searchService = new StationSearchService(new HttpClient());
         var interpreter = new PromptInterpreter(new HttpClient(), apiKey);              // Pattern A
 
@@ -63,7 +68,7 @@ public partial class MainWindow : Window
         var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
         var trackInfo = new TrackInfoService(new HttpClient(), apiKey); // "About this track" briefings
         // DJ Mode's on-air intro line; its voice is a settings.json knob (DjPersonality).
-        var djIntro = new DjIntroService(new HttpClient(), apiKey, _settingsStore.Load().ResolveDjPersonality());
+        _djIntro = new DjIntroService(new HttpClient(), apiKey, _settingsStore.Load().ResolveDjPersonality());
 
         // Phase C: local song-library index (metadata + AI description + local embedding on save).
         _libraryStore = new LibraryStore();
@@ -92,7 +97,7 @@ public partial class MainWindow : Window
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new SongHistoryStore(), _recorder,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
-            semanticSearch, ranker, trackInfo, songLibrary, _localEngine, curator, _djHarvest, djIntro);
+            semanticSearch, ranker, trackInfo, songLibrary, _localEngine, curator, _djHarvest, _djIntro);
         DataContext = _viewModel;
 
         // Reset the About reading view to the top whenever fresh content loads (a new briefing
@@ -170,22 +175,57 @@ public partial class MainWindow : Window
         => ShowDialogSafely(() => new AboutDialog { Owner = this });
 
     private void Options_Click(object sender, RoutedEventArgs e)
-        => ShowDialogSafely(() => new OptionsDialog(_settingsStore) { Owner = this });
+    {
+        if (ShowDialogSafely(() => new OptionsDialog(_settingsStore) { Owner = this }) == true)
+            ApplySettings();
+    }
+
+    /// <summary>The key actually in effect: the one saved in-app (DPAPI-encrypted) if there is
+    /// one, otherwise the environment's.</summary>
+    private string? ResolveApiKey() =>
+        _settingsStore.GetApiKey() ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+
+    /// <summary>
+    /// Pushes saved settings into the already-running app. Every one of these was previously read
+    /// once in this constructor and never again, which is why the dialog used to carry a "restart
+    /// Crystal Radio" notice.
+    ///
+    /// <para>Not all of it can be instant, and the dialog says which is which rather than
+    /// pretending: <see cref="DjHarvestService.HarvesterCount"/> is consulted when a session
+    /// starts, so changing it cannot re-deal the harvesters of a mix already playing.</para>
+    /// </summary>
+    private void ApplySettings()
+    {
+        var settings = _settingsStore.Load();
+
+        _apiKeys.Current = ResolveApiKey();
+        _viewModel.LibraryFolder = settings.ResolveLibraryFolder();
+        _djIntro.Personality = settings.ResolveDjPersonality();
+
+        // Read per track, so whatever is playing keeps the guards it started with.
+        _localEngine.IntroSkipSeconds = settings.IntroSkipSeconds;
+        _localEngine.OutroGuardSeconds = settings.OutroGuardSeconds;
+
+        _djHarvest.HarvesterCount = settings.DjHarvesterCount;   // next session
+        _djHarvest.MaxHarvestCacheBytes = settings.ResolveHarvestCacheBytes();
+        _djHarvest.MaxRejectedCacheBytes = settings.ResolveRejectedCacheBytes();
+    }
 
     /// <summary>
     /// Open a modal dialog, surfacing any construction/display failure as a message box instead
     /// of letting it bubble up as an unhandled exception that silently kills the whole app.
     /// </summary>
-    private void ShowDialogSafely(Func<Window> create)
+    private bool? ShowDialogSafely(Func<Window> create)
     {
         try
         {
-            create().ShowDialog();
+            return create().ShowDialog();
         }
         catch (Exception ex)
         {
             MessageBox.Show(this, $"Couldn't open the window:\n\n{ex.Message}", "Crystal Radio",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
+            return null;
         }
     }
 

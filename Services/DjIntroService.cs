@@ -108,10 +108,14 @@ public sealed class DjIntroService : IDjIntroService
         """;
 
     private readonly HttpClient _http;
-    private readonly string? _apiKey;
+    private readonly ApiKeySource _apiKey;
     private readonly string _model;
-    private readonly string _systemPromptBase;
-    private readonly string _patterSystemPrompt;
+    // Rebuilt when Personality is set, not per call — the substitution is pure string work and
+    // the voice changes about as often as someone opens the options dialog. Volatile because a
+    // generation already in flight on a background thread may read them mid-swap.
+    private volatile string _systemPromptBase = "";
+    private volatile string _patterSystemPrompt = "";
+    private DjPersonality _personality;
 
     // Which move to use next. Advanced per generated line, so consecutive intros differ in shape.
     private int _moveIndex = -1;
@@ -121,15 +125,30 @@ public sealed class DjIntroService : IDjIntroService
     private readonly ConcurrentDictionary<string, string> _cache = new();
     private readonly ConcurrentQueue<string> _cacheOrder = new();
 
-    public DjIntroService(HttpClient http, string? apiKey,
+    public DjIntroService(HttpClient http, ApiKeySource? apiKey,
         DjPersonality personality = DjPersonality.Warm, string model = DefaultModel)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
-        _apiKey = apiKey;
+        _apiKey = apiKey ?? new ApiKeySource();
         _model = model;
-        var persona = Personas.TryGetValue(personality, out var p) ? p : Personas[DjPersonality.Warm];
-        _systemPromptBase = SystemPromptTemplate.Replace("{PERSONA}", persona);
-        _patterSystemPrompt = PatterSystemPromptTemplate.Replace("{PERSONA}", persona);
+        Personality = personality;
+    }
+
+    /// <summary>
+    /// The voice the DJ speaks in. Settable so the options dialog takes effect on the next track
+    /// rather than the next launch; a line already being generated keeps the old voice, which is
+    /// the right answer — swapping mid-sentence would be worse than one more line in the old one.
+    /// </summary>
+    public DjPersonality Personality
+    {
+        get => _personality;
+        set
+        {
+            _personality = value;
+            var persona = Personas.TryGetValue(value, out var p) ? p : Personas[DjPersonality.Warm];
+            _systemPromptBase = SystemPromptTemplate.Replace("{PERSONA}", persona);
+            _patterSystemPrompt = PatterSystemPromptTemplate.Replace("{PERSONA}", persona);
+        }
     }
 
     public async Task<DjPatter?> GetSessionPatterAsync(string? vibe, CancellationToken ct = default)
@@ -154,7 +173,7 @@ public sealed class DjIntroService : IDjIntroService
             }
         };
 
-        using var request = AnthropicApi.CreateRequest(_apiKey, body);
+        using var request = AnthropicApi.CreateRequest(_apiKey.Current, body);
         try
         {
             using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
@@ -215,7 +234,7 @@ public sealed class DjIntroService : IDjIntroService
         return lines;
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
+    public bool IsConfigured => _apiKey.IsConfigured;
 
     public async Task<string?> GetIntroAsync(string title, string? artist, string? vibe,
         string? curatorNote = null, CancellationToken ct = default)
@@ -261,7 +280,7 @@ public sealed class DjIntroService : IDjIntroService
             }
         };
 
-        using var request = AnthropicApi.CreateRequest(_apiKey, body);
+        using var request = AnthropicApi.CreateRequest(_apiKey.Current, body);
         try
         {
             using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);

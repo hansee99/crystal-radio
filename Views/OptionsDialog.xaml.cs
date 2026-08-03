@@ -14,6 +14,11 @@ namespace RadioPlayer;
 /// Fields are labelled by their EFFECT rather than their setting name ("Stop … seconds before the
 /// end", not "OutroGuardSeconds"), and the two disk caps are presented as one total, because
 /// showing only one of them was itself reported as a bug.
+///
+/// <para>Saving applies immediately — <c>MainWindow.ApplySettings</c> pushes the values into the
+/// running services. The one exception is how many stations are listened to at once, which is read
+/// when a DJ session starts; that field says so in its own hint rather than a blanket "restart the
+/// app" notice at the bottom.</para>
 /// </summary>
 public partial class OptionsDialog : AppDialog
 {

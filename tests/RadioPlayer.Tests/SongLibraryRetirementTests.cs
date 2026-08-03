@@ -129,6 +129,27 @@ public sealed class SongLibraryRetirementTests : IDisposable
         Assert.Equal(0, handler.CallCount);
     }
 
+    /// <summary>
+    /// The live-key path, proved through a real service rather than the holder alone: a service
+    /// built at startup with no key must start working the moment one is saved, with no restart.
+    /// </summary>
+    [Fact]
+    public async Task AKeySavedAfterStartupTakesEffectWithoutARestart()
+    {
+        var handler = new FakeHttpMessageHandler()
+            .RespondWithText("""{ "is_song": false, "description": "An advertising break." }""");
+        var keys = new ApiKeySource();                  // launched with no key configured
+        var service = new SongLibraryService(new HttpClient(handler), _store, new NoEmbeddings(), keys);
+
+        keys.Current = "sk-ant-pasted-into-the-dialog";
+
+        var path = WriteAudioFile("after-key.mp3");
+        service.AddAndEnrich(Song(path, "ADBREAK_120000", "011FM", SongSource.Harvested));
+
+        Assert.True(await Settles(() => !File.Exists(path)), "the model should have been consulted");
+        Assert.Equal(1, handler.CallCount);
+    }
+
     /// <summary>A 500, a timeout or a reply we can't parse means we learned nothing — which must
     /// not be confused with "not music".</summary>
     [Fact]

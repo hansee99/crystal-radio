@@ -29,7 +29,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
     private readonly HttpClient _llmHttp;
     private readonly HttpClient _homepageHttp;
     private readonly EnrichmentStore _store;
-    private readonly string? _apiKey;
+    private readonly ApiKeySource _apiKey;
     private readonly string _model;
 
     private readonly SemaphoreSlim _gate = new(MaxConcurrentEnrichments);
@@ -40,19 +40,19 @@ public sealed partial class EnrichmentService : IEnrichmentService
     private readonly IEmbeddingProvider _embeddings;
 
     public EnrichmentService(HttpClient llmHttp, HttpClient homepageHttp, EnrichmentStore store,
-        IEmbeddingProvider embeddings, string? apiKey, string model = DefaultModel)
+        IEmbeddingProvider embeddings, ApiKeySource? apiKey, string model = DefaultModel)
     {
         _llmHttp = llmHttp ?? throw new ArgumentNullException(nameof(llmHttp));
         _homepageHttp = homepageHttp ?? throw new ArgumentNullException(nameof(homepageHttp));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
-        _apiKey = apiKey;
+        _apiKey = apiKey ?? new ApiKeySource();
         _model = model;
 
         try { _homepageHttp.Timeout = TimeSpan.FromSeconds(5); } catch { /* already used */ }
     }
 
-    private bool CanDistill => !string.IsNullOrWhiteSpace(_apiKey);
+    private bool CanDistill => _apiKey.IsConfigured;
 
     public EnrichmentRecord? GetCached(string stationUuid) => _store.Get(stationUuid);
 
@@ -283,7 +283,7 @@ public sealed partial class EnrichmentService : IEnrichmentService
             }
         };
 
-        using var request = AnthropicApi.CreateRequest(_apiKey, body);
+        using var request = AnthropicApi.CreateRequest(_apiKey.Current, body);
         using var response = await _llmHttp.SendAsync(request).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             return null;

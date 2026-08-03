@@ -295,6 +295,11 @@ Radio Browser returns `codec`, `bitrate`, `hls`, `lastcheckok`, and both `url` a
   pricing at https://docs.claude.com/en/api/overview — don't hardcode from memory.
 - **Never commit the API key.** Read it from an environment variable / user-secrets;
   keep it out of source control and out of this file.
+- **Pass `ApiKeySource`, never a `string`.** Every LLM-backed service takes one and reads
+  `.Current` at the moment of use. The composition root constructs a single instance and hands
+  that same object to all of them, so saving a key in the options dialog reaches services built
+  at launch. A plain string still converts implicitly (tests rely on it) — but each conversion
+  makes its own source, so only the shared instance is actually shared.
 
 ### New components (keep AI isolated from playback)
 

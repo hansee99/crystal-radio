@@ -41,7 +41,7 @@
         <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Stations to listen to at once"/>
         <TextBox x:Name="HarvesterCountBox" Style="{StaticResource DialogTextBox}"/>
         <TextBlock Style="{StaticResource DialogHint}"
-                   Text="More stations means more variety, but more bandwidth and more AI cost — every song collected gets a description written for it."/>
+                   Text="More stations means more variety, but more bandwidth and more AI cost — every song collected gets a description written for it. Takes effect the next time you start a DJ session."/>
 
         <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Disk space for DJ mode (MB)"/>
         <TextBox x:Name="DiskSpaceBox" Style="{StaticResource DialogTextBox}"/>
@@ -57,9 +57,6 @@
 
         <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Stop … seconds before the end"/>
         <TextBox x:Name="OutroGuardBox" Style="{StaticResource DialogTextBox}"/>
-
-        <TextBlock Style="{StaticResource DialogHint}" Foreground="#FFC7B486" Margin="0,18,0,0"
-                   Text="Changes apply next time you start Crystal Radio."/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
             <Button Content="Cancel" IsCancel="True" Style="{StaticResource DialogGhostButton}"/>
