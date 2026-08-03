@@ -80,10 +80,38 @@ public sealed class DjIntroService : IDjIntroService
             + "the work. Precise, unfussy, no whimsy.",
     };
 
+    private const string PatterSystemPromptTemplate = """
+        You are a radio DJ. A listener has asked for a particular kind of music and you are about to
+        build them a mix from live radio. Write the short things you'd say at four moments that
+        aren't a track introduction.
+
+        {PERSONA}
+
+        The four moments:
+        - "sourcing": you're still finding stations. Nothing is playing yet.
+        - "waiting": you're listening to stations and haven't captured a song worth playing yet.
+        - "bridging": the mix has run out, so live radio is covering while you gather more.
+        - "signingOff": the session is ending.
+
+        Give THREE alternatives for each, so the same moment twice doesn't repeat itself. Each is
+        ONE short sentence. Shape them around what the listener asked for without quoting their
+        words back at them. Be honest about what's happening — these describe a real state, so
+        don't promise music is playing when it isn't. Never invent facts about stations or tracks.
+
+        Respond with ONLY this JSON object — no prose, no markdown fences:
+        {
+          "sourcing": ["string", "string", "string"],
+          "waiting": ["string", "string", "string"],
+          "bridging": ["string", "string", "string"],
+          "signingOff": ["string", "string", "string"]
+        }
+        """;
+
     private readonly HttpClient _http;
     private readonly string? _apiKey;
     private readonly string _model;
     private readonly string _systemPromptBase;
+    private readonly string _patterSystemPrompt;
 
     // Which move to use next. Advanced per generated line, so consecutive intros differ in shape.
     private int _moveIndex = -1;
@@ -99,8 +127,92 @@ public sealed class DjIntroService : IDjIntroService
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _apiKey = apiKey;
         _model = model;
-        _systemPromptBase = SystemPromptTemplate.Replace("{PERSONA}",
-            Personas.TryGetValue(personality, out var p) ? p : Personas[DjPersonality.Warm]);
+        var persona = Personas.TryGetValue(personality, out var p) ? p : Personas[DjPersonality.Warm];
+        _systemPromptBase = SystemPromptTemplate.Replace("{PERSONA}", persona);
+        _patterSystemPrompt = PatterSystemPromptTemplate.Replace("{PERSONA}", persona);
+    }
+
+    public async Task<DjPatter?> GetSessionPatterAsync(string? vibe, CancellationToken ct = default)
+    {
+        if (!IsConfigured)
+            return null;
+
+        var body = new JsonObject
+        {
+            ["model"] = _model,
+            ["max_tokens"] = 900,
+            ["system"] = _patterSystemPrompt,
+            ["messages"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["role"] = "user",
+                    ["content"] = string.IsNullOrWhiteSpace(vibe)
+                        ? "The listener didn't say what they wanted — keep it open."
+                        : $"The listener asked for: \"{vibe}\""
+                }
+            }
+        };
+
+        using var request = AnthropicApi.CreateRequest(_apiKey, body);
+        try
+        {
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+            var responseBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                AppLog.Debug($"[DjIntro] patter API returned {(int)response.StatusCode}: "
+                             + AnthropicApi.Truncate(responseBody));
+                return null;
+            }
+            return ParsePatter(AnthropicApi.ExtractText(responseBody));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug($"[DjIntro] patter generation failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static DjPatter? ParsePatter(string? text)
+    {
+        var json = AnthropicApi.StripToJsonObject(text);
+        if (json is null)
+            return null;
+
+        JsonNode? node;
+        try { node = JsonNode.Parse(json); }
+        catch (JsonException) { return null; }
+
+        var sourcing = Lines(node, "sourcing");
+        var waiting = Lines(node, "waiting");
+        var bridging = Lines(node, "bridging");
+        var signingOff = Lines(node, "signingOff");
+
+        // All four or nothing: a half-filled set would leave some moments voiced and others in the
+        // app's own wording, which reads worse than using the fallbacks throughout.
+        if (sourcing.Count == 0 || waiting.Count == 0 || bridging.Count == 0 || signingOff.Count == 0)
+            return null;
+
+        return new DjPatter(sourcing, waiting, bridging, signingOff);
+    }
+
+    private static List<string> Lines(JsonNode? node, string key)
+    {
+        var lines = new List<string>();
+        if (node?[key] is not JsonArray arr)
+            return lines;
+        foreach (var item in arr)
+        {
+            var line = Clean(AnthropicApi.Str(item));
+            if (line.Length > 0)
+                lines.Add(line);
+        }
+        return lines;
     }
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);

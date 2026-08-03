@@ -145,6 +145,107 @@ public class DjIntroServiceTests
         Assert.Equal(0, http.CallCount);
     }
 
+    // --- Session patter: the lines for moments that aren't a track (#5) -----------------------
+
+    private const string PatterReply = """
+        { "sourcing": ["s1","s2","s3"], "waiting": ["w1","w2","w3"],
+          "bridging": ["b1","b2","b3"], "signingOff": ["o1","o2","o3"] }
+        """;
+
+    [Fact]
+    public async Task ReturnsAllFourMomentsOfPatter()
+    {
+        var http = new FakeHttpMessageHandler().RespondWithText(PatterReply);
+
+        var patter = await Service(http).GetSessionPatterAsync("deep house for coding");
+
+        Assert.NotNull(patter);
+        Assert.Equal(["s1", "s2", "s3"], patter!.For(DjMoment.Sourcing));
+        Assert.Equal(["w1", "w2", "w3"], patter.For(DjMoment.Waiting));
+        Assert.Equal(["b1", "b2", "b3"], patter.For(DjMoment.Bridging));
+        Assert.Equal(["o1", "o2", "o3"], patter.For(DjMoment.SigningOff));
+    }
+
+    [Fact]
+    public async Task SendsTheVibeAndThePersonaWithThePatterRequest()
+    {
+        var http = new FakeHttpMessageHandler().RespondWithText(PatterReply);
+
+        await Service(http, DjPersonality.LateNight).GetSessionPatterAsync("deep house for coding");
+
+        var sent = http.Requests[0];
+        Assert.Contains("deep house for coding", sent);
+        Assert.Contains("small hours", sent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task HandlesAMissingVibeWithoutSendingAnEmptyQuote()
+    {
+        var http = new FakeHttpMessageHandler().RespondWithText(PatterReply);
+
+        Assert.NotNull(await Service(http).GetSessionPatterAsync(null));
+        // Deliberately an apostrophe-free substring. System.Text.Json's default encoder escapes
+        // apostrophes to their numeric form on the wire, so asserting on a phrase containing one
+        // would be testing the encoder rather than the prompt.
+        Assert.Contains("say what they wanted", http.Requests[0]);
+    }
+
+    /// <summary>All four moments or none. A half-filled set would leave some moments in the DJ's
+    /// voice and others in the app's own wording, which reads worse than using the fallbacks
+    /// throughout.</summary>
+    [Theory]
+    [InlineData("""{ "sourcing": ["s"], "waiting": ["w"], "bridging": ["b"] }""")]
+    [InlineData("""{ "sourcing": ["s"], "waiting": [], "bridging": ["b"], "signingOff": ["o"] }""")]
+    [InlineData("""{ "sourcing": ["s"], "waiting": ["  "], "bridging": ["b"], "signingOff": ["o"] }""")]
+    [InlineData("""{ "sourcing": "not an array", "waiting": ["w"], "bridging": ["b"], "signingOff": ["o"] }""")]
+    [InlineData("sorry, I can't do that")]
+    public async Task ReturnsNullWhenAnyMomentIsMissing(string reply)
+    {
+        var http = new FakeHttpMessageHandler().RespondWithText(reply);
+
+        Assert.Null(await Service(http).GetSessionPatterAsync("vibe"));
+    }
+
+    [Fact]
+    public async Task AcceptsFewerThanThreeLinesPerMomentAsLongAsEachHasOne()
+    {
+        // The prompt asks for three; one is still usable, it just repeats sooner.
+        var http = new FakeHttpMessageHandler().RespondWithText(
+            """{ "sourcing": ["s"], "waiting": ["w"], "bridging": ["b"], "signingOff": ["o"] }""");
+
+        var patter = await Service(http).GetSessionPatterAsync("vibe");
+
+        Assert.Equal(["s"], patter!.For(DjMoment.Sourcing));
+    }
+
+    [Fact]
+    public async Task ReturnsNullPatterWithoutAKeyAndNeverCallsTheApi()
+    {
+        var http = new FakeHttpMessageHandler();
+
+        Assert.Null(await new DjIntroService(http.Client(), apiKey: null).GetSessionPatterAsync("vibe"));
+        Assert.Equal(0, http.CallCount);
+    }
+
+    [Fact]
+    public async Task ReturnsNullPatterOnAnApiError()
+    {
+        var http = new FakeHttpMessageHandler().RespondWithStatus(HttpStatusCode.InternalServerError);
+
+        Assert.Null(await Service(http).GetSessionPatterAsync("vibe"));
+    }
+
+    [Fact]
+    public async Task PropagatesPatterCancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var http = new FakeHttpMessageHandler().RespondWithText(PatterReply);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Service(http).GetSessionPatterAsync("vibe", cts.Token));
+    }
+
     // The move directive is the line beginning "This time:" in the system prompt.
     private static string ExtractMoveLine(string requestBody)
     {

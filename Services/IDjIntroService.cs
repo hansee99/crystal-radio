@@ -26,10 +26,54 @@ public enum DjPersonality
 /// Applies uniformly to both curated-library and freshly-harvested songs (neither has a richer
 /// "reason" available at the point this is called). Knows nothing about playback.
 /// </summary>
+/// <summary>A moment in a DJ session the DJ can say something about, other than a track.</summary>
+public enum DjMoment
+{
+    /// <summary>Looking for stations — the very start, before anything is playing.</summary>
+    Sourcing,
+    /// <summary>Harvesting, nothing kept yet. The mix hasn't begun.</summary>
+    Waiting,
+    /// <summary>The mix ran dry, so live radio is covering the gap.</summary>
+    Bridging,
+    /// <summary>The session is ending.</summary>
+    SigningOff
+}
+
+/// <summary>
+/// Lines for the moments between tracks, all generated up front in one call.
+///
+/// Generated up front on purpose. These moments are transient — "waiting for the first songs" can
+/// be true for twenty seconds — so calling the model on entering one would land the line after the
+/// state had already changed, and the panel would sit there saying it was still waiting over a
+/// playing mix. Pre-generating makes every transition instant for one extra call per session, and
+/// the lines are still written for that vibe in that voice rather than being canned.
+/// </summary>
+public sealed record DjPatter(
+    IReadOnlyList<string> Sourcing,
+    IReadOnlyList<string> Waiting,
+    IReadOnlyList<string> Bridging,
+    IReadOnlyList<string> SigningOff)
+{
+    public IReadOnlyList<string> For(DjMoment moment) => moment switch
+    {
+        DjMoment.Sourcing => Sourcing,
+        DjMoment.Waiting => Waiting,
+        DjMoment.Bridging => Bridging,
+        _ => SigningOff
+    };
+}
+
 public interface IDjIntroService
 {
     /// <summary>True when the service has what it needs to run (e.g. an API key).</summary>
     bool IsConfigured { get; }
+
+    /// <summary>
+    /// A few lines for each between-tracks moment, in the configured voice and shaped around the
+    /// vibe. Called once when a session starts; null if it couldn't be produced, in which case the
+    /// caller falls back to its own wording.
+    /// </summary>
+    Task<DjPatter?> GetSessionPatterAsync(string? vibe, CancellationToken ct = default);
 
     /// <summary>
     /// Returns a short intro line for the track, or null if one couldn't be produced. Results are

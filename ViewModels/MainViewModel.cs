@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Net.Http;
 using RadioPlayer.Models;
@@ -2056,6 +2056,83 @@ public sealed class MainViewModel : ObservableObject
 
     private CancellationTokenSource? _djIntroCts;
 
+    // --- The DJ's voice between tracks ------------------------------------------------------
+    // The intro line used to exist only when a track was playing, so the DJ was silent for exactly
+    // the stretches where a listener most wants to know what's going on: sourcing, waiting for the
+    // first song, and bridging live after the mix ran dry. Lines for those come from one call at
+    // session start (see DjPatter on why not per-transition) and land in the same YOUR DJ block.
+    private DjPatter? _djPatter;
+    private readonly Dictionary<DjMoment, int> _momentRotation = new();
+    private DjMoment? _currentMoment;
+
+    /// <summary>Wording used until the model's lines arrive, and whenever they can't be produced —
+    /// no API key, a failed call, an unusable reply. Honest about the state either way.</summary>
+    private static string FallbackPatter(DjMoment moment) => moment switch
+    {
+        DjMoment.Sourcing => "Finding stations that fit — nothing playing just yet.",
+        DjMoment.Waiting => "Listening in and waiting for something worth keeping.",
+        DjMoment.Bridging => "Live radio for a moment while the mix refills.",
+        _ => "That's the session — thanks for listening."
+    };
+
+    /// <summary>
+    /// Puts the DJ's voice for a between-tracks moment into the intro slot. Rotates within the
+    /// moment's lines so re-entering it — bridging happens repeatedly in a lean session — doesn't
+    /// repeat the same sentence. Re-entering the moment it's already showing is a no-op, so a
+    /// status refresh doesn't churn the line under the reader.
+    /// </summary>
+    private void SpeakMoment(DjMoment moment)
+    {
+        if (_currentMoment == moment)
+            return;
+        _currentMoment = moment;
+
+        var lines = _djPatter?.For(moment);
+        if (lines is not { Count: > 0 })
+        {
+            DjIntroLine = FallbackPatter(moment);
+            return;
+        }
+
+        var next = _momentRotation.TryGetValue(moment, out var i) ? i + 1 : 0;
+        _momentRotation[moment] = next;
+        DjIntroLine = lines[next % lines.Count];
+    }
+
+    /// <summary>Hands the intro slot back to per-track patter — a real track is playing now.</summary>
+    private void EndMoment() => _currentMoment = null;
+
+    /// <summary>
+    /// Fetches the session's between-tracks lines. Fire-and-forget: the fallbacks are already on
+    /// screen, so this upgrades them when it lands and changes nothing if it never does. Also
+    /// re-speaks the current moment, since the fallback is probably showing by the time it arrives.
+    /// </summary>
+    private void LoadSessionPatterInBackground(string vibe, CancellationToken ct)
+    {
+        if (!_djIntro.IsConfigured)
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var patter = await _djIntro.GetSessionPatterAsync(vibe, ct).ConfigureAwait(true);
+                if (patter is null || ct.IsCancellationRequested)
+                    return;
+                _djPatter = patter;
+                if (_currentMoment is { } moment)
+                {
+                    _currentMoment = null;   // force SpeakMoment past its no-op guard
+                    SpeakMoment(moment);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Session ended while generating — nothing to do.
+            }
+        });
+    }
+
     /// <summary>Starts a DJ session for the prompt: sources + connects the harvest pool, warm-
     /// starts the queue from the existing library, and lets freshly harvested songs blend in as
     /// they arrive. On a cold library (nothing to warm-start with), bridges the gap by playing
@@ -2076,6 +2153,13 @@ public sealed class MainViewModel : ObservableObject
         DjProgress.Begin(DjStageFind, DjStageConnect, DjStageRecord);
         _djLastStatus = null;
 
+        // The DJ speaks from the first moment, not from the first track. Fallback wording shows
+        // immediately; the generated lines replace it when they land.
+        _djPatter = null;
+        _momentRotation.Clear();
+        _currentMoment = null;
+        SpeakMoment(DjMoment.Sourcing);
+
         // Per-session diagnostics: what the pool actually produced vs what playback consumed.
         // Best-effort and optional — the harvest path doesn't depend on it.
         var settings = _settingsStore.Load();
@@ -2090,6 +2174,7 @@ public sealed class MainViewModel : ObservableObject
         _djStartCts?.Cancel();
         _djStartCts?.Dispose();
         var startCts = _djStartCts = new CancellationTokenSource();
+        LoadSessionPatterInBackground(prompt, startCts.Token);
 
         // The service reports its own phases; map them to the checklist's copy here so the
         // wording stays in the view model.
@@ -2115,7 +2200,10 @@ public sealed class MainViewModel : ObservableObject
             var seeded = await _djQueue.StartAsync(prompt, startCts.Token).ConfigureAwait(true);
             AppLog.Info($"[Dj] session started · warm-start {(seeded ? "seeded the queue" : "was empty, bridging live")}");
             if (!seeded)
+            {
+                SpeakMoment(DjMoment.Waiting);
                 BeginDjWarmupLivePlayback();
+            }
             RaiseTransportCanExecute();
         }
         catch (OperationCanceledException)
@@ -2174,8 +2262,11 @@ public sealed class MainViewModel : ObservableObject
         _djQueue.Stop();
         _djHarvest.Stop();
         EndDjWarmupIfActive();
+        // Sign off rather than going quiet — the DJ gets the last word, and the panel otherwise
+        // just blanks. Cancel the per-track generation first so a late arrival can't overwrite it.
         _djIntroCts?.Cancel();
-        DjIntroLine = null;
+        SpeakMoment(DjMoment.SigningOff);
+
         DjSessionVibe = null;
         _djSessionTimer?.Stop();
         _djLastStatus = null;
@@ -2226,6 +2317,10 @@ public sealed class MainViewModel : ObservableObject
         _djIntroCts?.Dispose();
         var cts = _djIntroCts = new CancellationTokenSource();
 
+        // A track is playing, so we're no longer in a between-tracks moment. Clearing the line
+        // rather than holding the old moment's wording: leaving "waiting for something worth
+        // keeping" up while a song plays is the specific wrongness this whole feature must avoid.
+        EndMoment();
         DjIntroLine = null;
         if (!_djIntro.IsConfigured || string.IsNullOrWhiteSpace(title))
             return;
@@ -2353,6 +2448,7 @@ public sealed class MainViewModel : ObservableObject
         if (!IsDjMode || !IsDjRunning || _djWarmingUp)
             return;
         AppLog.Info("[Dj] mix ran dry — bridging live until it refills");
+        SpeakMoment(DjMoment.Bridging);
         BeginDjWarmupLivePlayback();
     }
 
