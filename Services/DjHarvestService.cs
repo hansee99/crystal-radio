@@ -202,6 +202,81 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         await ready.Task.ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Re-points the harvest pool at a new vibe, mid-session, without stopping anything first.
+    ///
+    /// <para>Order matters: the new stations are sourced <b>before</b> the old harvesters are
+    /// touched. Sourcing is a directory query plus an LLM re-rank, sometimes a web escalation —
+    /// five to thirty seconds — and tearing the pool down first would mean collecting nothing for
+    /// all of it. The old vibe keeps harvesting until the moment the new pool is ready.</para>
+    ///
+    /// <para>The harvest thread and its BASS device are NOT torn down; only the harvesters on it
+    /// are swapped. <see cref="Stop"/> would take the whole thread with it, which is a session
+    /// ending, not a vibe changing.</para>
+    ///
+    /// Returns false when nothing relevant was found — in which case the current pool is left
+    /// exactly as it was, since collecting for the old vibe beats collecting for nothing.
+    /// </summary>
+    public async Task<bool> ChangeVibeAsync(string prompt, CancellationToken ct = default)
+    {
+        if (!_running || string.IsNullOrWhiteSpace(prompt))
+            return false;
+
+        AppLog.Info($"[Dj] changing vibe to \"{prompt}\" — sourcing before the swap");
+        var stations = await SourceStationsAsync(prompt, _harvesterCount + _reserveCount, ct)
+            .ConfigureAwait(false);
+        if (stations.Count == 0)
+        {
+            AppLog.Warn($"[Dj] nothing relevant for \"{prompt}\" — keeping the current pool");
+            return false;
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var dispatcher = _harvestDispatcher;
+        if (dispatcher is null || !_running)
+            return false; // session ended while we were sourcing
+
+        var hot = stations.Take(_harvesterCount).ToList();
+        var reserve = stations.Skip(_harvesterCount).ToList();
+        dispatcher.Invoke(() => SwapPool(hot, reserve));
+
+        TopStation = hot[0]; // best-first out of RankRelevantAsync — the live bridge uses this
+        SessionLog?.VibeChanged(prompt, hot.Count);
+        AppLog.Info($"[Dj] vibe changed: {hot.Count} station(s) hot, {reserve.Count} in reserve");
+        return true;
+    }
+
+    /// <summary>
+    /// Replaces every harvester with the new vibe's stations. Runs on the harvest dispatcher.
+    ///
+    /// Retires the old ones directly rather than through <see cref="Retire"/>, which promotes a
+    /// reserve station to fill the gap — during a swap that would start an old-vibe station
+    /// moments before the new pool takes its place.
+    /// </summary>
+    private void SwapPool(List<Station> hot, List<Station> reserve)
+    {
+        List<StreamHarvester> outgoing;
+        lock (_activeLock)
+        {
+            outgoing = _active.ToList();
+            _active.Clear();
+        }
+
+        foreach (var h in outgoing)
+        {
+            h.SegmentCompleted -= OnSegmentCompleted;
+            h.SegmentDiscarded -= OnSegmentDiscarded;
+            h.Died -= OnHarvesterDied;
+            SessionLog?.TitlesSeen(h.Label, h.TitlesSeen);
+            SessionLog?.HarvesterDied(h.Label, "vibe changed");
+            h.Dispose();
+        }
+
+        _reserve = new Queue<Station>(reserve);
+        foreach (var station in hot)
+            StartHarvester(station);
+    }
+
     /// <summary>Stops every harvester, tears down the harvest thread's BASS device, and joins
     /// the thread. Safe to call when not running.</summary>
     public void Stop()

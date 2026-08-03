@@ -31,6 +31,7 @@ public sealed class DjSessionLog
     private int _played;
     private int _evicted;
     private int _evictedUnplayed;
+    private int _vibeChanges;
     private double _trimmedSeconds;
     private bool _finished;
 
@@ -187,6 +188,23 @@ public sealed class DjSessionLog
         _ => reason.ToString()
     };
 
+    /// <summary>
+    /// The listener changed the vibe mid-session. Recorded as an event rather than starting a
+    /// second log: it is one listening session, and the summary's rates only mean anything when
+    /// measured across the whole of it. But every number after this line belongs to a different
+    /// prompt, so reading a session back without knowing where the change happened would be
+    /// misleading — a station retired for "no songs" right after a swap is a different story from
+    /// one that sat idle for ten minutes on its own vibe.
+    /// </summary>
+    public void VibeChanged(string prompt, int stations)
+    {
+        lock (_gate)
+        {
+            _vibeChanges++;
+            Write("vibe", $"\"{prompt}\" — {stations} station(s) swapped in");
+        }
+    }
+
     /// <summary>A song started playing — the consumption side of the ratio.</summary>
     public void SongPlayed(string path, string title, string artist)
     {
@@ -247,6 +265,8 @@ public sealed class DjSessionLog
             : "Surplus             n/a (nothing played yet)");
 
         sb.AppendLine($"Evicted             {_evicted} ({_evictedUnplayed} never played)");
+        if (_vibeChanges > 0)
+            sb.AppendLine($"Vibe changed        {_vibeChanges}x  — rates below span ALL of them");
 
         // Driven by the same per-window classification as the reject decision, so a large figure
         // here on a genre the detector reads badly means real music is being shaved off the

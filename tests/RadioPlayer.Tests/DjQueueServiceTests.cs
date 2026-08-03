@@ -203,6 +203,117 @@ public sealed class DjQueueServiceTests : IDisposable
         Assert.Empty(local.SetQueueCalls);
     }
 
+    // --- Changing the vibe mid-session (#4) ---------------------------------------------------
+
+    /// <summary>The whole point: the mix carries on. Reusing StartAsync would have been the
+    /// obvious shortcut and is exactly wrong — its SetQueue stops the current track dead.</summary>
+    [Fact]
+    public void ChangeVibe_DoesNotTouchWhatIsPlaying()
+    {
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        curator.Enqueue([Song(NewTempSongFile(), "A1", "T1"), Song(NewTempSongFile(), "A2", "T2")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
+        sut.StartAsync("deep house for coding").GetAwaiter().GetResult();
+        var queueCallsBefore = local.SetQueueCalls.Count;
+
+        sut.ChangeVibe("uptempo drum and bass");
+
+        Assert.Equal(queueCallsBefore, local.SetQueueCalls.Count);  // nothing replaced
+        Assert.Empty(local.AppendCalls);                            // and nothing appended
+        Assert.Equal(2, local.QueueCount);
+    }
+
+    [Fact]
+    public void ChangeVibe_MakesTheNextTopUpUseTheNewPrompt()
+    {
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        curator.Enqueue([Song(NewTempSongFile(), "A1", "T1"), Song(NewTempSongFile(), "A2", "T2")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 5);
+        sut.StartAsync("deep house for coding").GetAwaiter().GetResult();
+
+        sut.ChangeVibe("uptempo drum and bass");
+        curator.Enqueue([Song(NewTempSongFile(), "A3", "T3")]);
+        local.RaiseTrackChanged(0);                                  // drops below the watermark
+
+        Assert.Equal("uptempo drum and bass", curator.LastPrompt);
+    }
+
+    /// <summary>"The library has nothing more" was a judgement about the OLD prompt, so a new one
+    /// has to be allowed to look again — otherwise a session that exhausted its library never
+    /// tops up again however the vibe changes.</summary>
+    [Fact]
+    public void ChangeVibe_LetsAnExhaustedLibraryBeSearchedAgain()
+    {
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        curator.Enqueue([Song(NewTempSongFile(), "A1", "T1")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 5);
+        sut.StartAsync("deep house").GetAwaiter().GetResult();
+
+        curator.Enqueue([]);                 // top-up finds nothing → library marked exhausted
+        local.RaiseTrackChanged(0);
+        var callsAfterExhaustion = curator.CallCount;
+
+        curator.Enqueue([]);
+        local.RaiseTrackChanged(0);
+        Assert.Equal(callsAfterExhaustion, curator.CallCount);   // suppressed, as designed
+
+        sut.ChangeVibe("something else entirely");
+        curator.Enqueue([]);
+        local.RaiseTrackChanged(0);
+
+        Assert.Equal(callsAfterExhaustion + 1, curator.CallCount); // searching again
+    }
+
+    [Fact]
+    public void ChangeVibe_KeepsSongsAlreadyHeardOutOfTheMix()
+    {
+        // A song heard this session shouldn't return just because it also fits the new vibe.
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        var file = NewTempSongFile();
+        curator.Enqueue([Song(file, "Deary", "Blue Ribbon")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
+        sut.StartAsync("indie pop").GetAwaiter().GetResult();
+
+        sut.ChangeVibe("dream pop");
+        harvest.RaiseSegmentIndexed(new SavedSong(NewTempSongFile(), "Blue Ribbon", "Deary",
+            "OtherStation", "mp3", DateTimeOffset.Now, Source: SongSource.Harvested));
+        PumpDispatcher();
+
+        Assert.Empty(local.AppendCalls);     // still deduped across the change
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ChangeVibe_IgnoresABlankPrompt(string prompt)
+    {
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        curator.Enqueue([Song(NewTempSongFile(), "A1", "T1")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 5);
+        sut.StartAsync("deep house").GetAwaiter().GetResult();
+
+        sut.ChangeVibe(prompt);
+        curator.Enqueue([]);
+        local.RaiseTrackChanged(0);
+
+        Assert.Equal("deep house", curator.LastPrompt);   // unchanged
+    }
+
     [Fact]
     public void NeverStarve_QueueKeepsGrowingAcrossAPlausibleArrivalTimeline()
     {

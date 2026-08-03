@@ -13,6 +13,10 @@ public sealed class FakeSongCurator : ISongCurator
     public bool IsAvailable { get; set; } = true;
     public int CallCount { get; private set; }
 
+    /// <summary>The prompt of the most recent call — how a vibe change is observed, since the
+    /// service keeps the prompt privately and only its effect on the next top-up is visible.</summary>
+    public string? LastPrompt { get; private set; }
+
     /// <summary>Queues an immediately-available result for the next CurateAsync call.</summary>
     public void Enqueue(IReadOnlyList<CuratedSong> result) =>
         _responses.Enqueue(() => Task.FromResult(result));
@@ -31,6 +35,7 @@ public sealed class FakeSongCurator : ISongCurator
         IReadOnlyCollection<string>? excludeKeys = null, bool requireRelevance = false,
         CancellationToken ct = default)
     {
+        LastPrompt = prompt;
         CallCount++;
         if (_responses.Count > 0)
         {

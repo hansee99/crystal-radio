@@ -50,6 +50,27 @@ public sealed class DjQueueService : IDisposable
         _lowWatermark = lowWatermark;
     }
 
+    /// <summary>
+    /// Points the queue at a new vibe without disturbing what's playing.
+    ///
+    /// Deliberately NOT <see cref="StartAsync"/>: that calls SetQueue, which stops the current
+    /// track dead. The whole point of a mid-session vibe change is that the mix carries on — every
+    /// top-up from here uses the new prompt, so the queue crosses over as the old songs play out.
+    /// In practice that's quick: harvest barely keeps ahead of playback, so there are usually only
+    /// one or two songs queued in front of the listener.
+    ///
+    /// <para><see cref="_seen"/> is kept on purpose — a song already heard this session shouldn't
+    /// come back just because it also fits the new vibe. <see cref="_libraryExhausted"/> is cleared,
+    /// because "the library has nothing more" was a judgement about the OLD prompt.</para>
+    /// </summary>
+    public void ChangeVibe(string prompt)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+            return;
+        _prompt = prompt;
+        _libraryExhausted = false;
+    }
+
     /// <summary>Warm-starts the queue for <paramref name="prompt"/> and starts listening for
     /// freshly harvested songs. Call after <see cref="DjHarvestService.StartAsync"/>. Returns
     /// true when the warm-start seed had at least one song (playback starts immediately); false

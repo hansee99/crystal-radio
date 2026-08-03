@@ -868,18 +868,10 @@
                              record — vibe, state, counts — with End session as a quiet ghost
                              that only exists while there IS something to end. -->
 
-                        <!-- Idle -->
+                        <!-- The prompt field, in both states: it starts a session when idle and
+                             re-points a running one at a new vibe. The mix keeps playing across a
+                             change, so this is a steering wheel, not a restart. -->
                         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsDjRunning}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
 
                             <Border Height="42" CornerRadius="10" Background="{StaticResource FillSubtle}"
                                     BorderBrush="{StaticResource Hairline}" BorderThickness="1"
@@ -890,28 +882,44 @@
                                           VerticalAlignment="Center" Margin="0,0,9,0"/>
                                     <!-- Start lives inside the field it acts on, instead of a
                                          second full-width pill below it. -->
-                                    <Button DockPanel.Dock="Right" Content="Start"
-                                            Style="{StaticResource AboutPillButton}"
+                                    <Button DockPanel.Dock="Right"
                                             VerticalAlignment="Center" Margin="8,0,0,0"
-                                            Command="{Binding StartDjCommand}"/>
+                                            Command="{Binding DjPromptSubmitCommand}">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource AboutPillButton}">
+                                                <Setter Property="Content" Value="Start"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsDjRunning}" Value="True">
+                                                        <Setter Property="Content" Value="Change vibe"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsChangingDjVibe}" Value="True">
+                                                        <Setter Property="Content" Value="Finding…"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
                                     <Grid>
                                         <TextBox x:Name="DjPromptBox" Background="Transparent" BorderThickness="0"
                                                  VerticalContentAlignment="Center" Foreground="{StaticResource TextBody}"
                                                  CaretBrush="{StaticResource Teal}" FontSize="13"
                                                  Text="{Binding DjPrompt, UpdateSourceTrigger=PropertyChanged}">
                                             <TextBox.InputBindings>
-                                                <KeyBinding Key="Return" Command="{Binding StartDjCommand}"/>
+                                                <KeyBinding Key="Return" Command="{Binding DjPromptSubmitCommand}"/>
                                             </TextBox.InputBindings>
                                         </TextBox>
                                         <TextBlock IsHitTestVisible="False" VerticalAlignment="Center" FontSize="13"
-                                                   Foreground="{StaticResource TextFaint}"
-                                                   Text="Describe a vibe…">
+                                                   Foreground="{StaticResource TextFaint}">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Setter Property="Text" Value="Describe a vibe…"/>
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding Text, ElementName=DjPromptBox}" Value="">
                                                             <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsDjRunning}" Value="True">
+                                                            <Setter Property="Text" Value="Change the vibe…"/>
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
@@ -923,7 +931,18 @@
 
                             <TextBlock Margin="2,9,0,0" FontSize="11.5" TextWrapping="Wrap"
                                        Foreground="{StaticResource TextMuted}"
-                                       Text="We'll find stations, record the good bits, and keep it playing."/>
+                                       Text="We'll find stations, record the good bits, and keep it playing.">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDjRunning}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                         </StackPanel>
 
                         <!-- Running: the session's record -->

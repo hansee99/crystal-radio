@@ -183,6 +183,15 @@ public sealed class MainViewModel : ObservableObject
         StartDjCommand = new RelayCommand(() => _ = StartDjAsync(),
             () => !IsDjRunning && !string.IsNullOrWhiteSpace(DjPrompt));
         StopDjCommand = new RelayCommand(StopDj, () => IsDjRunning);
+        ChangeDjVibeCommand = new RelayCommand(() => _ = ChangeDjVibeAsync(),
+            () => IsDjRunning && !IsChangingDjVibe && !string.IsNullOrWhiteSpace(DjPrompt));
+
+        // The prompt field does both jobs, so it binds to one command that routes by state —
+        // rather than the row swapping which command it targets, which the Enter-key binding
+        // can't express with a trigger anyway.
+        DjPromptSubmitCommand = new RelayCommand(
+            () => { if (IsDjRunning) _ = ChangeDjVibeAsync(); else _ = StartDjAsync(); },
+            () => !string.IsNullOrWhiteSpace(DjPrompt) && !IsChangingDjVibe);
 
         // Staged progress for the three long AI waits, each with its own Cancel (UX audit).
         SearchProgress = new StagedProgress { CancelCommand = new RelayCommand(() => _searchCts?.Cancel()) };
@@ -1072,6 +1081,13 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand CurateCommand { get; }
     public RelayCommand StartDjCommand { get; }
     public RelayCommand StopDjCommand { get; }
+
+    /// <summary>Re-points a running session at a new vibe. The mix keeps playing throughout.</summary>
+    public RelayCommand ChangeDjVibeCommand { get; }
+
+    /// <summary>What the prompt field's button and Enter key invoke: start when idle, change the
+    /// vibe when running.</summary>
+    public RelayCommand DjPromptSubmitCommand { get; }
     public RelayCommand<CuratedQueueItem> PlayQueueItemCommand { get; }
     public RelayCommand<LibrarySongItem> PlayLibrarySongCommand { get; }
 
@@ -1972,7 +1988,11 @@ public sealed class MainViewModel : ObservableObject
         set
         {
             if (SetProperty(ref _djPrompt, value))
+            {
                 StartDjCommand.RaiseCanExecuteChanged();
+                ChangeDjVibeCommand.RaiseCanExecuteChanged();
+                DjPromptSubmitCommand.RaiseCanExecuteChanged();
+            }
         }
     }
 
@@ -1993,6 +2013,8 @@ public sealed class MainViewModel : ObservableObject
             {
                 StartDjCommand.RaiseCanExecuteChanged();
                 StopDjCommand.RaiseCanExecuteChanged();
+                ChangeDjVibeCommand.RaiseCanExecuteChanged();
+                DjPromptSubmitCommand.RaiseCanExecuteChanged();
                 RaiseDjIndicatorChanged();
                 OnPropertyChanged(nameof(DjSourcesPanelState));
                 OnPropertyChanged(nameof(DjMixPanelState));
@@ -2248,6 +2270,74 @@ public sealed class MainViewModel : ObservableObject
             ? "Couldn't reach the station directory — it may be down. Try again in a few minutes."
             : "DJ mode hit a snag starting up — please try again.";
 
+    private bool _isChangingDjVibe;
+    /// <summary>True while a vibe change is sourcing. The mix is still playing — this only gates
+    /// the button and lets the panel say what's happening.</summary>
+    public bool IsChangingDjVibe
+    {
+        get => _isChangingDjVibe;
+        private set
+        {
+            if (!SetProperty(ref _isChangingDjVibe, value)) return;
+            ChangeDjVibeCommand.RaiseCanExecuteChanged();
+            DjPromptSubmitCommand.RaiseCanExecuteChanged();
+            OnPropertyChanged(nameof(DjMixEmptyMessage));
+        }
+    }
+
+    /// <summary>
+    /// Re-points a running session at a new vibe without interrupting playback.
+    ///
+    /// The queue's prompt changes immediately, so the very next top-up draws on the new vibe; the
+    /// harvest pool is swapped once its new stations have been sourced. What is already queued
+    /// plays out, which is the intended "gradual" handover — and in practice that's quick, because
+    /// harvest barely keeps ahead of playback, so only a song or two is usually queued ahead.
+    ///
+    /// Nothing here touches the local engine. Calling DjQueueService.StartAsync would have been
+    /// the obvious reuse and is exactly wrong: its SetQueue stops the current track dead.
+    /// </summary>
+    private async Task ChangeDjVibeAsync()
+    {
+        var prompt = DjPrompt;
+        if (!IsDjRunning || IsChangingDjVibe || string.IsNullOrWhiteSpace(prompt))
+            return;
+
+        IsChangingDjVibe = true;
+        DjError = null;
+        try
+        {
+            // Immediate: the next library top-up should already follow the new vibe, even while
+            // the pool is still being sourced.
+            _djQueue.ChangeVibe(prompt);
+
+            var swapped = await _djHarvest.ChangeVibeAsync(prompt, _djStartCts?.Token ?? default)
+                .ConfigureAwait(true);
+            if (!swapped)
+            {
+                // The old pool is still collecting, so this is a disappointment rather than a
+                // failure — say so without implying the session broke.
+                DjError = "Couldn't find stations for that — still collecting for the previous vibe.";
+                return;
+            }
+
+            DjSessionVibe = prompt;
+            RefreshDjSessionMeta();
+        }
+        catch (OperationCanceledException)
+        {
+            // Session stopped while sourcing — nothing to undo.
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("[Dj] vibe change failed", ex);
+            DjError = DescribeDjStartFailure(ex);
+        }
+        finally
+        {
+            IsChangingDjVibe = false;
+        }
+    }
+
     private void StopDj()
     {
         if (!IsDjRunning) return;
@@ -2290,6 +2380,7 @@ public sealed class MainViewModel : ObservableObject
         // left the panel saying "Still collecting — the mix will start on its own" after the
         // session had ended.
         IsDjRunning = false;
+        IsChangingDjVibe = false;
         DjStatus = string.Empty;
 
         ResetNowPlaying();
