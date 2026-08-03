@@ -39,9 +39,6 @@ public sealed class DjQueueService : IDisposable
     // clears the flag.
     private bool _libraryExhausted;
 
-    // The vibe generation the queue is currently accepting. Songs stamped with anything older
-    // were collected for a vibe the listener has since replaced.
-    private int _vibeGeneration;
 
     public DjQueueService(ILocalQueuePlayer local, ISongCurator curator, IDjHarvestSource harvest,
         int maxSeed = 20, int lowWatermark = 5)
@@ -73,7 +70,8 @@ public sealed class DjQueueService : IDisposable
             return;
         _prompt = prompt;
         _libraryExhausted = false;
-        _vibeGeneration = _harvest.VibeGeneration;
+        // Deliberately no generation bookkeeping here: at this moment the harvest hasn't sourced
+        // the new pool yet, so its counter still reads the OLD vibe. See OnSegmentIndexed.
 
         // Everything queued behind the current track was chosen for the old vibe. Letting it play
         // out means the change isn't audible for several minutes, which is the whole complaint in
@@ -95,12 +93,6 @@ public sealed class DjQueueService : IDisposable
         _prompt = prompt;
         _seen.Clear();
         _libraryExhausted = false;
-
-        // Adopt the harvester's counter rather than assuming 0. It is not reset between sessions,
-        // so a session started after an earlier one had changed vibe would otherwise sit at 0
-        // while every arriving song carried a higher stamp — and the queue would silently reject
-        // the lot.
-        _vibeGeneration = _harvest.VibeGeneration;
 
         // requireRelevance: the library holds harvested songs from every previous session, so
         // without it a deep-house prompt happily seeds itself with last week's happy hardcore.
@@ -155,10 +147,18 @@ public sealed class DjQueueService : IDisposable
             // Relevance here is the STATION, not the song: the harvest pool was sourced and
             // ranked for the vibe, so anything a current-vibe station plays qualifies, and a
             // per-song judgement would be an LLM call in the arrival path for no better answer.
-            if (harvested.VibeGeneration != _vibeGeneration)
+            //
+            // Compared against the harvester's counter live, never a copy taken earlier. A copy
+            // is wrong in both directions: it is stale across sessions (the counter does not
+            // reset), and it is stale across a vibe change, because ChangeVibe runs BEFORE the
+            // harvest has sourced the new pool and bumped the counter. That second case shipped:
+            // every song of the new vibe arrived stamped 1 against a copy of 0, the queue dropped
+            // all of them, and the session bridged live indefinitely with songs on disk.
+            var current = _harvest.VibeGeneration;
+            if (harvested.VibeGeneration != current)
             {
                 AppLog.Debug($"[DjQueue] dropping \"{song.Artist} - {song.Title}\" — harvested for "
-                             + $"an earlier vibe (gen {harvested.VibeGeneration}, now {_vibeGeneration})");
+                             + $"an earlier vibe (gen {harvested.VibeGeneration}, now {current})");
                 return;
             }
 

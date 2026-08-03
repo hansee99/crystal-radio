@@ -335,8 +335,8 @@ public sealed class DjQueueServiceTests : IDisposable
         var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
         sut.StartAsync("deep house").GetAwaiter().GetResult();
 
-        harvest.VibeGeneration = 1;          // the pool has swapped over
         sut.ChangeVibe("uptempo drum and bass");
+        harvest.VibeGeneration = 1;          // ...and some time later, the pool swaps over
 
         harvest.RaiseSegmentIndexed(Harvested(NewTempSongFile(), "Old", "From The Old Vibe"), generation: 0);
         PumpDispatcher();
@@ -355,14 +355,75 @@ public sealed class DjQueueServiceTests : IDisposable
         var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
         sut.StartAsync("deep house").GetAwaiter().GetResult();
 
-        harvest.VibeGeneration = 1;
         sut.ChangeVibe("uptempo drum and bass");
+        harvest.VibeGeneration = 1;
 
         var file = NewTempSongFile();
         harvest.RaiseSegmentIndexed(Harvested(file, "New", "For The New Vibe"));  // current generation
         PumpDispatcher();
 
         Assert.Equal(file, Assert.Single(Assert.Single(local.AppendCalls)).Path);
+    }
+
+    /// <summary>
+    /// The ordering trap, which shipped. MainViewModel.ChangeDjVibeAsync calls ChangeVibe FIRST —
+    /// on purpose, so library top-ups follow the new prompt straight away — and only then awaits
+    /// the harvest sourcing a new pool, which is what bumps the counter. In one real session that
+    /// await took 95 seconds.
+    ///
+    /// <para>So at the moment ChangeVibe runs, the harvester's counter still reads the OLD vibe.
+    /// A queue that copies it there is wrong for the whole session: every song of the new vibe
+    /// arrives stamped 1 against a copy of 0, all of them are dropped, and the mix bridges live
+    /// indefinitely with five perfectly good songs sitting on disk. Both tests above missed it by
+    /// bumping the counter before ChangeVibe — the one order production never uses.</para>
+    /// </summary>
+    [Fact]
+    public void ASongForTheNewVibeIsAppendedEvenThoughChangeVibeRanBeforeTheSwap()
+    {
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        curator.Enqueue([Song(NewTempSongFile(), "Motley Crue", "Shout At The Devil")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
+        sut.StartAsync("classic 80s hair metal").GetAwaiter().GetResult();
+
+        sut.ChangeVibe("classic west coast hip hop");   // counter still 0 — sourcing hasn't run
+        harvest.VibeGeneration = 1;                     // ...95 seconds later, the pool swaps
+
+        var file = NewTempSongFile();
+        harvest.RaiseSegmentIndexed(Harvested(file, "Warren G", "This D.J. (Remix Version)"));
+        PumpDispatcher();
+
+        Assert.Equal(file, Assert.Single(Assert.Single(local.AppendCalls)).Path);
+    }
+
+    /// <summary>A second change while songs from the first are still in QC. Only the newest vibe
+    /// is accepted — the counter is read per arrival, so there is no window where an intermediate
+    /// value is the one being compared against.</summary>
+    [Fact]
+    public void OnlyTheNewestVibeIsAcceptedAfterTwoChangesInARow()
+    {
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        curator.Enqueue([Song(NewTempSongFile(), "A1", "T1")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
+        sut.StartAsync("first").GetAwaiter().GetResult();
+
+        sut.ChangeVibe("second");
+        harvest.VibeGeneration = 1;
+        sut.ChangeVibe("third");
+        harvest.VibeGeneration = 2;
+
+        harvest.RaiseSegmentIndexed(Harvested(NewTempSongFile(), "Stale", "First Vibe"), generation: 0);
+        harvest.RaiseSegmentIndexed(Harvested(NewTempSongFile(), "Stale", "Second Vibe"), generation: 1);
+        var wanted = NewTempSongFile();
+        harvest.RaiseSegmentIndexed(Harvested(wanted, "Fresh", "Third Vibe"), generation: 2);
+        PumpDispatcher();
+
+        Assert.Equal(wanted, Assert.Single(Assert.Single(local.AppendCalls)).Path);
     }
 
     /// <summary>The cross-session trap: the harvester's counter is not reset between sessions, so
