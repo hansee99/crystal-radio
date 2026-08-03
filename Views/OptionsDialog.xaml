@@ -2,66 +2,179 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ctl="clr-namespace:RadioPlayer.Controls"
-        Title="Options" Width="480" SizeToContent="Height"
+        Title="Options"
+        Width="688" Height="552"
         Icon="/Assets/app.ico"
         FontFamily="{StaticResource UiFont}"
         TextElement.Foreground="{StaticResource TextBody}">
 
-    <StackPanel Margin="24,4,24,24">
-        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="AI-assisted search"/>
-        <TextBlock Style="{StaticResource DialogHint}" Margin="0,2,0,0"
-                   Text="Leave blank to turn it off — the player works fine without it."/>
+    <!-- Width/Height are the WINDOW; the visible surface is 28px smaller in both directions
+         because AppDialog's template insets by Margin="14" to give its drop shadow room to draw
+         inside a transparent window. That leaves 660 x 524 of surface: a 44px title strip (shared
+         chrome), a 420px body, a 60px footer. -->
 
-        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Anthropic API key"/>
-        <TextBox x:Name="ApiKeyBox" Style="{StaticResource DialogTextBox}"/>
+    <ctl:AppDialog.Resources>
+        <!-- The shared DialogFieldLabel carries Margin="0,14,0,5" for the old single-column stack,
+             where a label's TOP margin was the gap between fields. This layout spaces fields
+             itself, so labels only need their 6px lead-in. -->
+        <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource DialogFieldLabel}">
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+    </ctl:AppDialog.Resources>
 
-        <TextBlock x:Name="EnvHintText" Style="{StaticResource DialogHint}" Visibility="Collapsed"/>
+    <DockPanel>
 
-        <TextBlock Style="{StaticResource DialogHint}"
-                   Text="Your key is stored securely on this PC. Get one at console.anthropic.com."/>
+        <!-- ===== Footer ===== -->
+        <Border DockPanel.Dock="Bottom" Height="60" Background="{StaticResource WindowBg}"
+                BorderBrush="#12FFFFFF" BorderThickness="0,1,0,0" CornerRadius="0,0,11,11">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                        VerticalAlignment="Center" Margin="0,0,22,0">
+                <Button Content="Cancel" IsCancel="True" Style="{StaticResource DialogGhostButton}"/>
+                <Button Content="Save" IsDefault="True" Margin="10,0,0,0"
+                        Style="{StaticResource DialogPrimaryButton}" Click="Save_Click"/>
+            </StackPanel>
+        </Border>
 
-        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="Saved songs" Margin="0,24,0,2"/>
-        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Library folder"/>
-        <DockPanel>
-            <Button DockPanel.Dock="Right" Content="Browse…" Margin="8,0,0,0"
-                    Style="{StaticResource DialogGhostButton}" Click="BrowseLibrary_Click"/>
-            <TextBox x:Name="LibraryFolderBox" Style="{StaticResource DialogTextBox}"
-                     VerticalAlignment="Center"/>
-        </DockPanel>
-        <TextBlock Style="{StaticResource DialogHint}"
-                   Text="Songs you save land here, named &quot;Artist - Title&quot;. For personal use only — respect the stations' terms."/>
+        <!-- ===== Body: rail + pane =====
+             The top hairline is the title strip's underline from the mockup. Drawn here rather
+             than in AppDialog's template, which is shared with the About and station dialogs. -->
+        <Border BorderBrush="#12FFFFFF" BorderThickness="0,1,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="DJ mode" Margin="0,24,0,2"/>
+                <Border Grid.Column="0" Background="{StaticResource WindowBg}"
+                        BorderBrush="#12FFFFFF" BorderThickness="0,0,1,0">
+                    <ListBox x:Name="Rail" Margin="12,16" Background="Transparent"
+                             BorderThickness="0"
+                             ItemContainerStyle="{StaticResource DialogRailItem}"
+                             SelectedIndex="0" SelectionChanged="Rail_SelectionChanged">
+                        <ListBoxItem Content="AI-assisted search"/>
+                        <ListBoxItem Content="Saved songs"/>
+                        <ListBoxItem Content="DJ mode"/>
+                        <ListBoxItem Content="Track edges"/>
+                    </ListBox>
+                </Border>
 
-        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="DJ voice"/>
-        <ComboBox x:Name="DjVoiceBox" Style="{StaticResource DialogComboBox}"/>
-        <TextBlock Style="{StaticResource DialogHint}"
-                   Text="How the DJ introduces tracks and fills the gaps between them."/>
+                <!-- One panel per section, all four in the tree with only the selected one visible.
+                     Deliberately not the ContentControl-over-DataTemplates the mockup suggested: a
+                     DataTemplate's contents can't be reached by x:Name, and this dialog's load and
+                     save are named-control code-behind. Four cheap panels keep that intact and look
+                     identical on screen. -->
+                <Grid Grid.Column="1" Margin="22,20">
 
-        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Stations to listen to at once"/>
-        <TextBox x:Name="HarvesterCountBox" Style="{StaticResource DialogTextBox}"/>
-        <TextBlock Style="{StaticResource DialogHint}"
-                   Text="More stations means more variety, but more bandwidth and more AI cost — every song collected gets a description written for it. Takes effect the next time you start a DJ session."/>
+                    <!-- ===== 1. AI-assisted search ===== -->
+                    <StackPanel x:Name="AiSection">
+                        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="AI-assisted search"/>
+                        <TextBlock Style="{StaticResource DialogHint}" Margin="0,5,0,14" MaxWidth="360"
+                                   HorizontalAlignment="Left"
+                                   Text="Leave blank to turn it off — the player works fine without it."/>
 
-        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Disk space for DJ mode (MB)"/>
-        <TextBox x:Name="DiskSpaceBox" Style="{StaticResource DialogTextBox}"/>
-        <TextBlock Style="{StaticResource DialogHint}"
-                   Text="Collected songs are kept only while the mix might use them, then the oldest are deleted. Songs you save to your library are never touched."/>
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Anthropic API key"/>
+                        <TextBox x:Name="ApiKeyBox" Style="{StaticResource DialogTextBox}"/>
 
-        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="Track edges" Margin="0,24,0,2"/>
-        <TextBlock Style="{StaticResource DialogHint}" Margin="0,2,0,0"
-                   Text="Songs recorded off live radio don't always start and end exactly on the beat. These hide an imperfect cut by giving up a moment of the track. 0 turns them off."/>
+                        <Border x:Name="EnvHintBlock" Style="{StaticResource DialogNoteBlock}"
+                                Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="5" Height="5" Fill="{StaticResource Teal}"
+                                         VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                <TextBlock Style="{StaticResource DialogNoteText}"
+                                           Text="A key from your system is currently in use."/>
+                            </StackPanel>
+                        </Border>
 
-        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Skip the first … seconds of each track"/>
-        <TextBox x:Name="IntroSkipBox" Style="{StaticResource DialogTextBox}"/>
+                        <TextBlock Style="{StaticResource DialogHint}"
+                                   Text="Your key is stored securely on this PC. Get one at console.anthropic.com."/>
+                    </StackPanel>
 
-        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Stop … seconds before the end"/>
-        <TextBox x:Name="OutroGuardBox" Style="{StaticResource DialogTextBox}"/>
+                    <!-- ===== 2. Saved songs ===== -->
+                    <StackPanel x:Name="SongsSection" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="Saved songs"
+                                   Margin="0,0,0,14"/>
 
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
-            <Button Content="Cancel" IsCancel="True" Style="{StaticResource DialogGhostButton}"/>
-            <Button Content="Save" IsDefault="True" Margin="10,0,0,0"
-                    Style="{StaticResource DialogPrimaryButton}" Click="Save_Click"/>
-        </StackPanel>
-    </StackPanel>
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Library folder"/>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="Browse…" Margin="8,0,0,0"
+                                    Style="{StaticResource DialogGhostButton}" Click="BrowseLibrary_Click"/>
+                            <TextBox x:Name="LibraryFolderBox" Style="{StaticResource DialogTextBox}"
+                                     VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource DialogHint}"
+                                   Text="Songs you save land here, named &quot;Artist - Title&quot;. For personal use only — respect the stations' terms."/>
+                    </StackPanel>
+
+                    <!-- ===== 3. DJ mode — the tallest section, and the one that grows (#22) ===== -->
+                    <StackPanel x:Name="DjSection" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="DJ mode"
+                                   Margin="0,0,0,14"/>
+
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="DJ voice"/>
+                        <ComboBox x:Name="DjVoiceBox" Style="{StaticResource DialogComboBox}"
+                                  DisplayMemberPath="Label" SelectedValuePath="Value"/>
+                        <TextBlock Style="{StaticResource DialogHint}" Margin="0,6,0,16"
+                                   Text="How the DJ introduces tracks and fills the gaps between them."/>
+
+                        <!-- Numbers pair into two columns. A box holding "4" never needed the full
+                             width, and pairing them is what keeps the frame fixed when #22 adds
+                             fields instead of making the dialog taller. -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Style="{StaticResource DialogFieldLabel}" Margin="0,0,8,0"
+                                               Text="Stations at once" VerticalAlignment="Center"/>
+                                    <Border Style="{StaticResource DialogChip}">
+                                        <TextBlock Style="{StaticResource DialogChipText}" Text="NEXT SESSION"/>
+                                    </Border>
+                                </StackPanel>
+                                <TextBox x:Name="HarvesterCountBox" Style="{StaticResource DialogTextBox}"/>
+                                <TextBlock Style="{StaticResource DialogHint}"
+                                           Text="More stations means more variety, but more bandwidth and more AI cost — every song collected gets a description written for it."/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Disk space (MB)"/>
+                                <TextBox x:Name="DiskSpaceBox" Style="{StaticResource DialogTextBox}"/>
+                                <TextBlock Style="{StaticResource DialogHint}"
+                                           Text="Collected songs are kept only while the mix might use them, then the oldest are deleted. Songs you save are never touched."/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- ===== 4. Track edges — one explanation covers both, so no field hints ===== -->
+                    <StackPanel x:Name="EdgesSection" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="Track edges"/>
+                        <TextBlock Style="{StaticResource DialogHint}" Margin="0,5,0,14" MaxWidth="380"
+                                   HorizontalAlignment="Left"
+                                   Text="Songs recorded off live radio don't always start and end exactly on the beat. These hide an imperfect cut by giving up a moment of the track. 0 turns them off."/>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Skip the first … seconds"/>
+                                <TextBox x:Name="IntroSkipBox" Style="{StaticResource DialogTextBox}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Stop … seconds before the end"/>
+                                <TextBox x:Name="OutroGuardBox" Style="{StaticResource DialogTextBox}"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+    </DockPanel>
 </ctl:AppDialog>

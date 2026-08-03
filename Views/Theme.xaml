@@ -48,8 +48,11 @@
     <SolidColorBrush x:Key="Teal"          Color="#FF56C7BA"/>
     <SolidColorBrush x:Key="TealBright"    Color="#FF62D2C4"/>
     <SolidColorBrush x:Key="TealText"      Color="#FFCDEEE7"/>
+    <SolidColorBrush x:Key="TealTint07"    Color="#1256C7BA"/>
     <SolidColorBrush x:Key="TealTint10"    Color="#1A56C7BA"/>
     <SolidColorBrush x:Key="TealTint16"    Color="#2956C7BA"/>
+    <SolidColorBrush x:Key="TealBorder22"  Color="#3856C7BA"/>
+    <SolidColorBrush x:Key="TealBorder35"  Color="#5956C7BA"/>
 
     <!-- Primary play button gradient -->
     <LinearGradientBrush x:Key="PlayBrush" StartPoint="0,0" EndPoint="1,1">
@@ -1072,8 +1075,15 @@
                                             <Path DockPanel.Dock="Right" Data="M 0 0 L 8 0 L 4 5 Z"
                                                   Fill="{StaticResource TextMuted}" Margin="0,0,12,0"
                                                   VerticalAlignment="Center"/>
+                                            <!-- ContentTemplate is NOT optional here. Without it the
+                                                 presenter falls back to ToString() on the selected
+                                                 object, so a ComboBox with a DisplayMemberPath shows
+                                                 its raw item ("VoiceOption { Value = Warm, ... }")
+                                                 in the closed box while the open list looks right. -->
                                             <ContentPresenter Margin="11,8" VerticalAlignment="Center"
                                                               Content="{Binding SelectionBoxItem,
+                                                                        RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                              ContentTemplate="{Binding SelectionBoxItemTemplate,
                                                                         RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
                                         </DockPanel>
                                     </Border>
@@ -1124,6 +1134,83 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- ===== Options dialog: left-rail sections =====
+         A rail item is NOT a PillTab: the pill centres its label in a hugging capsule, while a
+         rail item fills the rail's width, left-aligns, and carries a 2px selection bar at its
+         leading edge. Templated end to end so no system selection highlight can show through. -->
+    <Style x:Key="DialogRailItem" TargetType="ListBoxItem">
+        <Setter Property="MinHeight" Value="34"/>
+        <Setter Property="Margin" Value="0,0,0,3"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{StaticResource TextFaint}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Grid>
+                        <Border x:Name="fill" CornerRadius="8" Background="Transparent"
+                                BorderBrush="Transparent" BorderThickness="1"/>
+                        <Border x:Name="bar" Width="2" Height="18" CornerRadius="0,2,2,0"
+                                HorizontalAlignment="Left" VerticalAlignment="Center"
+                                Background="Transparent"/>
+                        <ContentPresenter Margin="11,0,10,0" VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="fill" Property="Background" Value="{StaticResource FillSubtle}"/>
+                        </Trigger>
+                        <!-- Selection last so it wins over hover on the item you are pointing at. -->
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="fill" Property="Background" Value="{StaticResource TealTint10}"/>
+                            <Setter TargetName="fill" Property="BorderBrush" Value="{StaticResource TealBorder35}"/>
+                            <Setter TargetName="bar" Property="Background" Value="{StaticResource Teal}"/>
+                            <Setter Property="Foreground" Value="{StaticResource TealText}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Marks the one setting that cannot apply until the next DJ session. Deliberately neutral
+         grey rather than a warning colour: one field wearing it must not imply the rest are
+         stale, which is exactly what the old blanket "restart the app" banner did imply. -->
+    <Style x:Key="DialogChip" TargetType="Border">
+        <Setter Property="Background" Value="#0DFFFFFF"/>
+        <Setter Property="BorderBrush" Value="#1FFFFFFF"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="7,1,7,2"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="DialogChipText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="9.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{StaticResource TextFaint}"/>
+    </Style>
+
+    <!-- Informational, not a warning: teal tint, no icon beyond a dot. Used for "a key from your
+         system is currently in use", which reports a fact rather than asking for anything. -->
+    <Style x:Key="DialogNoteBlock" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource TealTint07}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource TealBorder22}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="7"/>
+        <Setter Property="Padding" Value="10,6,10,7"/>
+        <Setter Property="Margin" Value="0,8,0,0"/>
+    </Style>
+
+    <Style x:Key="DialogNoteText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11.5"/>
+        <Setter Property="Foreground" Value="#FF9FD9CF"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
     <Style x:Key="DialogSectionHeader" TargetType="TextBlock">

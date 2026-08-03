@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Text;
 using System.Windows;
+using System.Windows.Controls;
 using RadioPlayer.Controls;
 using RadioPlayer.Services;
 
@@ -15,14 +17,32 @@ namespace RadioPlayer;
 /// end", not "OutroGuardSeconds"), and the two disk caps are presented as one total, because
 /// showing only one of them was itself reported as a bug.
 ///
+/// <para>Laid out as four rail sections at a fixed size, replacing a single ~800px column. The
+/// point of the rail isn't only today's six fields: pairing the numeric fields into two columns
+/// leaves the pane room for about five DJ settings, so #22 can land without the frame moving.</para>
+///
 /// <para>Saving applies immediately — <c>MainWindow.ApplySettings</c> pushes the values into the
 /// running services. The one exception is how many stations are listened to at once, which is read
-/// when a DJ session starts; that field says so in its own hint rather than a blanket "restart the
-/// app" notice at the bottom.</para>
+/// when a DJ session starts; that field wears a "next session" chip rather than the whole dialog
+/// carrying a "restart the app" banner.</para>
 /// </summary>
 public partial class OptionsDialog : AppDialog
 {
     private readonly SettingsStore _store;
+
+    /// <summary>
+    /// A voice as the dropdown shows it. <see cref="DjPersonality"/>'s member names are what goes
+    /// in the settings file; "LateNight" is not something to show a listener.
+    ///
+    /// <para>ToString is overridden because DialogComboBox's template renders the CLOSED box
+    /// through a plain ContentPresenter. DisplayMemberPath styles the open list but leaves the box
+    /// falling back to ToString — which for a record is its whole shape,
+    /// "VoiceOption { Value = Warm, Label = Warm }". Seen in a render check.</para>
+    /// </summary>
+    private sealed record VoiceOption(DjPersonality Value, string Label)
+    {
+        public override string ToString() => Label;
+    }
 
     public OptionsDialog(SettingsStore store)
     {
@@ -34,8 +54,11 @@ public partial class OptionsDialog : AppDialog
         ApiKeyBox.Text = store.GetApiKey() ?? string.Empty;
         LibraryFolderBox.Text = settings.ResolveLibraryFolder();
 
-        DjVoiceBox.ItemsSource = Enum.GetValues<DjPersonality>();
-        DjVoiceBox.SelectedItem = settings.ResolveDjPersonality();
+        DjVoiceBox.ItemsSource = Enum.GetValues<DjPersonality>()
+            .Select(v => new VoiceOption(v, DisplayName(v)))
+            .ToArray();
+        DjVoiceBox.SelectedValue = settings.ResolveDjPersonality();
+
         HarvesterCountBox.Text = settings.DjHarvesterCount.ToString(CultureInfo.CurrentCulture);
         DiskSpaceBox.Text = settings.DjDiskSpaceMb.ToString(CultureInfo.CurrentCulture);
         IntroSkipBox.Text = settings.IntroSkipSeconds.ToString("0.#", CultureInfo.CurrentCulture);
@@ -46,12 +69,56 @@ public partial class OptionsDialog : AppDialog
         var hasStored = !string.IsNullOrWhiteSpace(ApiKeyBox.Text);
         var envKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
         if (!hasStored && !string.IsNullOrWhiteSpace(envKey))
-        {
-            EnvHintText.Text = "A key from your system is currently in use.";
-            EnvHintText.Visibility = Visibility.Visible;
-        }
+            EnvHintBlock.Visibility = Visibility.Visible;
+
+        ShowFolderTail();
 
         Loaded += (_, _) => { ApiKeyBox.Focus(); ApiKeyBox.SelectAll(); };
+    }
+
+    /// <summary>
+    /// Splits a personality's member name for display: "LateNight" → "Late night". Done by rule
+    /// rather than a lookup table so a personality added to the enum reads correctly without
+    /// anyone remembering to add it here too.
+    /// </summary>
+    internal static string DisplayName(DjPersonality value)
+    {
+        var name = value.ToString();
+        var text = new StringBuilder(name.Length + 4);
+
+        foreach (var c in name)
+        {
+            // A capital after the first character starts a new word, and only the first word keeps
+            // its capital — so it reads as a sentence rather than a Title Case Label.
+            if (char.IsUpper(c) && text.Length > 0)
+            {
+                text.Append(' ');
+                text.Append(char.ToLowerInvariant(c));
+            }
+            else
+            {
+                text.Append(c);
+            }
+        }
+
+        return text.ToString();
+    }
+
+    private void Rail_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // Four sibling panels rather than a ContentControl over DataTemplates — see the class
+        // remarks. Nothing is created or destroyed here, so switching sections cannot lose a value
+        // that has been typed but not yet saved.
+        if (AiSection is null)
+            return; // fires during InitializeComponent, before the panels exist
+
+        AiSection.Visibility = Shown(0);
+        SongsSection.Visibility = Shown(1);
+        DjSection.Visibility = Shown(2);
+        EdgesSection.Visibility = Shown(3);
+
+        Visibility Shown(int index) =>
+            Rail.SelectedIndex == index ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void BrowseLibrary_Click(object sender, RoutedEventArgs e)
@@ -62,7 +129,25 @@ public partial class OptionsDialog : AppDialog
             InitialDirectory = LibraryFolderBox.Text
         };
         if (dialog.ShowDialog(this) == true)
+        {
             LibraryFolderBox.Text = dialog.FolderName;
+            ShowFolderTail();
+        }
+    }
+
+    /// <summary>
+    /// Keeps the END of the library path in view, and puts the whole thing on the tooltip.
+    ///
+    /// <para>The mockup truncates long paths from the LEFT, on the reasoning that the drive letter
+    /// matters less than the folder. A WPF TextBox can't render a leading ellipsis — only a
+    /// TextBlock can, and swapping to one would cost the ability to paste a path — so this reaches
+    /// the same intent with the real control: scrolled to the tail, full path on hover.</para>
+    /// </summary>
+    private void ShowFolderTail()
+    {
+        LibraryFolderBox.ToolTip = LibraryFolderBox.Text;
+        LibraryFolderBox.CaretIndex = LibraryFolderBox.Text.Length;
+        LibraryFolderBox.ScrollToEnd();
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
@@ -74,7 +159,7 @@ public partial class OptionsDialog : AppDialog
         var folder = LibraryFolderBox.Text.Trim();
         settings.LibraryFolder = string.IsNullOrWhiteSpace(folder) ? null : folder;
 
-        if (DjVoiceBox.SelectedItem is DjPersonality voice)
+        if (DjVoiceBox.SelectedValue is DjPersonality voice)
             settings.DjPersonality = voice.ToString();
 
         // Unparseable input keeps the current value rather than resetting to a default — a typo

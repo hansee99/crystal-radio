@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300;0,400;0,500;0,600;0,700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#0A1211; }
+  body { font-family:'Hanken Grotesk', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#56C7BA; text-decoration:none; }
+  a:hover { color:#8FE0D5; }
+</style>
+</helmet>
+
+<div style="background:#0A1211;min-height:100vh;box-sizing:border-box;min-width:1480px;padding:44px 44px 96px;display:flex;flex-direction:column;gap:34px">
+
+  <div style="width:1392px;margin:0 auto;display:flex;justify-content:space-between;align-items:flex-end;gap:40px;flex-wrap:wrap">
+    <div style="display:flex;flex-direction:column;gap:9px;max-width:80ch">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.18em;color:#7D938E;text-transform:uppercase">Mockup · Options dialog</div>
+      <div style="font-size:27px;color:#F3F9F7;font-weight:400;letter-spacing:-0.01em">Left-rail sections, fixed 660 × 526</div>
+      <div style="font-size:14.5px;color:#8A9F9A;line-height:1.65;text-wrap:pretty">All four sections plus the environment-key state. Rails are live — click any section in any dialog. The 800px column becomes a fixed frame that stays exactly this size when issue #22 lands: the numeric fields pair into two columns, and the pane is sized for five DJ fields from the start, not three.</div>
+    </div>
+    <div style="display:flex;gap:8px;padding:5px;border-radius:11px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)">
+      <button type="button" onClick="{{ toggleRedlines }}" style="{{ redlineBtn }}">Redlines</button>
+      <button type="button" onClick="{{ toggleGrowth }}" style="{{ growthBtn }}">#22 growth</button>
+    </div>
+  </div>
+
+  <div style="width:1392px;margin:0 auto;display:flex;flex-wrap:wrap;gap:36px">
+    <sc-for list="{{ dialogs }}" as="d" hint-placeholder-count="5">
+      <div style="display:flex;flex-direction:column;gap:13px;width:660px">
+
+        <div style="display:flex;align-items:center;gap:11px;min-height:20px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.1em;color:#56C7BA">{{ d.tag }}</span>
+          <span style="font-size:13.5px;color:#BCCCC8">{{ d.caption }}</span>
+          <sc-if value="{{ d.isTallest }}" hint-placeholder-val="{{ false }}">
+            <span style="padding:2px 8px 3px;border-radius:5px;background:rgba(86,199,186,0.16);border:1px solid rgba(86,199,186,0.45);color:#7FDDD0;font-size:9.5px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase">Tallest section</span>
+          </sc-if>
+        </div>
+
+        <div style="width:660px;box-sizing:border-box;border-radius:12px;overflow:hidden;background:#06110F;border:1px solid rgba(255,255,255,0.1);box-shadow:0 24px 60px rgba(0,0,0,0.6);display:flex;flex-direction:column">
+
+          <div style="height:46px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 10px 0 22px;border-bottom:1px solid rgba(255,255,255,0.07)">
+            <span style="font-size:13.5px;font-weight:600;color:#E7F0EE;letter-spacing:0.01em">Options</span>
+            <div style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#8A9F9A;font-size:14px">✕</div>
+          </div>
+
+          <div style="height:420px;flex:none;display:flex;min-height:0">
+
+            <div style="width:180px;flex:none;box-sizing:border-box;padding:16px 12px;border-right:1px solid rgba(255,255,255,0.07);background:#050D0C;display:flex;flex-direction:column;gap:3px">
+              <sc-for list="{{ d.rail }}" as="item" hint-placeholder-count="4">
+                <button type="button" onClick="{{ item.select }}" style="{{ item.style }}">
+                  <span style="{{ item.barStyle }}"></span>
+                  <span>{{ item.label }}</span>
+                </button>
+              </sc-for>
+            </div>
+
+            <div style="flex:1;min-width:0;box-sizing:border-box;padding:20px 22px;display:flex;flex-direction:column;gap:14px">
+
+              <div style="display:flex;flex-direction:column;gap:5px;flex:none">
+                <div style="font-size:14px;font-weight:600;color:#F3F9F7">{{ d.sectionTitle }}</div>
+                <sc-if value="{{ d.sectionHint }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size:11.5px;color:#7D938E;line-height:1.55;max-width:52ch">{{ d.sectionHint }}</div>
+                </sc-if>
+              </div>
+
+              <div style="flex:1;min-height:0;display:flex;flex-wrap:wrap;align-content:flex-start;gap:16px">
+                <sc-for list="{{ d.fields }}" as="f" hint-placeholder-count="3">
+                  <div style="{{ f.wrapStyle }}">
+
+                    <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+                      <span style="font-size:12px;color:#BCCCC8">{{ f.label }}</span>
+                      <sc-if value="{{ f.chip }}" hint-placeholder-val="{{ false }}">
+                        <span style="padding:1px 7px 2px;border-radius:4px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);color:#8A9F9A;font-size:9.5px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase">{{ f.chip }}</span>
+                      </sc-if>
+                    </div>
+
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <div style="{{ f.inputStyle }}">
+                        <span style="{{ f.valueStyle }}">{{ f.value }}</span>
+                        <sc-if value="{{ f.isCombo }}" hint-placeholder-val="{{ false }}">
+                          <span style="font-size:9px;color:#8A9F9A;flex:none">▼</span>
+                        </sc-if>
+                      </div>
+                      <sc-if value="{{ f.hasBrowse }}" hint-placeholder-val="{{ false }}">
+                        <button type="button" style="flex:none;height:34px;padding:0 15px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.14);color:#BCCCC8;font-size:12px;font-weight:500;font-family:inherit;cursor:pointer">Browse…</button>
+                      </sc-if>
+                    </div>
+
+                    <sc-if value="{{ f.envNote }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;align-items:center;gap:7px;padding:6px 10px 7px;border-radius:7px;background:rgba(86,199,186,0.07);border:1px solid rgba(86,199,186,0.22)">
+                        <span style="width:5px;height:5px;border-radius:50%;background:#56C7BA;flex:none"></span>
+                        <span style="font-size:11.5px;color:#9FD9CF;line-height:1.4">A key from your system is currently in use.</span>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{ f.hint }}" hint-placeholder-val="{{ false }}">
+                      <div style="font-size:11.5px;color:#7D938E;line-height:1.5">{{ f.hint }}</div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="height:60px;flex:none;display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:0 22px;border-top:1px solid rgba(255,255,255,0.07);background:#050D0C">
+            <button type="button" style="height:34px;padding:0 18px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.16);color:#BCCCC8;font-size:12.5px;font-weight:500;font-family:inherit;cursor:pointer">Cancel</button>
+            <button type="button" style="height:34px;padding:0 22px;border-radius:8px;background:#56C7BA;border:none;color:#04100E;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer">Save</button>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+  <sc-if value="{{ showRedlines }}" hint-placeholder-val="{{ true }}">
+    <div style="width:1392px;margin:0 auto;display:flex;flex-direction:column;gap:16px">
+
+      <div style="display:flex;align-items:baseline;gap:16px;margin-top:18px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#56C7BA;letter-spacing:0.08em">SPEC</div>
+        <div style="font-size:24px;font-weight:400;color:#F3F9F7;letter-spacing:-0.01em">Measurements &amp; behaviour</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+
+        <div style="border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);border-radius:12px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Frame &amp; regions</div>
+          <sc-for list="{{ specFrame }}" as="s" hint-placeholder-count="7">
+            <div style="display:flex;justify-content:space-between;gap:16px;align-items:baseline">
+              <span style="font-size:13px;color:#BCCCC8;line-height:1.5">{{ s.k }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#CDEEE7;flex:none;text-align:right">{{ s.v }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);border-radius:12px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Rail item</div>
+          <sc-for list="{{ specRail }}" as="s" hint-placeholder-count="7">
+            <div style="display:flex;justify-content:space-between;gap:16px;align-items:baseline">
+              <span style="font-size:13px;color:#BCCCC8;line-height:1.5">{{ s.k }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#CDEEE7;flex:none;text-align:right">{{ s.v }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);border-radius:12px;padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">Field stack</div>
+          <sc-for list="{{ specField }}" as="s" hint-placeholder-count="7">
+            <div style="display:flex;justify-content:space-between;gap:16px;align-items:baseline">
+              <span style="font-size:13px;color:#BCCCC8;line-height:1.5">{{ s.k }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#CDEEE7;flex:none;text-align:right">{{ s.v }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+        <div style="border:1px solid rgba(86,199,186,0.28);background:rgba(86,199,186,0.05);border-radius:12px;padding:22px 24px;display:flex;flex-direction:column;gap:12px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#56C7BA">One new component to add to Theme.xaml</div>
+          <div style="font-size:14px;color:#F3F9F7;font-weight:500;font-family:'IBM Plex Mono',monospace">DialogRailItem</div>
+          <div style="font-size:13.5px;line-height:1.65;color:#D8E5E1;text-wrap:pretty">A <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">ListBox</span> <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">ItemContainerStyle</span> — <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">PillTab</span> can't carry the 2px selection bar or left-align at full width. Everything else reuses existing styles: <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">DialogSectionHeader</span>, <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">DialogFieldLabel</span>, <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">DialogHint</span>, <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">DialogTextBox</span>, <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">DialogComboBox</span>, <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">DialogPrimaryButton</span>, <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">DialogGhostButton</span>.</div>
+          <div style="font-size:13.5px;line-height:1.65;color:#D8E5E1">The pane itself is a <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">ContentControl</span> switching four <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">DataTemplate</span>s off the rail's <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">SelectedItem</span> — no <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#CDEEE7">TabControl</span> chrome to override.</div>
+        </div>
+
+        <div style="border:1px solid rgba(255,255,255,0.08);background:rgba(4,11,10,0.5);border-radius:12px;padding:22px 24px;display:flex;flex-direction:column;gap:13px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#8A9F9A">Decisions worth confirming</div>
+          <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="5">
+            <div style="display:flex;gap:11px">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#56C7BA;padding-top:2px;flex:none">{{ d.n }}</span>
+              <span style="font-size:13.5px;line-height:1.6;color:#D8E5E1"><span style="color:#F3F9F7;font-weight:500">{{ d.head }}</span> {{ d.body }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1480,&quot;height&quot;:1500}}">
+class Component extends DCLogic {
+  state = {
+    sel: { a: 0, b: 1, c: 2, d: 3, e: 0 },
+    showRedlines: true,
+    growth: false,
+  };
+
+  SECTIONS = ['AI-assisted search', 'Saved songs', 'DJ mode', 'Track edges'];
+
+  toggleStyle(on) {
+    return 'height:32px;padding:0 15px;border-radius:8px;border:1px solid ' +
+      (on ? 'rgba(86,199,186,0.45)' : 'transparent') +
+      ';background:' + (on ? 'rgba(86,199,186,0.14)' : 'transparent') +
+      ';color:' + (on ? '#CDEEE7' : '#8A9F9A') +
+      ';font-size:12.5px;font-weight:' + (on ? '600' : '500') +
+      ';font-family:inherit;cursor:pointer';
+  }
+
+  railStyle(active) {
+    return 'position:relative;display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;' +
+      'min-height:34px;padding:0 10px 0 11px;border-radius:8px;text-align:left;cursor:pointer;' +
+      'font-family:inherit;font-size:12.5px;line-height:1.3;' +
+      'border:1px solid ' + (active ? 'rgba(86,199,186,0.35)' : 'transparent') + ';' +
+      'background:' + (active ? 'rgba(86,199,186,0.10)' : 'transparent') + ';' +
+      'color:' + (active ? '#CDEEE7' : '#8A9F9A') + ';' +
+      'font-weight:' + (active ? '600' : '500') + ';';
+  }
+
+  barStyle(active) {
+    return 'position:absolute;left:0;top:50%;transform:translateY(-50%);width:2px;height:18px;' +
+      'border-radius:0 2px 2px 0;flex:none;background:' + (active ? '#56C7BA' : 'transparent') + ';';
+  }
+
+  inputStyle(half) {
+    return 'flex:1;min-width:0;box-sizing:border-box;height:34px;display:flex;align-items:center;' +
+      'justify-content:space-between;gap:8px;padding:0 11px;border-radius:8px;' +
+      'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);' +
+      (half ? 'max-width:none;' : '');
+  }
+
+  valueStyle(mono, muted) {
+    return 'font-size:13px;color:' + (muted ? '#8A9F9A' : '#E7F0EE') + ';' +
+      (mono ? "font-family:'IBM Plex Mono',monospace;font-size:12px;" : '') +
+      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:' + (mono ? 'rtl' : 'ltr') + ';text-align:left;';
+  }
+
+  wrap(basis) {
+    return 'box-sizing:border-box;flex:0 0 ' + basis + ';min-width:0;display:flex;flex-direction:column;gap:6px;';
+  }
+
+  fields(sectionIndex, envKey) {
+    const full = this.wrap('100%');
+    const half = this.wrap('calc(50% - 8px)');
+
+    if (sectionIndex === 0) {
+      return [{
+        label: 'Anthropic API key',
+        value: envKey ? 'Leave blank to keep using your system key' : 'sk-ant-api03-••••••••••••••••••••••••4QAA',
+        valueStyle: this.valueStyle(!envKey, envKey),
+        inputStyle: this.inputStyle(false),
+        wrapStyle: full,
+        hint: 'Your key is stored securely on this PC. Get one at console.anthropic.com.',
+        envNote: envKey,
+      }];
+    }
+
+    if (sectionIndex === 1) {
+      return [{
+        label: 'Library folder',
+        value: 'C:\\Users\\hans\\Documents\\Music Archive\\Crystal Radio\\Saved Songs',
+        valueStyle: this.valueStyle(true, false),
+        inputStyle: this.inputStyle(false),
+        wrapStyle: full,
+        hasBrowse: true,
+        hint: 'Songs you save land here, named "Artist - Title". For personal use only — respect the stations\u2019 terms.',
+      }];
+    }
+
+    if (sectionIndex === 2) {
+      const base = [
+        {
+          label: 'DJ voice',
+          value: 'Warm',
+          valueStyle: this.valueStyle(false, false),
+          inputStyle: this.inputStyle(false),
+          wrapStyle: full,
+          isCombo: true,
+          hint: 'How the DJ introduces tracks and fills the gaps between them.',
+        },
+        {
+          label: 'Stations at once',
+          chip: 'Next session',
+          value: '4',
+          valueStyle: this.valueStyle(false, false),
+          inputStyle: this.inputStyle(true),
+          wrapStyle: half,
+          hint: 'More stations means more variety, but more bandwidth and more AI cost — every song collected gets a description written for it.',
+        },
+        {
+          label: 'Disk space (MB)',
+          value: '750',
+          valueStyle: this.valueStyle(false, false),
+          inputStyle: this.inputStyle(true),
+          wrapStyle: half,
+          hint: 'Collected songs are kept only while the mix might use them, then the oldest are deleted. Songs you save are never touched.',
+        },
+      ];
+      if (!this.state.growth) return base;
+      return base.concat([
+        {
+          label: 'Minimum song length',
+          value: '90 sec',
+          valueStyle: this.valueStyle(false, false),
+          inputStyle: this.inputStyle(true),
+          wrapStyle: half,
+          hint: 'Shorter clips are treated as jingles.',
+        },
+        {
+          label: 'Talk over intros',
+          value: 'Sometimes',
+          valueStyle: this.valueStyle(false, false),
+          inputStyle: this.inputStyle(true),
+          wrapStyle: half,
+          isCombo: true,
+          hint: 'How often the DJ talks over intros.',
+        },
+      ]);
+    }
+
+    return [
+      {
+        label: 'Skip the first … seconds',
+        value: '3',
+        valueStyle: this.valueStyle(false, false),
+        inputStyle: this.inputStyle(true),
+        wrapStyle: half,
+      },
+      {
+        label: 'Stop … seconds before the end',
+        value: '3',
+        valueStyle: this.valueStyle(false, false),
+        inputStyle: this.inputStyle(true),
+        wrapStyle: half,
+      },
+    ];
+  }
+
+  sectionHint(i) {
+    return [
+      'Leave blank to turn it off — the player works fine without it.',
+      null,
+      null,
+      'Songs recorded off live radio don\u2019t always start and end exactly on the beat. These hide an imperfect cut by giving up a moment of the track. 0 turns them off.',
+    ][i];
+  }
+
+  dialog(key, tag, caption, envKey) {
+    const sel = this.state.sel[key];
+    return {
+      tag,
+      caption,
+      isTallest: sel === 2,
+      sectionTitle: this.SECTIONS[sel],
+      sectionHint: this.sectionHint(sel),
+      fields: this.fields(sel, envKey),
+      rail: this.SECTIONS.map((label, i) => ({
+        label,
+        style: this.railStyle(i === sel),
+        barStyle: this.barStyle(i === sel),
+        select: () => this.setState((s) => ({ sel: Object.assign({}, s.sel, { [key]: i }) })),
+      })),
+    };
+  }
+
+  renderVals() {
+    return {
+      showRedlines: this.state.showRedlines,
+      redlineBtn: this.toggleStyle(this.state.showRedlines),
+      growthBtn: this.toggleStyle(this.state.growth),
+      toggleRedlines: () => this.setState((s) => ({ showRedlines: !s.showRedlines })),
+      toggleGrowth: () => this.setState((s) => ({ growth: !s.growth, sel: Object.assign({}, s.sel, { c: 2 }) })),
+
+      dialogs: [
+        this.dialog('a', '01', 'AI-assisted search — one field, room to breathe', false),
+        this.dialog('b', '02', 'Saved songs — long path truncates from the left', false),
+        this.dialog('c', '03', 'DJ mode — numbers pair into two columns', false),
+        this.dialog('d', '04', 'Track edges — the pair shares one explanation', false),
+        this.dialog('e', '05', 'Environment key in use', true),
+      ],
+
+      specFrame: [
+        { k: 'Dialog', v: '660 × 526' },
+        { k: 'Title row (existing)', v: '46px' },
+        { k: 'Body row', v: '420px' },
+        { k: 'Footer', v: '60px' },
+        { k: 'Rail width', v: '180px' },
+        { k: 'Pane padding', v: '20 / 22' },
+        { k: 'Surface · rail', v: '#06110F · #050D0C' },
+        { k: 'Hairlines', v: 'white 7%' },
+      ],
+      specRail: [
+        { k: 'Item height', v: '34px min' },
+        { k: 'Item gap', v: '3px' },
+        { k: 'Padding', v: '0 10 0 11' },
+        { k: 'Radius', v: '8px' },
+        { k: 'Selected fill', v: 'TealTint10' },
+        { k: 'Selected border', v: 'teal 35%' },
+        { k: 'Selection bar', v: '2 × 18px' },
+        { k: 'Label', v: '12.5px 600 / 500' },
+      ],
+      specField: [
+        { k: 'Label → input', v: '6px' },
+        { k: 'Input → hint', v: '6px' },
+        { k: 'Field → field', v: '16px' },
+        { k: 'Header → fields', v: '14px' },
+        { k: 'Input height', v: '34px' },
+        { k: 'Input radius', v: '8px' },
+        { k: 'Half-column basis', v: 'calc(50% - 8px)' },
+        { k: 'Footer buttons', v: '34px, 10px gap' },
+      ],
+      decisions: [
+        { n: '01', head: 'Per-field "Next session" chip.', body: 'Replaces the sentence appended to that hint — quiet enough that one field wearing it doesn\u2019t imply the others are stale. The blanket restart banner is gone.' },
+        { n: '02', head: 'Long paths truncate from the left.', body: 'The drive letter matters less than the folder, so the ellipsis goes at the front — see section 02, where the real path is four levels deep. Full path on hover.' },
+        { n: '03', head: 'Numeric fields are half-width.', body: 'A 34px box holding "4" doesn\u2019t need 420px. The pane is sized for five DJ fields from the start — 346px of field area against the 309px five fields need — so #22 lands without the frame moving. Toggle "#22 growth" to check it.' },
+        { n: '04', head: 'Env-key note sits between input and hint.', body: 'Teal-tinted 7% block with a dot, not amber — informational, not a warning. The key box shows a muted placeholder rather than a fake value.' },
+        { n: '05', head: 'Dropdown labels get spaces.', body: '"Late night", not "LateNight". Display labels only; the stored enum is untouched.' },
+        { n: '06', head: 'Track edges needs no field hints.', body: 'The section hint covers both, so the two boxes sit side by side with labels only — the shortest pane, and it looks deliberate rather than empty.' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
