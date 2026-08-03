@@ -13,6 +13,7 @@ internal sealed record WindowFeatures(
     double CentroidVar,
     double RolloffMean,
     double Flatness,
+    double PulseStrength, // envelope-spectrum peak/mean over 0.5-8 Hz — high for a steady beat
     double Confidence);
 
 /// <summary>Whole-file result: per-window features + a verdict and the music span (edge-trim).</summary>
@@ -40,6 +41,12 @@ internal sealed class MusicDetector
     internal const double WindowSeconds = 1.0;    // 1 s decision window
     private const double WindowHopSeconds = 0.5;  // 50% overlap
 
+    // Pulse/beat measurement. A longer context than the decision window is required — see
+    // PulseStrength for why two beats can't establish a period. 0.5-8 Hz is 30-480 BPM.
+    private const double PulseContextSeconds = 8.0;
+    private const double PulseLowHz = 0.5;
+    private const double PulseHighHz = 8.0;
+
     // Music confidence = sigmoid(bias + Σ wᵢ·featureᵢ). A class-weighted logistic regression
     // fitted to a labelled corpus of 106 clips (~41.6k windows): the original 69-clip corpus
     // (mainstream pop/rock/disco + ads/talk/jingles) plus 37 whole harvested songs across
@@ -65,6 +72,11 @@ internal sealed class MusicDetector
     private const double Lr_CentroidVar = -8.0104721e-07;
     private const double Lr_RolloffMean = -0.00026307206;
     private const double Lr_Flatness = 9.9606074e-09;
+    // Zero until a re-fit earns it a value (issue #8). The feature is computed and dumped to
+    // CSV so its separation can be measured, but it must not shift a single verdict before
+    // that: DjMusicFractionFloor already had to be disabled once for silently rejecting whole
+    // genres, and shipping an unfitted weight is the same mistake.
+    private const double Lr_PulseStrength = 0.0;
 
     public FileResult Analyze(float[] mono, int sampleRate)
     {
@@ -155,12 +167,68 @@ internal sealed class MusicDetector
             var (rMean, _) = MeanVar(rolloff, lo, hi);
             var (flMean, _) = MeanVar(flatness, lo, hi);
 
-            var confidence = Confidence(mod4, zMean, zVar, lowE, fMean, fVar, cMean, cVar, rMean, flMean);
+            var pulse = PulseStrength(energy, lo, hi, envelopeRate);
+
+            var confidence = Confidence(mod4, zMean, zVar, lowE, fMean, fVar, cMean, cVar, rMean, flMean, pulse);
             windows.Add(new WindowFeatures(
-                w * HopSeconds, mod4, zMean, zVar, lowE, fMean, fVar, cMean, cVar, rMean, flMean, confidence));
+                w * HopSeconds, mod4, zMean, zVar, lowE, fMean, fVar, cMean, cVar, rMean, flMean,
+                pulse, confidence));
         }
 
         return Summarize(windows);
+    }
+
+    /// <summary>
+    /// How strongly periodic the amplitude envelope is in the beat range — the peak of the
+    /// envelope spectrum over 0.5–8 Hz (30–480 BPM) divided by that band's mean. Scale-free, so
+    /// loudness doesn't enter. Music has a beat and should peak sharply; speech has syllables but
+    /// no steady period and should stay flat.
+    ///
+    /// <para>The feature the existing set lacks. Every current feature measures how energy is
+    /// <i>distributed</i> (spectral shape, zero crossings, how much sits near 4 Hz); none measures
+    /// whether it <i>repeats</i>. That's why electronic music and speech aren't separable here —
+    /// they can look alike on distribution while differing completely on periodicity. Measured:
+    /// a five-minute news bulletin and an Ace of Base single both score 3% music.</para>
+    ///
+    /// <para><b>Uses a longer context than the decision window on purpose.</b> A 1-second window
+    /// holds about two beats at 120 BPM, and periodicity can't be established from two cycles —
+    /// the FFT peak would be noise. This takes <see cref="PulseContextSeconds"/> centred on the
+    /// window, which at a 100 Hz envelope rate gives ~0.1 Hz bins and roughly sixteen beats to
+    /// measure. Adjacent windows share most of that context, so the feature is smooth across them,
+    /// which is right: a beat is a property of a passage, not of a one-second slice.</para>
+    /// </summary>
+    private static double PulseStrength(double[] energy, int lo, int hi, double envelopeRate)
+    {
+        var contextFrames = (int)Math.Round(PulseContextSeconds * envelopeRate);
+        var centre = (lo + hi) / 2;
+        var from = Math.Max(0, centre - contextFrames / 2);
+        var to = Math.Min(energy.Length, from + contextFrames);
+        from = Math.Max(0, to - contextFrames);   // pull back if we ran off the end
+        var n = to - from;
+        if (n < 16) return 0;                     // too little context to say anything
+
+        var env = new double[n];
+        double mean = 0;
+        for (var i = 0; i < n; i++) { env[i] = energy[from + i]; mean += env[i]; }
+        mean /= n;
+        for (var i = 0; i < n; i++) env[i] -= mean; // DC would dominate the peak
+
+        var mag = Fft.Magnitude(env);
+        var binHz = envelopeRate / Fft.NextPow2(n);
+
+        double peak = 0, sum = 0;
+        var bins = 0;
+        for (var b = 1; b < mag.Length; b++)
+        {
+            var hz = b * binHz;
+            if (hz < PulseLowHz) continue;
+            if (hz > PulseHighHz) break;
+            sum += mag[b];
+            bins++;
+            if (mag[b] > peak) peak = mag[b];
+        }
+        if (bins == 0 || sum <= 0) return 0;
+        return peak / (sum / bins);
     }
 
     /// <summary>Energy of the amplitude envelope in a 3–5 Hz band (the ~4 Hz syllabic rate),
@@ -211,7 +279,8 @@ internal sealed class MusicDetector
     }
 
     private static double Confidence(double mod4Hz, double zcrMean, double zcrVar, double lowEnergyRatio,
-        double fluxMean, double fluxVar, double centroidMean, double centroidVar, double rolloffMean, double flatness)
+        double fluxMean, double fluxVar, double centroidMean, double centroidVar, double rolloffMean,
+        double flatness, double pulseStrength)
     {
         var logit =
             LrBias +
@@ -224,7 +293,8 @@ internal sealed class MusicDetector
             Lr_CentroidMean * centroidMean +
             Lr_CentroidVar * centroidVar +
             Lr_RolloffMean * rolloffMean +
-            Lr_Flatness * flatness;
+            Lr_Flatness * flatness +
+            Lr_PulseStrength * pulseStrength;
         return 1.0 / (1.0 + Math.Exp(-logit)); // music confidence
     }
 
@@ -254,13 +324,13 @@ internal sealed class MusicDetector
 
     /// <summary>CSV header matching <see cref="WindowFeatures"/> (plus file + label columns added by the caller).</summary>
     public static string CsvHeader =>
-        "file,label,tStart,mod4Hz,zcrMean,zcrVar,lowEnergyRatio,fluxMean,fluxVar,centroidMean,centroidVar,rolloffMean,flatness,confidence";
+        "file,label,tStart,mod4Hz,zcrMean,zcrVar,lowEnergyRatio,fluxMean,fluxVar,centroidMean,centroidVar,rolloffMean,flatness,pulseStrength,confidence";
 
     public static string CsvRow(string file, string label, WindowFeatures w) =>
         string.Join(',', file, label,
             F(w.TStart), F(w.Mod4Hz), F(w.ZcrMean), F(w.ZcrVar), F(w.LowEnergyRatio),
             F(w.FluxMean), F(w.FluxVar), F(w.CentroidMean), F(w.CentroidVar), F(w.RolloffMean),
-            F(w.Flatness), F(w.Confidence));
+            F(w.Flatness), F(w.PulseStrength), F(w.Confidence));
 
     private static string F(double v) => v.ToString("0.#####", System.Globalization.CultureInfo.InvariantCulture);
 }

@@ -38,11 +38,43 @@ metadata layer instead — `SongHistoryFilter` spotted that the station had labe
 That only works when the station is honest about the label; **an ad break under a plausible
 artist/title still gets through**, and nothing downstream will catch it.
 
-**The missing feature is pulse/beat strength.** Music has a strong periodic beat, speech doesn't,
-and it is nearly free to compute: `MusicDetector.Modulation4Hz` already runs an FFT over the
-amplitude envelope, so the peak-bin-to-mean ratio over roughly 0.5–8 Hz comes from data already in
-hand. That gives the classifier the axis it currently lacks. Tracked as an issue; the plan lives
-there.
+**The missing feature was pulse/beat strength, and it is now measured.** Every existing feature
+describes how energy is *distributed* (spectral shape, zero crossings, how much sits near 4 Hz);
+none describes whether it *repeats*. `MusicDetector.PulseStrength` (added for issue #8) takes the
+peak-to-mean of the envelope spectrum over 0.5–8 Hz — 30–480 BPM — over an 8-second context, since
+a 1-second window holds about two beats and periodicity can't be established from two cycles.
+
+Measured on 121 real played songs against 15 confirmed talk segments:
+
+| | min | median | max |
+| --- | --- | --- | --- |
+| talk (n=15) | 2.627 | 2.938 | 3.913 |
+| songs (n=121) | 3.174 | 5.187 | 12.761 |
+
+Best single cut **97.1%** — zero songs lost, 4 of 15 talk admitted; or at zero-talk-admitted, 10%
+of songs sacrificed. For contrast, `mod4Hz` — documented above as "the primary discriminator" —
+manages **70.4%** on the same material and admits every talk file, because the talk range sits
+entirely inside the music range.
+
+**The weight is nevertheless 0.** The feature is computed and written to the CSV, and changes no
+verdict, because putting it to work needs a re-fit and the re-fit is blocked — see below.
+
+**The re-fit is blocked: the negative class is missing from the repo.** The committed corpus CSVs
+(`tools/DjDetector/corpus/`) hold **only music** — 19,717 music windows across 42 SomaFM/harvest
+files, plus one unlabelled test file. The 69-clip corpus of ads, talk and jingles that the current
+weights were fitted against was never committed, so the existing fit cannot be reproduced and a new
+one has nothing to learn "not music" from. Adding `pulseStrength` also invalidates the old CSVs for
+fitting purposes: they have 14 columns and no pulse value, so they can't be merged with new ones.
+
+What exists today is ~15 confirmed talk files, nearly all Ö3 idents — thin, and homogeneous enough
+that the talk maximum above shouldn't be trusted as a bound. The predictable failure is **talk over
+a music bed**, which has a real beat; a DJ speaking over an intro would score like music.
+
+**The cheap way out is already half-built.** `SongHistoryFilter` identifies station idents at cut
+time and `StreamRecorder` now reports them as `NotSongLike` discards. Quarantining those the way
+QC-rejected segments are quarantined would accumulate a diverse, automatically-labelled negative
+corpus from real sessions across every station — which is exactly what the fit needs, and what the
+note below has been asking for since the first fit.
 
 **Gotcha for anyone touching the corpus:** `fit_logreg.py` parses the feature CSV **right-anchored**
 on purpose, because filenames contain commas and the CSV is unquoted. Don't "fix" that by quoting

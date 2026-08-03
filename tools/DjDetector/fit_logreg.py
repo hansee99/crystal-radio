@@ -15,9 +15,14 @@ import sys, numpy as np
 
 # Columns (right-anchored, because some filenames contain commas and the CSV is unquoted):
 # ... file(commas) , label , tStart , mod4Hz , zcrMean , zcrVar , lowEnergyRatio ,
-#     fluxMean , fluxVar , centroidMean , centroidVar , rolloffMean , flatness , confidence
+#     fluxMean , fluxVar , centroidMean , centroidVar , rolloffMean , flatness ,
+#     pulseStrength , confidence
+#
+# pulseStrength was appended before confidence (issue #8), so the anchors moved by one. CSVs
+# written before that have 14 columns and are NOT usable for a fit that includes it — they carry
+# no pulse column. Regenerate from audio rather than trying to merge the two shapes.
 FEAT_NAMES = ["mod4Hz","zcrMean","zcrVar","lowEnergyRatio","fluxMean","fluxVar",
-              "centroidMean","centroidVar","rolloffMean","flatness"]
+              "centroidMean","centroidVar","rolloffMean","flatness","pulseStrength"]
 
 paths = sys.argv[1:]
 if not paths:
@@ -29,15 +34,15 @@ for path in paths:
         next(f)  # header
         for line in f:
             p = line.rstrip("\n").split(",")
-            if len(p) < 14: continue
-            label = p[-13]
+            if len(p) < 15: continue
+            label = p[-14]
             if label not in ("music","nonmusic"): continue
             try:
-                feats = [float(p[i]) for i in (-11,-10,-9,-8,-7,-6,-5,-4,-3,-2)]
+                feats = [float(p[i]) for i in (-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2)]
             except ValueError:
                 continue
             X.append(feats); y.append(1.0 if label=="music" else 0.0)
-            groups.append(",".join(p[:-13]))  # filename
+            groups.append(",".join(p[:-14]))  # filename
 
 X = np.array(X); y = np.array(y); groups = np.array(groups)
 print(f"inputs={len(paths)}: {', '.join(paths)}")
