@@ -73,6 +73,62 @@ public class OptionsDialogRailTests
             s => s.Property == Control.TemplateProperty);
     }
 
+    /// <summary>
+    /// The combo's closed box renders inside a ToggleButton in its template, and ToggleButton's own
+    /// default style sets Foreground. Because <c>Control.Foreground</c> IS
+    /// <c>TextElement.Foreground</c>, that setter cuts the inheritance chain from the ComboBox — so
+    /// the selected voice rendered in the system's pure black on a near-black fill. Shipped that
+    /// way and was only caught by looking at a render (measured #FF000000 before, TextBody after).
+    /// </summary>
+    [Fact]
+    public void TheComboForwardsItsForegroundToTheClosedBox()
+    {
+        var forwarded = OnStaThread(() =>
+        {
+            var style = (Style)LoadTheme()["DialogComboBox"];
+            var template = (ControlTemplate)style.Setters.OfType<Setter>()
+                .Single(s => s.Property == Control.TemplateProperty).Value;
+
+            var toggle = Flatten((DependencyObject)template.LoadContent())
+                .OfType<System.Windows.Controls.Primitives.ToggleButton>()
+                .Single();
+
+            // A local value beats ToggleButton's style setter; UnsetValue means the black is back.
+            return toggle.ReadLocalValue(Control.ForegroundProperty);
+        });
+
+        Assert.NotEqual(DependencyProperty.UnsetValue, forwarded);
+    }
+
+    private static IEnumerable<DependencyObject> Flatten(DependencyObject root)
+    {
+        yield return root;
+        foreach (var child in System.Windows.LogicalTreeHelper.GetChildren(root)
+                     .OfType<DependencyObject>())
+            foreach (var d in Flatten(child))
+                yield return d;
+    }
+
+    /// <summary>Creating WPF visuals needs an STA thread; xUnit runs tests on MTA ones.</summary>
+    private static T OnStaThread<T>(Func<T> action)
+    {
+        T result = default!;
+        Exception? failure = null;
+
+        var thread = new System.Threading.Thread(() =>
+        {
+            try { result = action(); }
+            catch (Exception ex) { failure = ex; }
+        });
+        thread.SetApartmentState(System.Threading.ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (failure is not null)
+            throw new Xunit.Sdk.XunitException($"STA thread threw: {failure}");
+        return result;
+    }
+
     // --- The DJ voice display rule -------------------------------------------------------------
 
     /// <summary>The dropdown used to show the enum's member names, so one of five read "LateNight".

@@ -1064,7 +1064,12 @@
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
                     <Grid>
+                        <!-- Foreground has to be forwarded explicitly. ToggleButton's own default
+                             style sets it, and Control.Foreground IS TextElement.Foreground — so
+                             that setter cuts the inheritance chain from the ComboBox, and the
+                             selected item renders in the system's near-black on our dark fill. -->
                         <ToggleButton x:Name="tb" Focusable="False" ClickMode="Press"
+                                      Foreground="{TemplateBinding Foreground}"
                                       IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
                             <ToggleButton.Template>
                                 <ControlTemplate TargetType="ToggleButton">
