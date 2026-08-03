@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace RadioPlayer.Services;
 
 /// <summary>
@@ -5,12 +7,29 @@ namespace RadioPlayer.Services;
 /// ad, jingle, or station ident) before it is recorded in the song history. Deliberately
 /// conservative: when in doubt, keep the entry — a stray jingle in the list is a smaller
 /// failure than silently dropping real songs.
+///
+/// <para><b>Why this carries real weight in DJ mode.</b> It is not merely tidying a list: for
+/// harvested segments it is the ONLY gate that can catch a news bulletin or ad break, because
+/// the acoustic detector demonstrably cannot. Measured on one session's own audio (2026-08-03):
+/// Ö3's "Nachrichten, Wetter und Verkehr" — five minutes of pure speech — scored 3% music, and
+/// Ace of Base's "The Sign" scored 3% too. Same number, opposite content. No threshold on the
+/// detector separates those, so when a station labels a segment as itself, that label is the
+/// only usable evidence and it must not be missed.</para>
 /// </summary>
-public static class SongHistoryFilter
+public static partial class SongHistoryFilter
 {
     // Lower-case markers that flag obvious non-song content in either field.
     private static readonly string[] AdMarkers =
         ["advert", "commercial", "jingle", "werbung", "sponsored"];
+
+    /// <summary>
+    /// Shortest normalized name allowed to match a station by containment. Guards the
+    /// abbreviation rule below from firing on a couple of incidental characters.
+    /// </summary>
+    private const int MinIdentLength = 6;
+
+    [GeneratedRegex(@"[^\p{L}\p{N}]+")]
+    private static partial Regex NonAlphanumericRegex();
 
     public static bool IsLikelySong(string? title, string? artist, string? stationName)
     {
@@ -31,14 +50,51 @@ public static class SongHistoryFilter
                 return false;
         }
 
+        if (string.IsNullOrWhiteSpace(stationName))
+            return true;
+
         // Jingles often carry the station's own name ("Radio Paradise - commercial free…").
-        // Only the full station name is matched — partial overlaps (a band that shares a
-        // word with the station) stay in.
-        if (!string.IsNullOrWhiteSpace(stationName) &&
-            (title.Contains(stationName, StringComparison.OrdinalIgnoreCase) ||
-             artist.Contains(stationName, StringComparison.OrdinalIgnoreCase)))
+        // Only the full station name is matched — partial overlaps (a band that shares a word
+        // with the station) stay in.
+        if (title.Contains(stationName, StringComparison.OrdinalIgnoreCase) ||
+            artist.Contains(stationName, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // The same idea in the OTHER direction, which is how Ö3's news and livestream idents got
+        // through: the station announced artist "HITRADIO Ö3" while the directory calls it
+        // "ORF Hitradio Ö3", so the artist was a SUBSET of the station name and the check above
+        // could never fire. Stations abbreviate, drop a broadcaster prefix, or shout in caps;
+        // comparing on letters and digits alone absorbs all of that.
+        //
+        // Applied to the artist only. A station identifying ITSELF in the artist slot is strong
+        // evidence of an ident; a title that happens to sit inside the station's name is not
+        // ("Paradise" on Radio Paradise is a perfectly plausible song).
+        if (IsStationIdentifyingItself(artist, stationName))
             return false;
 
         return true;
     }
+
+    /// <summary>
+    /// Whether <paramref name="artist"/> is really the station naming itself, allowing for
+    /// abbreviation and decoration on either side.
+    ///
+    /// The length floor is what keeps this honest: without it any station whose name contains a
+    /// short artist name would swallow it. It does still mean an artist whose name is a long
+    /// substring of the station's gets dropped — a genre-named station is the plausible case. That
+    /// trade is deliberate. A wrongly dropped song costs one track and is recorded in the session
+    /// log as skipped/not-song-like; a wrongly kept news bulletin costs five minutes of speech in
+    /// a music mix, and nothing downstream can catch it.
+    /// </summary>
+    private static bool IsStationIdentifyingItself(string artist, string stationName)
+    {
+        var a = Normalize(artist);
+        var s = Normalize(stationName);
+        return a.Length >= MinIdentLength && s.Length >= MinIdentLength && s.Contains(a);
+    }
+
+    /// <summary>Letters and digits, lower-cased, with the codec/bitrate decoration stripped
+    /// first — so "ORF Hitradio Ö3 | HQ" and "HITRADIO Ö3" reduce to comparable forms.</summary>
+    private static string Normalize(string s) =>
+        NonAlphanumericRegex().Replace(StationNameFormatter.Clean(s), "").ToLowerInvariant();
 }

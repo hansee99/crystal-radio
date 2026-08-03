@@ -84,6 +84,17 @@ public sealed class SongLibraryService : ISongLibraryService
                         _store.Remove(song.Path);
                         continue;
                     }
+                    // 1b. Re-judge harvested rows against the CURRENT song filter. Rows were
+                    // admitted by whatever version of it was in force when they were harvested,
+                    // so tightening the filter has to reach backwards: Ö3 news bulletins and
+                    // livestream idents that slipped through stayed in the index and remained
+                    // eligible for every later warm-start, which is the DJ mix serving five
+                    // minutes of speech on a fresh session with no obvious cause.
+                    if (song.Source == SongSource.Harvested)
+                    {
+                        if (RetireIfNoLongerSongLike(song))
+                            continue;
+                    }
                     // 2. Enrich rows still missing a description.
                     if (string.IsNullOrWhiteSpace(song.Description))
                         EnrichInBackground(song.Path, song.Title, song.Artist);
@@ -101,6 +112,27 @@ public sealed class SongLibraryService : ISongLibraryService
                 AppLog.Debug($"[Library] backfill error: {ex.Message}");
             }
         });
+    }
+
+    /// <summary>
+    /// Drops a harvested row (and its audio file) if the current
+    /// <see cref="SongHistoryFilter"/> would no longer accept it. Harvested audio is ephemeral by
+    /// design — it lives in a size-capped folder and is evicted anyway — so deleting a
+    /// now-rejected one costs nothing. Returns true if it was removed.
+    ///
+    /// Deliberately scoped to <see cref="SongSource.Harvested"/>: a song the user deliberately
+    /// saved is theirs, and no tightening of a heuristic gets to delete it.
+    /// </summary>
+    private bool RetireIfNoLongerSongLike(SavedSong song)
+    {
+        if (SongHistoryFilter.IsLikelySong(song.Title, song.Artist, song.Station))
+            return false;
+
+        AppLog.Info($"[Library] retiring harvested \"{song.Artist} - {song.Title}\" "
+                    + $"({song.Station}) — the song filter no longer accepts it");
+        _store.Remove(song.Path);
+        try { File.Delete(song.Path); } catch { /* the cache cap would have taken it anyway */ }
+        return true;
     }
 
     private void EnrichInBackground(string path, string title, string artist)

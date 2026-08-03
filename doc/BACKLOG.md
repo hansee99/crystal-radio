@@ -5,6 +5,53 @@ just enough context to pick back up later. Add new items at the top.
 
 ---
 
+## The music detector cannot tell speech from music (needs a pulse feature + re-fit)
+
+**The finding, measured rather than suspected.** Five files from one real session
+(2026-08-03, Austrian pop stations), through `tools/DjDetector`:
+
+| file | content | verdict | music % | longest music run |
+| --- | --- | --- | --- | --- |
+| `HITRADIO Ö3 - Nachrichten, Wetter und Verkehr` | 5 min of pure speech | TALK | **3%** | 0.0s |
+| `Ace of Base - The Sign` | a real song | TALK | **3%** | 1.5s |
+| `HITRADIO Ö3 - Livestream` | talk + ads | TALK | 7% | 2.0s |
+| `Simon Lewis - Break Your Wall` | a real song | TALK | 18% | 8.5s |
+| `Katy Perry - I Kissed a Girl` | a real song | TALK | 33% | 5.0s |
+
+A news bulletin and an Ace of Base single score **identically**. Every real song is called
+TALK. This is not a threshold that needs nudging: no cut on music fraction, on longest
+contiguous run, or on any monotone function of the current confidences can separate these
+classes, and re-fitting the existing weights cannot either — the classes are not linearly
+separable in the present feature space. Matches the earlier deep-house finding (confirmed-good
+tracks at 0.00, identical to a confirmed ad break).
+
+**Why it hasn't bitten harder.** The QC gate gave up on music fraction some time ago and keys on
+post-trim duration instead, and `DjMusicFractionFloor` is 0 (off). The trim is a *local* run-length
+measure and works acceptably; the *global* fraction is what's useless. The two failures reported
+on 2026-08-03 were caught at the metadata layer instead (see `SongHistoryFilter` — the station
+labelled them as itself). That fix only works when the station is honest about the label; an ad
+break under a plausible artist/title will still sail through.
+
+**The missing feature is pulse/beat strength.** Music has a strong periodic beat; speech does not.
+It's nearly free to compute: `MusicDetector.Modulation4Hz` already runs an FFT over the amplitude
+envelope, so the peak-bin-to-mean ratio over roughly 0.5–8 Hz is available from data already in
+hand. That gives the classifier the axis it currently lacks.
+
+**Plan:**
+1. Add pulse strength to `MusicDetector`'s feature set (and to `CsvHeader`/`CsvRow`).
+2. Re-run `tools/DjDetector` over `_rejected/` (23 files, ~18 unique, all confirmed music) plus the
+   confirmed-talk files from this session for the negative class — note the corpus has been short
+   of negatives, which is part of why the current fit is poor.
+3. Label, merge into `tools/DjDetector/corpus/`, re-fit with `fit_logreg.py` (Python 3.13 present).
+4. Validate against both corpora, then re-enable `DjMusicFractionFloor` as a real gate.
+
+**Gotcha for step 2:** `fit_logreg.py` parses the feature CSV **right-anchored** on purpose,
+because filenames contain commas and the CSV is unquoted. Don't "fix" that by quoting the writer
+without changing the parser — and don't parse those CSVs with a naive `split(',')` in ad-hoc
+analysis scripts either. Doing exactly that during this investigation shifted every column and
+produced impossible values (a ratio reading 1.4e7) that looked like a numeric blow-up in the
+detector.
+
 ## Test coverage: the remaining untested seams
 
 **Where we are:** 129 tests. The pure derivation logic (`StationNameFormatter`,
