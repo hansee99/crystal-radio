@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace RadioPlayer.Services;
 
 /// <summary>
@@ -14,11 +16,29 @@ namespace RadioPlayer.Services;
 /// detector separates those, so when a station labels a segment as itself, that label is the
 /// only usable evidence and it must not be missed.</para>
 /// </summary>
-public static class SongHistoryFilter
+public static partial class SongHistoryFilter
 {
-    // Lower-case markers that flag obvious non-song content in either field.
+    // Lower-case markers that flag obvious non-song content in either field. "adbreak" and the
+    // announcement phrases come from real segments that reached a mix: a station's playout system
+    // announces its own ad break in the StreamTitle, and none of the original markers matched.
     private static readonly string[] AdMarkers =
-        ["advert", "commercial", "jingle", "werbung", "sponsored"];
+    [
+        "advert", "commercial", "jingle", "werbung", "sponsored",
+        "adbreak", "ad break", "will continue after", "right back after",
+        "station identification"
+    ];
+
+    /// <summary>
+    /// A playout-system cart ID: uppercase letters, an underscore, then a timestamp or cart
+    /// number — <c>ADBREAK_120000</c>, <c>ADWTAG_122000</c>. These are internal scheduling labels
+    /// that some stations leak into StreamTitle where a track name belongs.
+    ///
+    /// Deliberately requires UPPERCASE and four or more digits. A song can plausibly be titled
+    /// "Extended_2024"; nothing is plausibly titled "PROMO_143000". Precision matters more than
+    /// recall here because a false positive throws away a real song.
+    /// </summary>
+    [GeneratedRegex(@"\b[A-Z]{3,}_\d{4,}\b")]
+    private static partial Regex PlayoutCartRegex();
 
     /// <summary>
     /// Shortest normalized name allowed to match a station by containment. Guards the
@@ -44,6 +64,9 @@ public static class SongHistoryFilter
                 artist.Contains(marker, StringComparison.OrdinalIgnoreCase))
                 return false;
         }
+
+        if (PlayoutCartRegex().IsMatch(title) || PlayoutCartRegex().IsMatch(artist))
+            return false;
 
         if (string.IsNullOrWhiteSpace(stationName))
             return true;

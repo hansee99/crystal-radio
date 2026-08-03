@@ -108,6 +108,44 @@ public class SongHistoryFilterTests
         Assert.False(SongHistoryFilter.IsLikelySong("Whatever", marker, "Some Station"));
     }
 
+    // --- Ad breaks the station labels as such (real session, 2026-08-03) ----------------------
+    // Two of these reached a mix. The detector had called both TALK (5.8% and 11.3% music); they
+    // survived because the post-trim duration gate is the primary check and the trim left them
+    // just over the minimum. The metadata says plainly what they are.
+
+    [Theory]
+    [InlineData("ADBREAK_120000", "011FM")]
+    [InlineData("THIS STATION WILL CONTINUE AFTER THIS BREAK", "ADWTAG_122000")]
+    [InlineData("PROMO_143000", "Some Station")]
+    [InlineData("We'll be right back after these messages", "Station")]
+    public void RejectsAnAdBreakTheStationNamed(string title, string artist)
+    {
+        Assert.False(SongHistoryFilter.IsLikelySong(title, artist, "Hard Rock Heaven"));
+    }
+
+    /// <summary>The cart pattern is deliberately narrow — UPPERCASE and four or more digits.
+    /// A song can plausibly be titled "Extended_2024"; nothing is plausibly "PROMO_143000".
+    /// A false positive here throws away a real song, so precision beats recall.</summary>
+    [Theory]
+    [InlineData("Extended_2024", "Some Artist")]      // lowercase letters — a plausible title
+    [InlineData("Blink_182", "Blink-182")]            // too few digits
+    [InlineData("MP3_12", "Artist")]
+    public void DoesNotMistakeAPlausibleTitleForAPlayoutCart(string title, string artist)
+    {
+        Assert.True(SongHistoryFilter.IsLikelySong(title, artist, "Some Station"));
+    }
+
+    /// <summary>Self-titled tracks are real and common in exactly the genres being harvested, so
+    /// artist == title is NOT treated as an ident however much it looks like one.</summary>
+    [Theory]
+    [InlineData("Black Sabbath")]
+    [InlineData("Bad Company")]
+    [InlineData("Iron Maiden")]
+    public void KeepsASelfTitledTrack(string name)
+    {
+        Assert.True(SongHistoryFilter.IsLikelySong(name, name, "Hard Rock Heaven"));
+    }
+
     [Fact]
     public void KeepsASongWhenTheStationIsUnknown()
     {

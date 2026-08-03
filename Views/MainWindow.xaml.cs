@@ -83,7 +83,7 @@ public partial class MainWindow : Window
         _djHarvest = new DjHarvestService(searchService, interpreter, agenticSearch, ranker, enrichment, songLibrary, harvestDir,
             harvesterCount: djSettings.DjHarvesterCount, reserveCount: djSettings.DjHarvestReserveCount,
             offsetSeconds: 0.0, trimEdges: true,
-            rejectBelow: djSettings.DjMusicFractionFloor,   // 0 = off; see SegmentQualityChecker
+            rejectBelow: djSettings.DjMusicFractionFloor,   // backstop under the duration gate
             minSongSeconds: djSettings.DjMinSongSeconds,
             stationIdleMinutes: djSettings.DjStationIdleMinutes,
             maxHarvestCacheBytes: djSettings.ResolveHarvestCacheBytes(),

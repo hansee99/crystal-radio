@@ -135,13 +135,27 @@ public sealed class AppSettings
     }
 
     /// <summary>
-    /// Reject a segment whose whole-file music fraction is below this. <b>0 disables it, which is
-    /// the current default.</b> Listening tests found confirmed-good deep house scoring 0.00 —
-    /// the same as a confirmed ad break — so the two classes are not separable by this number and
-    /// no threshold on it can be right. Re-enable once the detector gains a pulse-strength
-    /// feature and is re-fitted; the knob stays so that can be A/B'd without a rebuild.
+    /// Reject a harvested segment whose whole-file music fraction is below this. 0 disables it.
+    ///
+    /// <para>Was 0 for a long time, and correctly so: before the detector gained pulse strength,
+    /// confirmed-good deep house scored 0.00 — the same as a confirmed ad break — so no threshold
+    /// on this number could be right.</para>
+    ///
+    /// <para>0.20 now, on measured evidence. In one real session two ad breaks reached the mix at
+    /// 5.8% and 11.3% music while the lowest genuine song scored 37.4% — a 26-point gap, and any
+    /// floor between 15% and 30% separates them exactly. Across a wider 142-song sample a 0.20
+    /// floor costs 1.4% of songs. The detector had called both ads TALK; they survived only
+    /// because the post-trim duration gate is the primary check and the trim left them just over
+    /// the minimum.</para>
     /// </summary>
-    public double DjMusicFractionFloor { get; set; }
+    public double DjMusicFractionFloor { get; set; } = 0.20;
+
+    /// <summary>
+    /// Bumped whenever a default changes in a way an existing settings file should adopt. Without
+    /// it a new default only reaches new installs: every existing file already has the old value
+    /// written out, so the change is invisible to exactly the people running the app.
+    /// </summary>
+    public int SettingsVersion { get; set; }
 
     /// <summary>Resolved library folder (the stored value or the default).</summary>
     public string ResolveLibraryFolder() =>
@@ -185,7 +199,7 @@ public sealed class SettingsStore
                     settings.DjMinSongSeconds = Math.Clamp(settings.DjMinSongSeconds, 0, 600);
                     settings.DjStationIdleMinutes = Math.Clamp(settings.DjStationIdleMinutes, 1, 240);
                     settings.DjMusicFractionFloor = Math.Clamp(settings.DjMusicFractionFloor, 0, 1);
-                    return settings;
+                    return Migrate(settings);
                 }
             }
         }
@@ -194,6 +208,31 @@ public sealed class SettingsStore
             // Corrupt/unreadable — fall back to defaults.
         }
         return new AppSettings();
+    }
+
+    /// <summary>Current settings schema. Bump when a default change must reach existing files.</summary>
+    private const int CurrentSettingsVersion = 1;
+
+    /// <summary>
+    /// Brings an older settings file up to date. Needed because a changed default is invisible to
+    /// anyone who already has a settings file: their old value is written out explicitly, so they
+    /// keep it forever. The migration is applied in memory on every load and persisted by the next
+    /// Save, so it is safe to run repeatedly.
+    /// </summary>
+    internal static AppSettings Migrate(AppSettings settings)
+    {
+        if (settings.SettingsVersion < 1)
+        {
+            // The music-fraction floor was 0 (off) while the detector could not separate music
+            // from speech. It can now, and two ad breaks reached a real mix while it was off — so
+            // existing installs should pick up the new default rather than keep the disabled value.
+            // Only if it is still at the old default: a deliberate non-zero choice is left alone.
+            if (settings.DjMusicFractionFloor == 0)
+                settings.DjMusicFractionFloor = 0.20;
+        }
+
+        settings.SettingsVersion = CurrentSettingsVersion;
+        return settings;
     }
 
     public void Save(AppSettings settings)
