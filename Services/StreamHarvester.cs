@@ -174,14 +174,7 @@ public sealed class StreamHarvester : IDisposable
         var title = ParseStreamTitle(ReadTag(_handle, TagType.META));
         if (string.IsNullOrWhiteSpace(title)) return;
 
-        var trackTitle = title;
-        string? artist = null;
-        var dash = title.IndexOf(" - ", StringComparison.Ordinal);
-        if (dash > 0)
-        {
-            artist = title[..dash].Trim();
-            trackTitle = title[(dash + 3)..].Trim();
-        }
+        var (artist, trackTitle) = IcyTitleParser.Split(title);
 
         Interlocked.Increment(ref _titles);
 

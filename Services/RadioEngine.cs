@@ -333,15 +333,8 @@ public sealed class RadioEngine : IPlaybackEngine
         var title = ParseStreamTitle(meta);
         if (string.IsNullOrWhiteSpace(title)) return;
 
-        // ICY StreamTitle is conventionally "Artist - Title".
-        string trackTitle = title;
-        string? artist = null;
-        var dash = title.IndexOf(" - ", StringComparison.Ordinal);
-        if (dash > 0)
-        {
-            artist = title[..dash].Trim();
-            trackTitle = title[(dash + 3)..].Trim();
-        }
+        // "Artist - Title" is only the commonest convention; see IcyTitleParser.
+        var (artist, trackTitle) = IcyTitleParser.Split(title);
 
         var stationName = _currentStation?.Name;
         MetadataChanged?.Invoke(this, new TrackMetadata(trackTitle, artist, stationName));
