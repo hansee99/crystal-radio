@@ -16,7 +16,7 @@ public sealed record DjHarvesterItem(string Label, int TitlesSeen, int Kept, int
     /// </summary>
     public string StatusText =>
         Kept > 0
-            ? (Rejected > 0 ? $"{Songs(Kept)} in the mix · {Rejected} skipped" : $"{Songs(Kept)} in the mix")
+            ? (Rejected > 0 ? $"{Songs(Kept)} collected · {Rejected} skipped" : $"{Songs(Kept)} collected")
             : Rejected > 0
                 ? $"Nothing kept yet · {Rejected} skipped"
                 : "Listening…";

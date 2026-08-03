@@ -226,9 +226,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         var hot = stations.Take(_harvesterCount).ToList();
         _reserve = new Queue<Station>(stations.Skip(_harvesterCount));
         TopStation = hot[0]; // stations are already best-first out of RankRelevantAsync
-        _kept = 0;
-        _rejected = 0;
-        _tallies.Clear();
+        ResetSessionTotals();
         _running = true;
 
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -278,6 +276,18 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         // Bump BEFORE the swap: anything still in the QC pipeline from the old stations belongs to
         // the old vibe, and stamping it with the new generation would let it through.
         Interlocked.Increment(ref _vibeGeneration);
+
+        // Reset the counters with it. DjQueueService.ChangeVibe truncates the queue, so every song
+        // counted so far has just been removed from the mix — leaving the totals running made the
+        // session card report songs that were deliberately discarded. Tallies too: the pool is
+        // fully replaced, and they are keyed by station label, so a re-sourced station would
+        // otherwise inherit a count from earlier in the session.
+        //
+        // A segment already in QC when this runs will land against the new vibe's count. The old
+        // harvesters are retired in the same breath, so there are few, and over-counting by one is
+        // a better failure than the whole total being wrong.
+        ResetSessionTotals();
+
         dispatcher.Invoke(() => SwapPool(hot, reserve));
 
         TopStation = hot[0]; // best-first out of RankRelevantAsync — the live bridge uses this
@@ -735,18 +745,14 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
                 (DateTime.Now - seg.StartedAt).TotalSeconds,
                 verdict.Verdict, verdict.LeadTrimSeconds, verdict.TailTrimSeconds, verdict.Note);
 
-            var tally = _tallies.GetOrAdd(label, _ => new StationTally());
+            RecordOutcome(label, verdict.Kept);
 
             if (!verdict.Kept)
             {
-                Interlocked.Increment(ref _rejected);
-                Interlocked.Increment(ref tally.Rejected);
                 RaiseStatus();
                 return;
             }
 
-            Interlocked.Increment(ref _kept);
-            Interlocked.Increment(ref tally.Kept);
             var saved = new SavedSong(dest, seg.Title, seg.Artist ?? "", seg.Station,
                 ext.TrimStart('.'), DateTimeOffset.Now, Source: SongSource.Harvested);
             _songLibrary.AddAndEnrich(saved);
@@ -852,6 +858,43 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             // Best effort — eviction failing should never break harvesting.
         }
     }
+
+    /// <summary>
+    /// Records one QC outcome against the session totals and the station's own tally. Kept next to
+    /// <see cref="ResetSessionTotals"/> on purpose: these are the only two places that touch the
+    /// counters, so what gets counted and what gets cleared stay visibly in step.
+    /// </summary>
+    internal void RecordOutcome(string label, bool kept)
+    {
+        var tally = _tallies.GetOrAdd(label, _ => new StationTally());
+        if (kept)
+        {
+            Interlocked.Increment(ref _kept);
+            Interlocked.Increment(ref tally.Kept);
+        }
+        else
+        {
+            Interlocked.Increment(ref _rejected);
+            Interlocked.Increment(ref tally.Rejected);
+        }
+    }
+
+    /// <summary>
+    /// Zeroes what the session card counts. Called from <see cref="StartAsync"/> and from
+    /// <see cref="ChangeVibeAsync"/> — one method rather than two copies precisely so a counter
+    /// added later cannot be reset in one place and not the other, which is the bug this fixes.
+    /// </summary>
+    internal void ResetSessionTotals()
+    {
+        Interlocked.Exchange(ref _kept, 0);
+        Interlocked.Exchange(ref _rejected, 0);
+        _tallies.Clear();
+    }
+
+    /// <summary>Everything <see cref="ResetSessionTotals"/> is responsible for, for tests to assert
+    /// against without reaching into private fields one at a time.</summary>
+    internal (int Kept, int Rejected, int TalliedStations) SessionTotals =>
+        (Volatile.Read(ref _kept), Volatile.Read(ref _rejected), _tallies.Count);
 
     private void RaiseStatus()
     {

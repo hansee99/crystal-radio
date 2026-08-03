@@ -255,35 +255,13 @@ public sealed class StreamHarvester : IDisposable
         _recorder.Dispose();
     }
 
-    private static string? ReadTag(int handle, TagType type)
-    {
-        var ptr = Bass.ChannelGetTags(handle, type);
-        return ptr == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(ptr);
-    }
+    // Both of these used to be a private copy of RadioEngine's tag reading, and inherited both of
+    // its bugs. Since harvested songs are what the DJ mix plays, THIS is the copy that produced the
+    // reported "Queensr?che" — fixing only the engine's would have changed nothing on screen.
+    private static string? ReadTag(int handle, TagType type) => IcyTags.ReadString(handle, type);
 
-    /// <summary>
-    /// Reads <c>icy-name</c> out of TagType.ICY, which BASS returns as a series of
-    /// null-terminated "key:value" strings ended by a double null (mirrors RadioEngine's
-    /// ReadMultiStringTags).
-    /// </summary>
     private static string? ReadIcyName(int handle)
-    {
-        var ptr = Bass.ChannelGetTags(handle, TagType.ICY);
-        if (ptr == IntPtr.Zero) return null;
-
-        const string key = "icy-name:";
-        while (true)
-        {
-            var s = Marshal.PtrToStringUTF8(ptr);
-            if (string.IsNullOrEmpty(s)) return null;
-            if (s.StartsWith(key, StringComparison.OrdinalIgnoreCase))
-            {
-                var name = s[key.Length..].Trim();
-                return string.IsNullOrWhiteSpace(name) ? null : name;
-            }
-            ptr += System.Text.Encoding.UTF8.GetByteCount(s) + 1;
-        }
-    }
+        => IcyTags.ValueOf(IcyTags.ReadBlock(handle, TagType.ICY), "icy-name:");
 
     // ICY terminates StreamTitle with '; (apostrophe-semicolon) — match the app's parser so a
     // title containing an apostrophe ("Don't...") isn't truncated.

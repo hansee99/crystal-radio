@@ -313,11 +313,7 @@ public sealed class RadioEngine : IPlaybackEngine
 
     private void PublishIcyStationInfo(int handle, Station station)
     {
-        var icy = ReadMultiStringTags(handle, TagType.ICY);
-        var stationName = icy
-            .FirstOrDefault(t => t.StartsWith("icy-name:", StringComparison.OrdinalIgnoreCase))
-            ?["icy-name:".Length..]
-            .Trim();
+        var stationName = IcyTags.ValueOf(ReadMultiStringTags(handle, TagType.ICY), "icy-name:");
 
         MetadataChanged?.Invoke(this, new TrackMetadata(
             Title: station.Name,
@@ -397,35 +393,12 @@ public sealed class RadioEngine : IPlaybackEngine
 
     // --- Native tag helpers ---------------------------------------------------
 
-    /// <summary>Reads a single null-terminated tag string (e.g. TagType.META).</summary>
-    private static string? ReadStringTag(int handle, TagType type)
-    {
-        var ptr = Bass.ChannelGetTags(handle, type);
-        return ptr == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(ptr);
-    }
+    // Tag reading lives in IcyTags — shared with StreamHarvester, which had its own copy of it
+    // (and of its bugs). See that class for why the encoding is sniffed rather than assumed.
+    private static string? ReadStringTag(int handle, TagType type) => IcyTags.ReadString(handle, type);
 
-    /// <summary>
-    /// Reads a series of null-terminated strings terminated by a double null
-    /// (e.g. TagType.ICY's "icy-name:...", "icy-br:...").
-    /// </summary>
     private static IReadOnlyList<string> ReadMultiStringTags(int handle, TagType type)
-    {
-        var ptr = Bass.ChannelGetTags(handle, type);
-        var result = new List<string>();
-        if (ptr == IntPtr.Zero) return result;
-
-        while (true)
-        {
-            var s = Marshal.PtrToStringUTF8(ptr);
-            if (string.IsNullOrEmpty(s)) break;
-            result.Add(s);
-            ptr += Encoding_GetByteCount(s) + 1; // advance past this string and its null
-        }
-        return result;
-    }
-
-    private static int Encoding_GetByteCount(string s)
-        => System.Text.Encoding.UTF8.GetByteCount(s);
+        => IcyTags.ReadBlock(handle, type);
 
     public void Dispose()
     {

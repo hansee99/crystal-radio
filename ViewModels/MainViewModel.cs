@@ -2489,7 +2489,10 @@ public sealed class MainViewModel : ObservableObject
         }
 
         var stations = $"{status.ActiveHarvesters} station{(status.ActiveHarvesters == 1 ? "" : "s")}";
-        var songs = $"{status.Kept} song{(status.Kept == 1 ? "" : "s")} in the mix";
+        // "collected", not "in the mix": Kept counts what the harvest has produced, which is not
+        // the same as what is queued — a vibe change truncates the queue but a song was still
+        // collected. Saying "in the mix" let the number contradict the list beside it.
+        var songs = $"{status.Kept} song{(status.Kept == 1 ? "" : "s")} collected";
         DjStatus = $"Tuned into {stations} · {songs} · {DescribeElapsed()}";
     }
 
