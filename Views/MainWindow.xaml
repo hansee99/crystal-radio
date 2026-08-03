@@ -999,9 +999,13 @@
                                                 LoadingContentTemplate="{StaticResource PanelProgress}"
                                                 ErrorContent="{Binding DjError}"
                                                 ErrorContentTemplate="{StaticResource PanelErrorMessage}">
+                                <!-- ScrollUnit=Item is load-bearing, not tidying: ListCentering
+                                     works in item units, so it must not depend on the default. -->
                                 <ListBox ItemsSource="{Binding DjMix}"
                                          Background="Transparent" BorderThickness="0"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         VirtualizingPanel.ScrollUnit="Item"
+                                         ctl:ListCentering.CurrentIndex="{Binding DjMixCurrentIndex}"
                                          ItemContainerStyle="{StaticResource StationRowItem}">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>

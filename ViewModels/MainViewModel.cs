@@ -1944,6 +1944,13 @@ public sealed class MainViewModel : ObservableObject
         MarkDjMixPosition();
     }
 
+    /// <summary>
+    /// Which mix row is playing. The Mix list keeps this row vertically centred (see
+    /// <c>Controls/ListCentering</c>), so the songs either side of it stay visible without
+    /// scrolling — a session runs for hours and the list grows well past a screenful.
+    /// </summary>
+    public int DjMixCurrentIndex => IsDjMode ? _local.CurrentIndex : -1;
+
     /// <summary>Flags which mix row is playing and which are behind it.</summary>
     private void MarkDjMixPosition()
     {
@@ -1953,6 +1960,7 @@ public sealed class MainViewModel : ObservableObject
             DjMix[i].IsCurrent = i == current;
             DjMix[i].HasPlayed = current >= 0 && i < current;
         }
+        OnPropertyChanged(nameof(DjMixCurrentIndex));
         OnPropertyChanged(nameof(UpNext));
         OnPropertyChanged(nameof(HasUpNext));
     }
