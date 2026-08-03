@@ -29,7 +29,7 @@ public sealed record LocalTrack(string Path, string Title, string Artist, Stream
 /// UI-thread-affine: constructed on the UI thread; BASS syncs marshal back via the dispatcher,
 /// and a dispatcher timer publishes position while playing.
 /// </summary>
-public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
+public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
 {
     private const double FadeSeconds = 5.0;
     private const int FadeMs = (int)(FadeSeconds * 1000);
@@ -76,10 +76,33 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         };
         _positionTimer.Tick += (_, _) => PublishPosition();
 
-        // Share the process-wide BASS init done by RadioEngine; init here too in case this
-        // engine is constructed first. Errors.Already is expected and fine.
+        InitAudio();
+    }
+
+    // --- Audio seam -----------------------------------------------------------
+    // Every BASS call the queue logic depends on goes through these members. This class's bugs
+    // have all been in the queue state machine, not in the audio: a played-to-the-end queue is
+    // not empty, so Append silently stopped resuming and a DJ session would sit in silence for
+    // the rest of its life. None of that needs a sound device to reproduce. Overriding these
+    // lets the real transitions run headless; nothing else about the class changes.
+
+    /// <summary>Share the process-wide BASS init done by RadioEngine; init here too in case this
+    /// engine is constructed first. Errors.Already is expected and fine.</summary>
+    private protected virtual void InitAudio()
+    {
         if (!Bass.Init() && Bass.LastError != Errors.Already)
             throw new InvalidOperationException($"BASS init failed: {Bass.LastError}");
+    }
+
+    /// <summary>What happened when we tried to put a track on the device. The two failure modes
+    /// get different responses from the queue, so they stay distinct.</summary>
+    private protected enum AudioStart
+    {
+        Started,
+        /// <summary>The file would not open — skip it rather than stalling the queue.</summary>
+        OpenFailed,
+        /// <summary>It opened but would not play — a device-level problem; stop.</summary>
+        PlayFailed
     }
 
     public event EventHandler<PlaybackState>? StateChanged;
@@ -242,7 +265,7 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
 
     // --- Position / seek ------------------------------------------------------
 
-    public double PositionSeconds
+    public virtual double PositionSeconds
     {
         get
         {
@@ -252,7 +275,7 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         }
     }
 
-    public double DurationSeconds
+    public virtual double DurationSeconds
     {
         get
         {
@@ -278,33 +301,22 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         FreeStream();
         var generation = _generation;
 
-        var handle = track.Format == StreamFormat.Aac
-            ? BassAac.CreateStream(track.Path, 0, 0, BassFlags.Default)
-            : Bass.CreateStream(track.Path, 0, 0, BassFlags.Default);
-
-        if (handle == 0)
+        switch (TryStartAudio(track, generation))
         {
-            ErrorOccurred?.Invoke(this, $"Couldn't open \"{track.Title}\": {Bass.LastError}");
-            // Skip a dead file rather than stalling the queue. If it was the last one we've run
-            // dry, not stopped — the next harvested song should start us again.
-            if (_index + 1 < _queue.Count)
-                PlayAt(_index + 1);
-            else
-                StopInternal(ranDry: true);
-            return;
-        }
+            case AudioStart.OpenFailed:
+                ErrorOccurred?.Invoke(this, $"Couldn't open \"{track.Title}\": {Bass.LastError}");
+                // Skip a dead file rather than stalling the queue. If it was the last one we've
+                // run dry, not stopped — the next harvested song should start us again.
+                if (_index + 1 < _queue.Count)
+                    PlayAt(_index + 1);
+                else
+                    StopInternal(ranDry: true);
+                return;
 
-        _stream = handle;
-        Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, _volume);
-
-        _endSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => OnTrackEnded(generation));
-        Bass.ChannelSetSync(_stream, SyncFlags.End, 0, _endSync);
-
-        if (!Bass.ChannelPlay(_stream))
-        {
-            ErrorOccurred?.Invoke(this, $"Couldn't play \"{track.Title}\": {Bass.LastError}");
-            Stop();
-            return;
+            case AudioStart.PlayFailed:
+                ErrorOccurred?.Invoke(this, $"Couldn't play \"{track.Title}\": {Bass.LastError}");
+                Stop();
+                return;
         }
 
         TrackChanged?.Invoke(this, (track, _index));
@@ -312,6 +324,24 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         PublishPosition();
         _positionTimer.Start();
         ArmCrossfadeTrigger(generation);
+    }
+
+    /// <summary>Opens the track on the device and starts it — the BASS half of StartStream.</summary>
+    private protected virtual AudioStart TryStartAudio(LocalTrack track, int generation)
+    {
+        var handle = track.Format == StreamFormat.Aac
+            ? BassAac.CreateStream(track.Path, 0, 0, BassFlags.Default)
+            : Bass.CreateStream(track.Path, 0, 0, BassFlags.Default);
+        if (handle == 0)
+            return AudioStart.OpenFailed;
+
+        _stream = handle;
+        Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, _volume);
+
+        _endSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => OnTrackEnded(generation));
+        Bass.ChannelSetSync(_stream, SyncFlags.End, 0, _endSync);
+
+        return Bass.ChannelPlay(_stream) ? AudioStart.Started : AudioStart.PlayFailed;
     }
 
     private void OnTrackEnded(int generation)
@@ -327,7 +357,7 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     /// short a track (or the last one in the queue) just falls through to the existing
     /// <see cref="SyncFlags.End"/>-driven hard stop/advance.
     /// </summary>
-    private void ArmCrossfadeTrigger(int generation)
+    private protected virtual void ArmCrossfadeTrigger(int generation)
     {
         if (_stream == 0 || _index + 1 >= _queue.Count)
             return;
@@ -412,6 +442,12 @@ public sealed class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     {
         _positionTimer.Stop();
         _generation++;
+        StopAudio();
+    }
+
+    /// <summary>Releases whatever is on the device — the BASS half of FreeStream.</summary>
+    private protected virtual void StopAudio()
+    {
         if (_stream != 0)
         {
             Bass.StreamFree(_stream);
