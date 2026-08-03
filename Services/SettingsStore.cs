@@ -83,6 +83,31 @@ public sealed class AppSettings
     public int DjStationIdleMinutes { get; set; } = 10;
 
     /// <summary>
+    /// The voice DJ mode introduces tracks in: <c>Warm</c> (default), <c>Upbeat</c>,
+    /// <c>LateNight</c>, <c>Wry</c>, <c>Professional</c>. Stored as text so a typo costs one
+    /// setting rather than the whole file — an unrecognised value falls back to Warm, whereas an
+    /// enum property would throw during deserialization and reset EVERYTHING to defaults.
+    /// </summary>
+    public string DjPersonality { get; set; } = nameof(Services.DjPersonality.Warm);
+
+    /// <summary>
+    /// The parsed form of <see cref="DjPersonality"/>, or Warm if it isn't recognised.
+    ///
+    /// Matched against the member NAMES rather than via a bare <c>Enum.TryParse</c>, which also
+    /// accepts numeric strings: <c>"3"</c> parses happily into whichever member has that value, so
+    /// a stray number in a hand-edited file would silently pick an arbitrary persona instead of
+    /// falling back.
+    /// </summary>
+    public DjPersonality ResolveDjPersonality()
+    {
+        var wanted = DjPersonality?.Trim();
+        foreach (var name in Enum.GetNames<DjPersonality>())
+            if (string.Equals(name, wanted, StringComparison.OrdinalIgnoreCase))
+                return Enum.Parse<DjPersonality>(name);
+        return Services.DjPersonality.Warm;
+    }
+
+    /// <summary>
     /// Reject a segment whose whole-file music fraction is below this. <b>0 disables it, which is
     /// the current default.</b> Listening tests found confirmed-good deep house scoring 0.00 —
     /// the same as a confirmed ad break — so the two classes are not separable by this number and

@@ -207,6 +207,20 @@ public sealed class StreamRecorder : IDisposable
             if (session != _activeSession)
                 return;
 
+            // A station re-announcing the track it is ALREADY playing is not a boundary.
+            // Some do it every few minutes, and treating each announcement as a cut chopped one
+            // track into several: "UK Hardcore #13 Mix 2017" came out of a real session as a
+            // 3:33 song and a 2:25 song, both long enough to pass QC, both ending mid-phrase, and
+            // a 9-second sliver arrived 2 seconds after a 5:20 segment of the same title. Compare
+            // against whatever we are heading INTO — the queued cut's track when one is pending,
+            // otherwise the segment currently being written.
+            //
+            // A station that genuinely plays the same song twice back to back is merged into one
+            // segment by this. That's rare, and one long segment of a song is a far smaller
+            // problem than every song on the station arriving in fragments.
+            if (IsSameTrackAsCurrentLocked(title, artist))
+                return;
+
             // Two boundaries within one offset window (short jingle): the first cut hasn't
             // executed yet — do it now at the current position rather than losing it. The
             // resulting sliver is discarded by the min-size/filter rules anyway.
@@ -223,6 +237,25 @@ public sealed class StreamRecorder : IDisposable
         }
         if (done is not null)
             _dispatcher.BeginInvoke(() => SegmentCompleted?.Invoke(this, done));
+    }
+
+    /// <summary>
+    /// Whether an incoming title/artist is the track already in hand rather than a new one.
+    /// Caller holds the lock. Nothing is compared until a segment is actually open: before the
+    /// session's first boundary there is no "current track" to repeat.
+    /// </summary>
+    private bool IsSameTrackAsCurrentLocked(string title, string? artist)
+    {
+        var (currentTitle, currentArtist) = _cutRemaining >= 0
+            ? (_cutNext.Title, _cutNext.Artist)     // a cut is queued: this is the track we're entering
+            : (_pending.Title, _pending.Artist);    // otherwise: the one being written now
+
+        if (currentTitle is null || _current is null && _cutRemaining < 0)
+            return false;
+
+        return string.Equals(currentTitle.Trim(), title.Trim(), StringComparison.OrdinalIgnoreCase)
+               && string.Equals(currentArtist?.Trim() ?? "", artist?.Trim() ?? "",
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Stream ended (stop, reconnect, or superseded connect) — the tail is partial.</summary>

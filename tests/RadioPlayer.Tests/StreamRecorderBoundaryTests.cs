@@ -96,22 +96,106 @@ public sealed class StreamRecorderBoundaryTests : IDisposable
         Assert.Equal(DiscardReason.MidSongHead, Assert.Single(_discarded).Reason);
     }
 
+    // --- Metadata bounce: a re-announced title is not a boundary --------------------------------
+    // Some stations re-announce the track they're already playing. Treating each announcement as a
+    // cut chopped one track into several: "UK Hardcore #13 Mix 2017" came out of a real session as
+    // a 3:33 song and a 2:25 song, both passing QC, both ending mid-phrase.
+
     [Fact]
-    public void ARepeatedTitleLeavesASliverReportedAsTooShort()
+    public void ARepeatedTitleDoesNotCutTheTrack()
     {
-        // Metadata bounce: some stations re-announce the current title mid-track, and every
-        // re-announcement is treated as a boundary. Observed producing a 9-second sliver
-        // 2 seconds after a 5:20 segment of the same title.
+        Boundary("Head");
+        Boundary("UK Hardcore Mix");
+        Feed(SongSized);
+        Boundary("UK Hardcore Mix");      // re-announcement, not a new track
+        Feed(SongSized);
+        Boundary("Something Else");       // the real boundary
+
+        Pump();
+
+        // One whole song, not two fragments — and its length spans both halves.
+        var seg = Assert.Single(_completed);
+        Assert.Equal("UK Hardcore Mix", seg.Title);
+        Assert.Equal(SongSized * 2, seg.Bytes);
+    }
+
+    [Fact]
+    public void ARepeatedTitleDoesNotLeaveASliverEither()
+    {
+        // The other half of the same bug: a re-announcement arriving seconds after the last one
+        // used to produce a discarded sliver, which is how it was first spotted in the logs.
         Boundary("Head");
         Boundary("UK Hardcore Mix");
         Feed(SliverSized);
-        Boundary("UK Hardcore Mix");      // same title again, moments later
+        Boundary("UK Hardcore Mix");
 
         Pump();
 
         Assert.Empty(_completed);
-        Assert.Equal([DiscardReason.MidSongHead, DiscardReason.TooShort],
-            _discarded.Select(d => d.Reason));
+        Assert.Equal([DiscardReason.MidSongHead], _discarded.Select(d => d.Reason));
+    }
+
+    [Fact]
+    public void ARepeatedTitleWithADifferentArtistIsStillABoundary()
+    {
+        // Two different tracks sharing a title is entirely normal (covers, remakes). Only the
+        // title AND artist together identify a track.
+        Boundary("Head");
+        Boundary("Wonderful Life", "Black");
+        Feed(SongSized);
+        Boundary("Wonderful Life", "Hurts");
+
+        Pump();
+
+        Assert.Equal("Black", Assert.Single(_completed).Artist);
+    }
+
+    [Fact]
+    public void ARepeatedTitleIsMatchedIgnoringCaseAndSurroundingSpace()
+    {
+        Boundary("Head");
+        Boundary("UK Hardcore Mix", "DJ Someone");
+        Feed(SongSized);
+        Boundary("  uk hardcore mix ", "dj someone");
+        Feed(SongSized);
+        Boundary("Something Else");
+
+        Pump();
+
+        Assert.Equal(SongSized * 2, Assert.Single(_completed).Bytes);
+    }
+
+    [Fact]
+    public void ARepeatedTitleDuringThePendingCutWindowIsIgnoredToo()
+    {
+        // With a boundary offset the cut is queued rather than immediate, so a duplicate
+        // announcement arriving inside that window has to be compared against the track being
+        // entered, not the one still being written.
+        var dir = Path.Combine(_dir, "offset");
+        Directory.CreateDirectory(dir);
+        using var rec = new StreamRecorder(boundaryOffsetSeconds: 6, cacheDir: dir);
+        var completed = new List<CompletedSegment>();
+        rec.SegmentCompleted += (_, s) => completed.Add(s);
+        var session = rec.BeginSession(new Station("Test FM", "http://x", StreamFormat.Mp3), StreamFormat.Mp3);
+
+        void Bound(string t) => rec.OnTrackChanged(session, t, "Some Artist", "Test FM", 16_000);
+        void Bytes(int n)
+        {
+            var buf = Marshal.AllocHGlobal(n);
+            try { rec.Write(session, buf, n); } finally { Marshal.FreeHGlobal(buf); }
+        }
+
+        Bound("Head");
+        Bytes(SongSized);
+        Bound("Real Song");     // queues a cut ~96 KB out
+        Bound("Real Song");     // duplicate inside the offset window — must not force the cut early
+        Bytes(SongSized);
+        Bound("Next");
+        Bytes(SongSized);       // a deferred cut only executes once its byte countdown runs out
+        Pump();
+
+        Assert.Single(completed);
+        Assert.Equal("Real Song", completed[0].Title);
     }
 
     [Fact]

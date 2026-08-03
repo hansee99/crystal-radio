@@ -1,6 +1,25 @@
 namespace RadioPlayer.Services;
 
 /// <summary>
+/// The voice DJ mode introduces tracks in. Set via <c>DjPersonality</c> in settings.json — a
+/// file-only knob deliberately, so it can be changed between sessions while we find out which
+/// ones are actually worth keeping.
+/// </summary>
+public enum DjPersonality
+{
+    /// <summary>Warm and a little playful — the original voice, and the default.</summary>
+    Warm,
+    /// <summary>Bright and energetic.</summary>
+    Upbeat,
+    /// <summary>Low, unhurried, small-hours.</summary>
+    LateNight,
+    /// <summary>Dry and lightly sardonic.</summary>
+    Wry,
+    /// <summary>Clean and understated; trusts the music.</summary>
+    Professional
+}
+
+/// <summary>
 /// Generates a short (1-2 sentence), tongue-in-cheek DJ-style intro line for the currently
 /// playing DJ Mode track — the kind of on-air patter a real radio DJ might give before spinning
 /// a song. Purely creative/tone-matching, not a facts lookup, so no web search is involved.

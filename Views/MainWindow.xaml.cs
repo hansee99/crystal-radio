@@ -57,7 +57,8 @@ public partial class MainWindow : Window
             new HttpClient(), searchService, enrichment, apiKey);
         var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
         var trackInfo = new TrackInfoService(new HttpClient(), apiKey); // "About this track" briefings
-        var djIntro = new DjIntroService(new HttpClient(), apiKey);    // DJ Mode "why this song" line
+        // DJ Mode's on-air intro line; its voice is a settings.json knob (DjPersonality).
+        var djIntro = new DjIntroService(new HttpClient(), apiKey, _settingsStore.Load().ResolveDjPersonality());
 
         // Phase C: local song-library index (metadata + AI description + local embedding on save).
         _libraryStore = new LibraryStore();

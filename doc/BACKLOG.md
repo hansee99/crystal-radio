@@ -133,12 +133,11 @@ and a tail of 7:12 / 7:24 / 7:37 / 8:02 / 8:25 / 8:36 / 10:04. Long, but nothing
 hour-long set. So this is currently **anticipatory, not observed** — worth building only when a
 station is seen doing it, and worth checking the session logs for a genuinely huge segment first.
 
-**A related thing that IS observed:** metadata bounce cutting a mix into fragments — the opposite
-problem. "UK Hardcore #13 Mix 2017" appeared twice in one session at 3:33 and 2:25, and a
-9-second sliver of "YOU'RE THE ONE" was produced 2 seconds after a 5:20 segment of the same
-title. Some stations re-announce the current title mid-track, and every re-announcement is
-treated as a song boundary. The new minimum-length gate hides the worst of it, but the underlying
-cut logic is wrong: a boundary whose title equals the current one isn't a boundary.
+**A related thing that WAS observed and is now fixed:** metadata bounce cutting a track into
+fragments — the opposite problem. "UK Hardcore #13 Mix 2017" appeared twice in one session at 3:33
+and 2:25, and a 9-second sliver arrived 2 seconds after a 5:20 segment of the same title.
+`StreamRecorder.OnTrackChanged` now ignores an announcement whose title+artist match the track
+already in hand, so a re-announcement is no longer a boundary.
 
 **Design tension if we do chunk.** Fixed-time chunking reintroduces exactly the abrupt
 start/end problem the whole deferred-boundary-cut design exists to avoid — every chunk would

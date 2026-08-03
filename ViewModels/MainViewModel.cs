@@ -2171,11 +2171,30 @@ public sealed class MainViewModel : ObservableObject
         DjSessionVibe = null;
         _djSessionTimer?.Stop();
         _djLastStatus = null;
-        DjMix.Clear(); // the session's record ends with the session
 
+        // Ending the session ends the music. Stopping only the harvest left three surfaces
+        // disagreeing: audio still playing, the Mix panel emptied by the Clear() below, and
+        // "Up next" still populated because it reads the engine's queue directly. Keeping the mix
+        // alive instead would be worse — it can't refill, won't bridge when it runs dry
+        // (BridgeIfDjMixRanDry requires IsDjRunning), and every file in it is on an eviction
+        // countdown, so it would be a queue quietly rotting under a panel offering a fresh start.
+        // "A local queue that keeps playing" is what Library mode is for.
+        //
+        // SetQueue([]) rather than Stop(): it stops playback AND empties the queue AND raises
+        // QueueChanged, so DjMix and UpNext both fall correct on their own.
+        _local.SetQueue([]);
+
+        DjMix.Clear(); // the session's record ends with the session
         EndDjSessionLog();
+
+        // Before ResetNowPlaying: IdleHint reads IsDjRunning, so resetting while it was still true
+        // left the panel saying "Still collecting — the mix will start on its own" after the
+        // session had ended.
         IsDjRunning = false;
         DjStatus = string.Empty;
+
+        ResetNowPlaying();
+        RaiseTransportCanExecute();
     }
 
     /// <summary>Closes the session log (idempotent — DjHarvestService.Stop may already have) and

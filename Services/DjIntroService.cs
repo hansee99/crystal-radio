@@ -14,43 +14,93 @@ namespace RadioPlayer.Services;
 /// </summary>
 public sealed class DjIntroService : IDjIntroService
 {
-    private const string DefaultModel = AnthropicApi.HaikuModel; // short creative line, not deep reasoning
+    // Sonnet, not Haiku. This is short creative writing the listener actually reads every time a
+    // track changes — the one place in the app where prose quality is the product. CLAUDE.md's
+    // own tier rule reserves Sonnet for "listener-audible judgment", which this is; it was
+    // originally filed under one-shot description by shape rather than by what it's for. One small
+    // call per song, so the cost delta is negligible.
+    private const string DefaultModel = AnthropicApi.SonnetModel;
     private const int CacheCap = 48; // per-session, soft FIFO bound
 
-    private const string SystemPrompt = """
-        You are a radio DJ giving a short, on-air introduction just before playing a song for a
-        listener who described a specific vibe they wanted. Write ONE short intro line — 1-2
-        sentences, no more — in a professional-but-slightly-quirky tone: warm and a little
-        playful, never corny or over-the-top.
+    private const string SystemPromptTemplate = """
+        You are a radio DJ introducing the next song, on air, to one listener who told you the kind
+        of thing they wanted to hear. Write ONE line — 1-2 sentences, never more.
 
-        You're given the track title, the artist (may be blank), and the vibe/prompt the listener
-        originally asked for. Sometimes you also get the curator's note — the actual reason this
-        track was picked for the playlist; when present, let it shape the line (it's the real
-        "why this song"). Reference the vibe or the track naturally if it fits; don't force it
-        if there's nothing good to say.
+        {PERSONA}
 
-        If you don't confidently recognize the track or artist, keep the line generic but still
-        natural-sounding — lean on the vibe instead. Never invent biographical or factual claims
-        you're not confident of.
+        You get the track title, the artist (may be blank), and the vibe the listener asked for.
+        Sometimes you also get a curator's note explaining why the track was picked. Treat that
+        note as background for YOU, not as the subject of the line: it tells you why the track
+        belongs, which you may draw on, but a line whose whole job is explaining the match gets
+        dull fast. Say something about the music, the artist, or the moment first; reach for how it
+        fits the request only when there's genuinely nothing better to say, and then lightly.
+
+        {MOVE}
+
+        Never invent biographical or factual claims. If you don't confidently recognize the track
+        or artist, say nothing specific about them — work with the mood or the moment instead. Do
+        not use the listener's words back at them verbatim, and don't start with "Here's".
 
         Respond with ONLY this JSON object — no prose, no markdown fences:
         { "line": "string" }
         """;
 
+    /// <summary>
+    /// One of these is injected per call, cycling. This — not the tone wording — is what stops the
+    /// lines reading as a template: left to itself the model settles into one sentence shape
+    /// ("Here's X, which fits your Y because Z") and every intro sounds like the last one however
+    /// the persona is described. Varying what the line *does* is what a real DJ varies.
+    /// </summary>
+    private static readonly string[] Moves =
+    [
+        "This time: pick out one concrete detail of the track or artist and hang the line on it.",
+        "This time: set a scene — where or when this music belongs — and let the track arrive in it.",
+        "This time: just announce it, cleanly and with a little style. No justification at all.",
+        "This time: speak as if handing off from whatever was playing before, mid-flow.",
+        "This time: an aside — a small, human, slightly offhand remark, then the track.",
+        "This time: lead with the feeling the first few seconds will give the listener.",
+    ];
+
+    private static readonly Dictionary<DjPersonality, string> Personas = new()
+    {
+        [DjPersonality.Warm] =
+            "Your voice is warm and a little playful — an unhurried late-evening presenter who "
+            + "likes this music. Never corny, never over-the-top.",
+        [DjPersonality.Upbeat] =
+            "Your voice is bright and energetic — you're genuinely glad this track is next and it "
+            + "shows. Momentum and warmth, not shouting; no exclamation marks stacked up.",
+        [DjPersonality.LateNight] =
+            "Your voice is low and unhurried — the small hours, lights down, talking quietly to "
+            + "someone still awake. Spare, atmospheric, comfortable with saying little.",
+        [DjPersonality.Wry] =
+            "Your voice is dry and lightly sardonic — an arched eyebrow, the occasional deflating "
+            + "aside. Never mean about the music, and never sneering at the listener.",
+        [DjPersonality.Professional] =
+            "Your voice is clean and understated — a seasoned presenter who trusts the music to do "
+            + "the work. Precise, unfussy, no whimsy.",
+    };
+
     private readonly HttpClient _http;
     private readonly string? _apiKey;
     private readonly string _model;
+    private readonly string _systemPromptBase;
+
+    // Which move to use next. Advanced per generated line, so consecutive intros differ in shape.
+    private int _moveIndex = -1;
 
     // Per-session cache keyed by normalized "artist|title". ConcurrentDictionary because a
     // background-thread continuation may read/write while the UI thread queues another request.
     private readonly ConcurrentDictionary<string, string> _cache = new();
     private readonly ConcurrentQueue<string> _cacheOrder = new();
 
-    public DjIntroService(HttpClient http, string? apiKey, string model = DefaultModel)
+    public DjIntroService(HttpClient http, string? apiKey,
+        DjPersonality personality = DjPersonality.Warm, string model = DefaultModel)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _apiKey = apiKey;
         _model = model;
+        _systemPromptBase = SystemPromptTemplate.Replace("{PERSONA}",
+            Personas.TryGetValue(personality, out var p) ? p : Personas[DjPersonality.Warm]);
     }
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey);
@@ -84,11 +134,15 @@ public sealed class DjIntroService : IDjIntroService
             sb.Append(".\nCurator's note (why this track was picked): \"").Append(curatorNote).Append('"');
         sb.Append('.');
 
+        // Cycle the move. Interlocked because two tracks can land close together and the counter
+        // is the only thing keeping consecutive lines from sharing a shape.
+        var move = Moves[(int)((uint)Interlocked.Increment(ref _moveIndex) % Moves.Length)];
+
         var body = new JsonObject
         {
             ["model"] = _model,
             ["max_tokens"] = 200,
-            ["system"] = SystemPrompt,
+            ["system"] = _systemPromptBase.Replace("{MOVE}", move),
             ["messages"] = new JsonArray
             {
                 new JsonObject { ["role"] = "user", ["content"] = sb.ToString() }
