@@ -37,6 +37,11 @@ public partial class MainWindow : Window
         _recorder = new StreamRecorder(_settingsStore.Load().CaptureBoundaryOffsetSeconds);
         _engine = new RadioEngine(_recorder);
         _localEngine = new LocalPlaybackEngine();
+        // Edge guards for imperfect boundary cuts; 0 = off. Engine-wide, so they apply to saved
+        // songs as well as the DJ mix — both come from the same cutting mechanism.
+        var edgeSettings = _settingsStore.Load();
+        _localEngine.IntroSkipSeconds = edgeSettings.IntroSkipSeconds;
+        _localEngine.OutroGuardSeconds = edgeSettings.OutroGuardSeconds;
 
         // AI-assisted search services (raw HttpClient; key never committed). Prefer the key
         // saved in-app (DPAPI-encrypted), then fall back to the ANTHROPIC_API_KEY env var.
@@ -81,8 +86,8 @@ public partial class MainWindow : Window
             rejectBelow: djSettings.DjMusicFractionFloor,   // 0 = off; see SegmentQualityChecker
             minSongSeconds: djSettings.DjMinSongSeconds,
             stationIdleMinutes: djSettings.DjStationIdleMinutes,
-            maxHarvestCacheBytes: djSettings.DjMaxHarvestCacheMb * 1024L * 1024L,
-            maxRejectedCacheBytes: djSettings.DjRejectedCacheMb * 1024L * 1024L);
+            maxHarvestCacheBytes: djSettings.ResolveHarvestCacheBytes(),
+            maxRejectedCacheBytes: djSettings.ResolveRejectedCacheBytes());
 
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new SongHistoryStore(), _recorder,

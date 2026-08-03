@@ -1028,6 +1028,77 @@
 
     <!-- Dialog text input: the same radius-10 hairline field as the main window's prompts
          (the Options key box was the only input in the product without it). -->
+    <!-- Dialog combo box. Fully templated because WPF's default renders light-on-light inside
+         this dark chrome, and its popup ignores the dialog's Foreground entirely. -->
+    <Style x:Key="DialogComboBox" TargetType="ComboBox">
+        <Setter Property="Foreground" Value="{StaticResource TextBody}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Padding" Value="11,8"/>
+        <Setter Property="Margin" Value="0,0,0,2"/>
+        <Setter Property="ItemContainerStyle">
+            <Setter.Value>
+                <Style TargetType="ComboBoxItem">
+                    <Setter Property="Foreground" Value="{StaticResource TextBody}"/>
+                    <Setter Property="Padding" Value="11,7"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ComboBoxItem">
+                                <Border x:Name="ib" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsHighlighted" Value="True">
+                                        <Setter TargetName="ib" Property="Background" Value="{StaticResource TealTint10}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton x:Name="tb" Focusable="False" ClickMode="Press"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="b" CornerRadius="10"
+                                            Background="{StaticResource FillSubtle}"
+                                            BorderBrush="{StaticResource Hairline}" BorderThickness="1">
+                                        <DockPanel>
+                                            <Path DockPanel.Dock="Right" Data="M 0 0 L 8 0 L 4 5 Z"
+                                                  Fill="{StaticResource TextMuted}" Margin="0,0,12,0"
+                                                  VerticalAlignment="Center"/>
+                                            <ContentPresenter Margin="11,8" VerticalAlignment="Center"
+                                                              Content="{Binding SelectionBoxItem,
+                                                                        RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
+                                        </DockPanel>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Teal}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom"
+                               AllowsTransparency="True" PopupAnimation="Fade" Focusable="False">
+                            <Border Background="#FF10201D" CornerRadius="10" Margin="0,4,0,0"
+                                    BorderBrush="{StaticResource Hairline}" BorderThickness="1"
+                                    MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ItemsPresenter Margin="0,5"/>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="DialogTextBox" TargetType="TextBox">
         <Setter Property="Background" Value="{StaticResource FillSubtle}"/>
         <Setter Property="Foreground" Value="{StaticResource TextBody}"/>

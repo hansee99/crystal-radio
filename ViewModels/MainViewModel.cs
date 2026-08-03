@@ -2186,7 +2186,7 @@ public sealed class MainViewModel : ObservableObject
         // Best-effort and optional — the harvest path doesn't depend on it.
         var settings = _settingsStore.Load();
         _djSessionLog = DjSessionLog.Start(prompt, settings.DjHarvesterCount,
-            settings.DjHarvestReserveCount, settings.DjMaxHarvestCacheMb * 1024L * 1024L);
+            settings.DjHarvestReserveCount, settings.ResolveHarvestCacheBytes());
         _djHarvest.SessionLog = _djSessionLog;
 
         IsDjRunning = true;

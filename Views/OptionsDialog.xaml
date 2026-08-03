@@ -31,7 +31,34 @@
         <TextBlock Style="{StaticResource DialogHint}"
                    Text="Songs you save land here, named &quot;Artist - Title&quot;. For personal use only — respect the stations' terms."/>
 
-        <TextBlock Style="{StaticResource DialogHint}" Foreground="#FFC7B486"
+        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="DJ mode" Margin="0,24,0,2"/>
+
+        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="DJ voice"/>
+        <ComboBox x:Name="DjVoiceBox" Style="{StaticResource DialogComboBox}"/>
+        <TextBlock Style="{StaticResource DialogHint}"
+                   Text="How the DJ introduces tracks and fills the gaps between them."/>
+
+        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Stations to listen to at once"/>
+        <TextBox x:Name="HarvesterCountBox" Style="{StaticResource DialogTextBox}"/>
+        <TextBlock Style="{StaticResource DialogHint}"
+                   Text="More stations means more variety, but more bandwidth and more AI cost — every song collected gets a description written for it."/>
+
+        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Disk space for DJ mode (MB)"/>
+        <TextBox x:Name="DiskSpaceBox" Style="{StaticResource DialogTextBox}"/>
+        <TextBlock Style="{StaticResource DialogHint}"
+                   Text="Collected songs are kept only while the mix might use them, then the oldest are deleted. Songs you save to your library are never touched."/>
+
+        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="Track edges" Margin="0,24,0,2"/>
+        <TextBlock Style="{StaticResource DialogHint}" Margin="0,2,0,0"
+                   Text="Songs recorded off live radio don't always start and end exactly on the beat. These hide an imperfect cut by giving up a moment of the track. 0 turns them off."/>
+
+        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Skip the first … seconds of each track"/>
+        <TextBox x:Name="IntroSkipBox" Style="{StaticResource DialogTextBox}"/>
+
+        <TextBlock Style="{StaticResource DialogFieldLabel}" Text="Stop … seconds before the end"/>
+        <TextBox x:Name="OutroGuardBox" Style="{StaticResource DialogTextBox}"/>
+
+        <TextBlock Style="{StaticResource DialogHint}" Foreground="#FFC7B486" Margin="0,18,0,0"
                    Text="Changes apply next time you start Crystal Radio."/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">

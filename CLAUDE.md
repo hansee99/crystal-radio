@@ -520,6 +520,27 @@ popup). Separate from station *search* — it explains what's already playing.
   but the rule is about purpose, and a spoken-style line the listener reads on every track change
   is the most listener-audible prose in the app. One small call per song.)*
 
+## Design principle: it's a player, not a stream ripper
+
+**Continuous, uninterrupted playback is the priority. Sacrificing a few seconds of a song to
+protect it is acceptable.**
+
+This settles a whole class of trade-offs, so reach for it rather than re-deriving them:
+
+- Trimming, guards and skips may take audio off a track's edges to hide an imperfect boundary
+  cut. Losing two seconds of a song is a smaller failure than a listener hearing a fragment of
+  the previous one.
+- The harvest exists to feed the mix, not to build an archive. A song rejected by QC costs
+  nothing; a bad one reaching the mix costs the listener's attention.
+- Never go silent. Bridge to live radio when the mix runs dry rather than waiting for it to
+  refill (`BridgeIfDjMixRanDry`).
+- Where the two conflict — accuracy of a saved file vs smoothness of playback — smoothness wins.
+  The saved library is a by-product.
+
+The one place this inverts: a song the user **explicitly saved** is theirs. Heuristics that got
+stricter afterwards may not delete or degrade it (see `SongLibraryService.RetireIfNoLongerSongLike`,
+scoped to harvested rows only).
+
 ## Conventions
 
 - MVVM throughout; keep code-behind to view wiring and the HWND/SMTC bootstrap only.

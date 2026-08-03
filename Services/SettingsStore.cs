@@ -45,19 +45,46 @@ public sealed class AppSettings
     /// remaining songs, in case harvesting alone isn't keeping up.</summary>
     public int DjQueueLowWatermark { get; set; } = 5;
 
-    /// <summary>Rolling-cache cap in megabytes for DJ-mode's harvested (unsaved) songs — a
-    /// separate cap from <see cref="CacheCapMb"/>, since harvested songs live in their own
-    /// folder, distinct from both the live-recording cache and the user's saved Library folder.</summary>
-    public int DjMaxHarvestCacheMb { get; set; } = 500;
+    /// <summary>
+    /// Total disk DJ mode may use, in megabytes — harvested songs plus the QC quarantine.
+    ///
+    /// One number on purpose. These were two separate caps (500 + 250) and the folder therefore
+    /// grew past whichever one you had set, which is confusing enough that it was reported as a
+    /// bug. Now the figure you set is the figure on disk; the split between the two folders is an
+    /// implementation detail (see <see cref="ResolveHarvestCacheBytes"/>).
+    /// </summary>
+    public int DjDiskSpaceMb { get; set; } = 750;
+
+    /// <summary>Share of <see cref="DjDiskSpaceMb"/> for harvested songs — the mix's material.</summary>
+    public long ResolveHarvestCacheBytes() => (long)(DjDiskSpaceMb * (2.0 / 3.0)) * 1024 * 1024;
 
     /// <summary>
-    /// Cap in megabytes for QC-rejected segments, kept in a <c>_rejected</c> subfolder instead of
-    /// being deleted. They are the only evidence of a misclassification: the music detector was
-    /// fitted on pop/rock/disco plus ambient/indie and has no electronic dance music in its
-    /// corpus at all, so whole genres can be rejected wholesale with nothing left to inspect.
-    /// Keeping them makes that diagnosable and feeds the corpus a re-fit needs. 0 disables.
+    /// Share for QC-rejected segments, kept rather than deleted because they are the only evidence
+    /// a rejection was wrong — whole genres were once rejected wholesale with nothing left to
+    /// inspect. A third is enough to diagnose without crowding out the mix itself.
     /// </summary>
-    public int DjRejectedCacheMb { get; set; } = 250;
+    public long ResolveRejectedCacheBytes() => (long)(DjDiskSpaceMb * (1.0 / 3.0)) * 1024 * 1024;
+
+    /// <summary>
+    /// Seconds skipped at the start of every locally-played track. 0 = off.
+    ///
+    /// A boundary cut slightly early leaves the tail of the previous song at the head of this one,
+    /// and the edge-trim only catches it when the detector recognises it as non-music. This is the
+    /// blunt backstop for when it doesn't. Engine-wide rather than DJ-only: saved songs come from
+    /// the same boundary mechanism and currently get no trim at all, so they carry the artefact
+    /// too. Per CLAUDE.md, losing a couple of seconds beats hearing the previous track.
+    /// </summary>
+    public double IntroSkipSeconds { get; set; }
+
+    /// <summary>
+    /// Seconds a locally-played track stops short of its end. 0 = off.
+    ///
+    /// The mirror of <see cref="IntroSkipSeconds"/>: a boundary cut slightly late leaves the head
+    /// of the NEXT song at the end of this one. Where a crossfade follows, this brings the fade
+    /// forward so the outgoing track is already silent before the residue; where one doesn't, the
+    /// track simply ends early.
+    /// </summary>
+    public double OutroGuardSeconds { get; set; }
 
     /// <summary>
     /// A harvested segment must have at least this many seconds of audio left after the edge-trim
@@ -152,8 +179,9 @@ public sealed class SettingsStore
                     settings.DjHarvesterCount = Math.Clamp(settings.DjHarvesterCount, 1, 16);
                     settings.DjHarvestReserveCount = Math.Clamp(settings.DjHarvestReserveCount, 0, 100);
                     settings.DjQueueLowWatermark = Math.Clamp(settings.DjQueueLowWatermark, 1, 50);
-                    settings.DjMaxHarvestCacheMb = Math.Clamp(settings.DjMaxHarvestCacheMb, 50, 20_000);
-                    settings.DjRejectedCacheMb = Math.Clamp(settings.DjRejectedCacheMb, 0, 20_000);
+                    settings.DjDiskSpaceMb = Math.Clamp(settings.DjDiskSpaceMb, 100, 30_000);
+                    settings.IntroSkipSeconds = Math.Clamp(settings.IntroSkipSeconds, 0, 10);
+                    settings.OutroGuardSeconds = Math.Clamp(settings.OutroGuardSeconds, 0, 10);
                     settings.DjMinSongSeconds = Math.Clamp(settings.DjMinSongSeconds, 0, 600);
                     settings.DjStationIdleMinutes = Math.Clamp(settings.DjStationIdleMinutes, 1, 240);
                     settings.DjMusicFractionFloor = Math.Clamp(settings.DjMusicFractionFloor, 0, 1);

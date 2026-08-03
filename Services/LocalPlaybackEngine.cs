@@ -127,6 +127,46 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         }
     }
 
+    /// <summary>
+    /// Seconds skipped at the start of every track; 0 = off. A backstop for boundary cuts that
+    /// landed early and left the previous song's tail at the head of this one — the content-aware
+    /// edge-trim only removes that when the detector recognises it as non-music.
+    /// </summary>
+    public double IntroSkipSeconds { get; set; }
+
+    /// <summary>
+    /// Seconds every track stops short of its end; 0 = off. The mirror of
+    /// <see cref="IntroSkipSeconds"/>, for cuts that landed late. With a crossfade this brings the
+    /// fade forward so the outgoing track is silent before the residue; without one the track
+    /// simply ends early and the queue advances.
+    /// </summary>
+    public double OutroGuardSeconds { get; set; }
+
+    /// <summary>
+    /// Where a track should be treated as ending. Never shortens a track to less than
+    /// <see cref="MinDurationForCrossfade"/>: a guard bigger than the track itself would skip it
+    /// entirely, and a two-second stub is worse than a couple of seconds of residue.
+    /// </summary>
+    /// <summary>Test hook for the derivation below; not part of the public surface.</summary>
+    private protected double InvokeEffectiveEnd(double duration) => EffectiveEnd(duration);
+
+    /// <summary>Test hook for the derivation below; not part of the public surface.</summary>
+    private protected double InvokeEffectiveStart(double duration) => EffectiveStart(duration);
+
+    private double EffectiveEnd(double duration) =>
+        duration <= MinDurationForCrossfade
+            ? duration
+            : Math.Max(MinDurationForCrossfade, duration - Math.Max(0, OutroGuardSeconds));
+
+    /// <summary>How far into a track playback starts, bounded so it can't overrun a short one.</summary>
+    private double EffectiveStart(double duration)
+    {
+        var skip = Math.Max(0, IntroSkipSeconds);
+        if (skip <= 0 || duration <= 0)
+            return 0;
+        return skip < duration - MinDurationForCrossfade ? skip : 0;
+    }
+
     public bool HasQueue => _queue.Count > 0;
     public int CurrentIndex => _index;
 
@@ -337,6 +377,7 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
 
         _stream = handle;
         Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, _volume);
+        SeekToEffectiveStart();
 
         _endSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => OnTrackEnded(generation));
         Bass.ChannelSetSync(_stream, SyncFlags.End, 0, _endSync);
@@ -359,15 +400,40 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     /// </summary>
     private protected virtual void ArmCrossfadeTrigger(int generation)
     {
-        if (_stream == 0 || _index + 1 >= _queue.Count)
+        if (_stream == 0)
             return;
         var duration = DurationSeconds;
-        if (duration <= MinDurationForCrossfade)
+        if (duration <= 0)
             return;
+        var end = EffectiveEnd(duration);
 
-        var triggerBytes = Bass.ChannelSeconds2Bytes(_stream, duration - FadeSeconds);
+        // Last track, or one too short to fade: no crossfade, but the guard still applies —
+        // otherwise the residue at the end of the final song plays in full.
+        if (_index + 1 >= _queue.Count || duration <= MinDurationForCrossfade)
+        {
+            if (end >= duration)
+                return; // no guard in play; the natural End sync handles it
+            var endBytes = Bass.ChannelSeconds2Bytes(_stream, end);
+            _fadeTriggerSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => OnTrackEnded(generation));
+            Bass.ChannelSetSync(_stream, SyncFlags.Position, endBytes, _fadeTriggerSync);
+            return;
+        }
+
+        // Fade so the outgoing track reaches silence AT the guarded end rather than the file's.
+        var triggerBytes = Bass.ChannelSeconds2Bytes(_stream, Math.Max(0, end - FadeSeconds));
         _fadeTriggerSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => BeginCrossfade(generation));
         Bass.ChannelSetSync(_stream, SyncFlags.Position, triggerBytes, _fadeTriggerSync);
+    }
+
+    /// <summary>Positions a freshly-created stream at <see cref="IntroSkipSeconds"/>.</summary>
+    private void SeekToEffectiveStart()
+    {
+        if (_stream == 0)
+            return;
+        var start = EffectiveStart(DurationSeconds);
+        if (start <= 0)
+            return;
+        Bass.ChannelSetPosition(_stream, Bass.ChannelSeconds2Bytes(_stream, start), PositionFlags.Bytes);
     }
 
     /// <summary>
@@ -408,6 +474,7 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         _index = nextIndex;
         _stream = handle;
         Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, 0f);
+        SeekToEffectiveStart();
 
         _endSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => OnTrackEnded(incomingGeneration));
         Bass.ChannelSetSync(_stream, SyncFlags.End, 0, _endSync);
