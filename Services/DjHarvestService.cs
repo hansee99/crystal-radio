@@ -594,6 +594,31 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         }
     }
 
+    /// <summary>
+    /// Minimum ident boundaries before this is judged at all. An ad break legitimately produces a
+    /// few, so judging early would drop a good station for having commercials. A carousel reaches
+    /// eight in under three minutes, which is soon enough to stop wasting the slot.
+    /// </summary>
+    private const int MinIdentBoundariesToJudge = 8;
+
+    /// <summary>
+    /// Whether a station's ICY metadata is promotional text rather than track titles.
+    ///
+    /// Some stations cycle a show name, a phone number and a slogan through StreamTitle every
+    /// twenty seconds while music plays. Every rotation looks like a track boundary, so the song
+    /// underneath is chopped into fragments, each labelled with a promo and each correctly
+    /// discarded as an ident. The audio is fine; the metadata simply never names the track, and
+    /// nothing downstream can recover a title that was never sent — so the slot is better spent on
+    /// a station that announces what it plays.
+    ///
+    /// Measured 2026-08-03 across two sessions: SWR3 produced 22 ident boundaries against 3 usable
+    /// segments, Radio Eins 18 against 1. A station merely playing adverts sits nowhere near that
+    /// ratio, which is what the 3x margin protects.
+    /// </summary>
+    internal static bool IsMetadataCarousel(int identBoundaries, int segmentsCompleted) =>
+        identBoundaries >= MinIdentBoundariesToJudge
+        && identBoundaries > 3 * segmentsCompleted;
+
     /// <summary>Drops harvesters that aren't contributing and promotes reserves in their place.</summary>
     private void RetireUnproductive()
     {
@@ -605,17 +630,27 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         lock (_activeLock)
         {
             foreach (var h in _active)
+            {
                 if (ShouldRetire(h.TitlesSeen, h.ConnectedAt, h.LastSegmentAt, now,
                         MetadataGrace, _idleLimit, out var reason))
                     unproductive.Add((h, reason));
+                else if (IsMetadataCarousel(h.IdentBoundaries, h.SegmentsCompleted))
+                    unproductive.Add((h, "promos, not tracks"));
+            }
         }
 
         foreach (var (harvester, reason) in unproductive)
         {
-            AppLog.Info($"[Dj] dropping {harvester.Label}: {reason} — "
-                        + (reason == "no metadata"
-                            ? $"no ICY titles after {MetadataGrace.TotalMinutes:0} min, so it can never produce a segment"
-                            : $"nothing completed in {_idleLimit.TotalMinutes:0} min (long mix, or stalled)"));
+            AppLog.Info($"[Dj] dropping {harvester.Label}: {reason} — " + reason switch
+            {
+                "no metadata" =>
+                    $"no ICY titles after {MetadataGrace.TotalMinutes:0} min, so it can never produce a segment",
+                "promos, not tracks" =>
+                    $"{harvester.IdentBoundaries} ident boundaries vs {harvester.SegmentsCompleted} usable "
+                    + "segment(s) — it cycles promotional text through StreamTitle while music plays, "
+                    + "so nothing it sends ever names a track",
+                _ => $"nothing completed in {_idleLimit.TotalMinutes:0} min (long mix, or stalled)"
+            });
             Retire(harvester, reason);
         }
     }

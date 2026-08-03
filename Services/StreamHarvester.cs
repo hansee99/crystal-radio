@@ -34,6 +34,8 @@ public sealed class StreamHarvester : IDisposable
     private int _handle;
     private int _session;
     private int _titles;
+    private int _segments;
+    private int _identBoundaries;
     private int _reconnects;
     private volatile bool _dead;
 
@@ -46,6 +48,20 @@ public sealed class StreamHarvester : IDisposable
     public string Label { get; }
     public bool Dead => _dead;
     public int TitlesSeen => Volatile.Read(ref _titles);
+
+    /// <summary>Boundaries that produced a usable segment — before QC has its say.</summary>
+    public int SegmentsCompleted => Volatile.Read(ref _segments);
+
+    /// <summary>
+    /// Boundaries whose title wasn't a song: a show name, a slogan, a phone number, a URL.
+    ///
+    /// A few of these are normal — every ad break makes some. A flood of them means the station
+    /// is cycling promotional text through StreamTitle WHILE music plays, so each rotation looks
+    /// like a track boundary and chops the song underneath into fragments that are all discarded.
+    /// Measured on SWR3 and Radio Eins (2026-08-03): a new promo every 18-21 seconds, 22 and 18
+    /// ident boundaries against 3 and 1 usable segments respectively.
+    /// </summary>
+    public int IdentBoundaries => Volatile.Read(ref _identBoundaries);
 
     /// <summary>When <see cref="Start"/> first connected. Paired with <see cref="TitlesSeen"/>
     /// this is how the pool spots a station that serves no ICY metadata at all: no title changes
@@ -121,9 +137,15 @@ public sealed class StreamHarvester : IDisposable
         _recorder.SegmentCompleted += (_, seg) =>
         {
             LastSegmentAt = DateTime.UtcNow;
+            Interlocked.Increment(ref _segments);
             SegmentCompleted?.Invoke(this, seg);
         };
-        _recorder.SegmentDiscarded += (_, d) => SegmentDiscarded?.Invoke(this, d);
+        _recorder.SegmentDiscarded += (_, d) =>
+        {
+            if (d.Reason == DiscardReason.NotSongLike)
+                Interlocked.Increment(ref _identBoundaries);
+            SegmentDiscarded?.Invoke(this, d);
+        };
         _dl = (buffer, length, _) => _recorder.Write(_session, buffer, length);
     }
 

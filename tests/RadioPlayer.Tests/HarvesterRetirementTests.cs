@@ -66,6 +66,50 @@ public class HarvesterRetirementTests
         Assert.False(Retire(titlesSeen: 1, connectedMinutesAgo: 11, lastSegmentMinutesAgo: null, out _));
     }
 
+    // --- Stations whose metadata is promotional text, not track titles ------------------------
+    // SWR3 and Radio Eins cycle a show name, a phone number and a slogan through StreamTitle every
+    // 18-21 seconds while music plays. Every rotation looks like a track boundary, so the song
+    // underneath is chopped into fragments that are all discarded as idents. The audio is fine;
+    // the metadata simply never names the track, and nothing downstream can recover a title that
+    // was never sent — so the slot is better spent elsewhere.
+
+    [Theory]
+    [InlineData(22, 3)]   // SWR3, measured across two sessions
+    [InlineData(18, 1)]   // Radio Eins, same
+    public void AStationCyclingPromosThroughStreamTitleIsDropped(int idents, int segments)
+    {
+        Assert.True(DjHarvestService.IsMetadataCarousel(idents, segments));
+    }
+
+    /// <summary>Adverts legitimately produce ident boundaries, so a station that plays them and
+    /// still delivers songs has to survive. This is what the ratio protects.</summary>
+    [Theory]
+    [InlineData(8, 3)]    // an ad-heavy hour on an otherwise fine station
+    [InlineData(12, 5)]
+    [InlineData(30, 12)]
+    public void AStationThatAlsoPlaysAdvertsIsKept(int idents, int segments)
+    {
+        Assert.False(DjHarvestService.IsMetadataCarousel(idents, segments));
+    }
+
+    /// <summary>Judging early would drop a good station for a single commercial break. A carousel
+    /// reaches the minimum in under three minutes, so nothing is lost by waiting.</summary>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(3, 0)]
+    [InlineData(7, 0)]    // one short of the minimum, and producing nothing — still too early
+    public void NoVerdictUntilThereAreEnoughBoundariesToJudge(int idents, int segments)
+    {
+        Assert.False(DjHarvestService.IsMetadataCarousel(idents, segments));
+    }
+
+    [Fact]
+    public void AStationProducingNothingButIdentsIsDroppedOnceThereIsEnoughEvidence()
+    {
+        Assert.False(DjHarvestService.IsMetadataCarousel(7, 0)); // not yet
+        Assert.True(DjHarvestService.IsMetadataCarousel(8, 0));  // now
+    }
+
     [Fact]
     public void TheIdleClockStartsAtConnectionWhenNothingHasEverCompleted()
     {
