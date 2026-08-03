@@ -314,6 +314,116 @@ public sealed class DjQueueServiceTests : IDisposable
         Assert.Equal("deep house", curator.LastPrompt);   // unchanged
     }
 
+    // --- Songs must match the CURRENT vibe (#30) ----------------------------------------------
+    // Arrivals used to be appended unconditionally. The warm-start seed and the low-watermark
+    // top-up both went through the curator with requireRelevance; the arrival path — the main
+    // source of songs in a session — went through nothing, so old-vibe songs kept playing.
+
+    private static SavedSong Harvested(string path, string artist, string title) =>
+        new(path, title, artist, "SomeStation", "mp3", DateTimeOffset.Now, Source: SongSource.Harvested);
+
+    [Fact]
+    public void ASongHarvestedForAnEarlierVibeIsDropped()
+    {
+        // Harvesting is a pipeline several minutes deep, so a segment recorded before the swap
+        // finishes QC and lands well after it. That is the song the listener doesn't want.
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        curator.Enqueue([Song(NewTempSongFile(), "A1", "T1")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
+        sut.StartAsync("deep house").GetAwaiter().GetResult();
+
+        harvest.VibeGeneration = 1;          // the pool has swapped over
+        sut.ChangeVibe("uptempo drum and bass");
+
+        harvest.RaiseSegmentIndexed(Harvested(NewTempSongFile(), "Old", "From The Old Vibe"), generation: 0);
+        PumpDispatcher();
+
+        Assert.Empty(local.AppendCalls);
+    }
+
+    [Fact]
+    public void ASongHarvestedForTheCurrentVibeIsStillAppended()
+    {
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        curator.Enqueue([Song(NewTempSongFile(), "A1", "T1")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
+        sut.StartAsync("deep house").GetAwaiter().GetResult();
+
+        harvest.VibeGeneration = 1;
+        sut.ChangeVibe("uptempo drum and bass");
+
+        var file = NewTempSongFile();
+        harvest.RaiseSegmentIndexed(Harvested(file, "New", "For The New Vibe"));  // current generation
+        PumpDispatcher();
+
+        Assert.Equal(file, Assert.Single(Assert.Single(local.AppendCalls)).Path);
+    }
+
+    /// <summary>The cross-session trap: the harvester's counter is not reset between sessions, so
+    /// a queue that assumed 0 would reject every arrival in any session started after a vibe
+    /// change — the feature would appear to work once and never again.</summary>
+    [Fact]
+    public void ASessionStartedAfterAnEarlierVibeChangeStillAcceptsSongs()
+    {
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource { VibeGeneration = 3 };  // an earlier session changed vibe
+        var curator = new FakeSongCurator();
+        curator.Enqueue([]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
+        sut.StartAsync("anything").GetAwaiter().GetResult();
+
+        harvest.RaiseSegmentIndexed(Harvested(NewTempSongFile(), "A", "T"));
+        PumpDispatcher();
+
+        Assert.Single(local.AppendCalls);
+    }
+
+    [Fact]
+    public void ChangingTheVibeDropsTheQueuedTailButNotThePlayingTrack()
+    {
+        // Playing them out would mean the change isn't audible for several minutes; cutting the
+        // current track off mid-song is the one thing the player must never do.
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        curator.Enqueue([Song(NewTempSongFile(), "A1", "T1"), Song(NewTempSongFile(), "A2", "T2"),
+                         Song(NewTempSongFile(), "A3", "T3")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
+        sut.StartAsync("deep house").GetAwaiter().GetResult();
+        local.RaiseTrackChanged(0);          // playing the first of three
+
+        sut.ChangeVibe("uptempo drum and bass");
+
+        Assert.Equal(1, local.QueueCount);   // just the one still playing
+        Assert.Equal(1, local.TruncateCalls);
+    }
+
+    [Fact]
+    public void ChangingTheVibeBeforeAnythingPlaysLeavesTheQueueAlone()
+    {
+        // Nothing is playing yet, so there is no "after the current track" to drop — and throwing
+        // the seed away would leave a silent session for no reason.
+        var local = new FakeLocalQueuePlayer();
+        var harvest = new FakeHarvestSource();
+        var curator = new FakeSongCurator();
+        curator.Enqueue([Song(NewTempSongFile(), "A1", "T1"), Song(NewTempSongFile(), "A2", "T2")]);
+
+        var sut = new DjQueueService(local, curator, harvest, maxSeed: 20, lowWatermark: 1);
+        sut.StartAsync("deep house").GetAwaiter().GetResult();
+
+        sut.ChangeVibe("something else");
+
+        Assert.Equal(0, local.TruncateCalls);
+    }
+
     [Fact]
     public void NeverStarve_QueueKeepsGrowingAcrossAPlausibleArrivalTimeline()
     {

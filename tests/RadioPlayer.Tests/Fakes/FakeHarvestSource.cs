@@ -7,7 +7,18 @@ namespace RadioPlayer.Tests.Fakes;
 /// tests.</summary>
 public sealed class FakeHarvestSource : IDjHarvestSource
 {
-    public event EventHandler<SavedSong>? SegmentIndexed;
+    public event EventHandler<HarvestedSong>? SegmentIndexed;
 
-    public void RaiseSegmentIndexed(SavedSong song) => SegmentIndexed?.Invoke(this, song);
+    /// <summary>The generation songs are stamped with. Bump it to simulate the harvest pool
+    /// swapping over to a new vibe.</summary>
+    public int VibeGeneration { get; set; }
+
+    /// <summary>Raises a song stamped with the current generation — the normal case.</summary>
+    public void RaiseSegmentIndexed(SavedSong song) =>
+        SegmentIndexed?.Invoke(this, new HarvestedSong(song, VibeGeneration));
+
+    /// <summary>Raises a song stamped with an explicit generation — for the in-flight arrival
+    /// recorded before a vibe change that only lands afterwards.</summary>
+    public void RaiseSegmentIndexed(SavedSong song, int generation) =>
+        SegmentIndexed?.Invoke(this, new HarvestedSong(song, generation));
 }

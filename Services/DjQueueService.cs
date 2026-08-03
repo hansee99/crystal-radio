@@ -39,6 +39,10 @@ public sealed class DjQueueService : IDisposable
     // clears the flag.
     private bool _libraryExhausted;
 
+    // The vibe generation the queue is currently accepting. Songs stamped with anything older
+    // were collected for a vibe the listener has since replaced.
+    private int _vibeGeneration;
+
     public DjQueueService(ILocalQueuePlayer local, ISongCurator curator, IDjHarvestSource harvest,
         int maxSeed = 20, int lowWatermark = 5)
     {
@@ -69,6 +73,14 @@ public sealed class DjQueueService : IDisposable
             return;
         _prompt = prompt;
         _libraryExhausted = false;
+        _vibeGeneration = _harvest.VibeGeneration;
+
+        // Everything queued behind the current track was chosen for the old vibe. Letting it play
+        // out means the change isn't audible for several minutes, which is the whole complaint in
+        // #30. The playing track survives — cutting it off mid-song is the one thing not allowed.
+        // If that leaves nothing, the queue runs dry and the caller bridges to live radio, which
+        // is the correct answer to "no songs match this vibe yet".
+        _local.TruncateAfterCurrent();
     }
 
     /// <summary>Warm-starts the queue for <paramref name="prompt"/> and starts listening for
@@ -83,6 +95,12 @@ public sealed class DjQueueService : IDisposable
         _prompt = prompt;
         _seen.Clear();
         _libraryExhausted = false;
+
+        // Adopt the harvester's counter rather than assuming 0. It is not reset between sessions,
+        // so a session started after an earlier one had changed vibe would otherwise sit at 0
+        // while every arriving song carried a higher stamp — and the queue would silently reject
+        // the lot.
+        _vibeGeneration = _harvest.VibeGeneration;
 
         // requireRelevance: the library holds harvested songs from every previous session, so
         // without it a deep-house prompt happily seeds itself with last week's happy hardcore.
@@ -117,13 +135,33 @@ public sealed class DjQueueService : IDisposable
 
     public void Dispose() => Stop();
 
-    private void OnSegmentIndexed(object? sender, SavedSong song)
+    private void OnSegmentIndexed(object? sender, HarvestedSong harvested)
     {
         // Fires on a background thread (see DjHarvestService) — marshal before touching _local.
         _dispatcher.BeginInvoke(() =>
         {
+            var song = harvested.Song;
             if (!File.Exists(song.Path)) return;
-            _libraryExhausted = false; // the library just grew — top-ups can find new songs again
+
+            // The library grew either way, so a top-up can find something new — even if this
+            // particular song is stale for the current vibe.
+            _libraryExhausted = false;
+
+            // Arrivals used to be appended unconditionally, which is how songs that fit no
+            // current vibe reached the mix (#30). The warm-start seed and the low-watermark
+            // top-up both went through the curator with requireRelevance; this path — the main
+            // source of songs in a session — went through nothing.
+            //
+            // Relevance here is the STATION, not the song: the harvest pool was sourced and
+            // ranked for the vibe, so anything a current-vibe station plays qualifies, and a
+            // per-song judgement would be an LLM call in the arrival path for no better answer.
+            if (harvested.VibeGeneration != _vibeGeneration)
+            {
+                AppLog.Debug($"[DjQueue] dropping \"{song.Artist} - {song.Title}\" — harvested for "
+                             + $"an earlier vibe (gen {harvested.VibeGeneration}, now {_vibeGeneration})");
+                return;
+            }
+
             if (!_seen.Add(DedupKey(song.Artist, song.Title))) return;
             _local.Append([new LocalTrack(song.Path, song.Title, song.Artist, FormatFromExtension(song.Path))]);
         });

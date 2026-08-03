@@ -23,6 +23,14 @@ public interface ILocalQueuePlayer
 
     void Append(IReadOnlyList<LocalTrack> tracks);
 
+    /// <summary>
+    /// Drops everything after the track playing now, leaving it to finish. Used when the vibe
+    /// changes: the queued-but-unplayed songs belong to the old vibe, and playing them out would
+    /// mean the change isn't audible for several minutes. The current track survives because
+    /// cutting it off mid-song is the one thing the player must never do.
+    /// </summary>
+    void TruncateAfterCurrent();
+
     /// <summary>Position within the queue moved.</summary>
     event EventHandler<(LocalTrack Track, int Index)>? TrackChanged;
 

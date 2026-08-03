@@ -108,7 +108,13 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     private int _rejected;
 
     /// <summary>Raised (background thread) for each harvested song kept after QC.</summary>
-    public event EventHandler<SavedSong>? SegmentIndexed;
+    public event EventHandler<HarvestedSong>? SegmentIndexed;
+
+    private int _vibeGeneration;
+
+    /// <summary>Bumped by <see cref="ChangeVibeAsync"/>; stamped onto every song collected after
+    /// it, so the queue can tell a current-vibe arrival from one still in flight from the old.</summary>
+    public int VibeGeneration => Volatile.Read(ref _vibeGeneration);
 
     /// <summary>Raised (background thread) whenever the pool/kept/rejected counts change.</summary>
     public event EventHandler<HarvestStatus>? StatusChanged;
@@ -238,6 +244,10 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
 
         var hot = stations.Take(_harvesterCount).ToList();
         var reserve = stations.Skip(_harvesterCount).ToList();
+
+        // Bump BEFORE the swap: anything still in the QC pipeline from the old stations belongs to
+        // the old vibe, and stamping it with the new generation would let it through.
+        Interlocked.Increment(ref _vibeGeneration);
         dispatcher.Invoke(() => SwapPool(hot, reserve));
 
         TopStation = hot[0]; // best-first out of RankRelevantAsync — the live bridge uses this
@@ -710,7 +720,9 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             var saved = new SavedSong(dest, seg.Title, seg.Artist ?? "", seg.Station,
                 ext.TrimStart('.'), DateTimeOffset.Now, Source: SongSource.Harvested);
             _songLibrary.AddAndEnrich(saved);
-            SegmentIndexed?.Invoke(this, saved);
+            // Stamped at the moment it lands. A segment recorded under the previous vibe can
+            // finish QC minutes after a swap, and the queue must be able to tell the difference.
+            SegmentIndexed?.Invoke(this, new HarvestedSong(saved, VibeGeneration));
             RaiseStatus();
 
             EvictIfNeeded();

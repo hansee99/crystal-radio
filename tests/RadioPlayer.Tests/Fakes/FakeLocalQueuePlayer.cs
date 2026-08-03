@@ -34,6 +34,18 @@ public sealed class FakeLocalQueuePlayer : ILocalQueuePlayer
         QueueChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    public void TruncateAfterCurrent()
+    {
+        var keep = CurrentIndex + 1;
+        if (keep <= 0 || keep >= _queue.Count) return;
+        TruncateCalls++;
+        _queue.RemoveRange(keep, _queue.Count - keep);
+        QueueChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>How many times the queue was truncated behind the playing track.</summary>
+    public int TruncateCalls { get; private set; }
+
     /// <summary>Test hook: simulate the engine advancing to <paramref name="index"/>.</summary>
     public void RaiseTrackChanged(int index)
     {

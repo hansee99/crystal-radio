@@ -237,6 +237,20 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
             PlayAt(resumeAt);
     }
 
+    /// <summary>
+    /// Drops every queued track after the one playing now. The current track keeps playing; when
+    /// it ends the queue runs dry, which raises <see cref="QueueExhausted"/> — so a caller that
+    /// bridges to live radio on that event does so naturally.
+    /// </summary>
+    public void TruncateAfterCurrent()
+    {
+        var keep = _index + 1;
+        if (keep <= 0 || keep >= _queue.Count)
+            return; // nothing playing, or nothing queued after it
+        _queue.RemoveRange(keep, _queue.Count - keep);
+        QueueChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>Play the queue entry at <paramref name="index"/>.</summary>
     public void PlayAt(int index)
     {
