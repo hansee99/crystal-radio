@@ -82,6 +82,64 @@ public class DjIntroServiceTests
         Assert.Contains("sardonic", http.Requests[1], StringComparison.OrdinalIgnoreCase);
     }
 
+    // --- LRCLIB grounding (#36). Present about a third of the time; the line must be better with
+    // it and no worse without, since a per-track prompt has no coverage-uniformity requirement the
+    // way the embedding index does.
+
+    [Fact]
+    public async Task SendsTheAlbumAndLyricOpeningWhenKnown()
+    {
+        var http = Handler();
+
+        await Service(http).GetIntroAsync("Silent Lucidity", "Queensrÿche", "hair metal",
+            album: "Empire", lyricExcerpt: "Hush now, don't you cry");
+
+        var sent = Assert.Single(http.Requests);
+        Assert.Contains("Empire", sent);
+        Assert.Contains("Hush now", sent);
+    }
+
+    /// <summary>The common case — LRCLIB misses roughly two thirds of harvested tracks — so the
+    /// prompt must not carry empty scaffolding that invites the model to comment on its absence.</summary>
+    [Fact]
+    public async Task SaysNothingAboutAlbumOrLyricsWhenTheyAreUnknown()
+    {
+        var http = Handler();
+
+        await Service(http).GetIntroAsync("Some Obscure B-Side", "A Band Nobody Knows", "a vibe");
+
+        // The SYSTEM prompt legitimately explains album and lyrics; what must stay empty is the
+        // per-track content. Searching the whole body would pass whatever the code did.
+        var user = ExtractUserContent(Assert.Single(http.Requests));
+        Assert.DoesNotContain("album", user, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("lyrics", user, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(null, "Empire")]
+    [InlineData("Hush now", null)]
+    public async Task EitherPieceCanArriveWithoutTheOther(string? excerpt, string? album)
+    {
+        var http = Handler();
+
+        await Service(http).GetIntroAsync("T", "A", "v", album: album, lyricExcerpt: excerpt);
+
+        Assert.Single(http.Requests);   // one call, whatever the mix of grounding
+    }
+
+    /// <summary>The model is handed lyric text, so the prompt has to bound what it may do with it —
+    /// a DJ line that reproduces a verse is both a bad intro and a copyright problem.</summary>
+    [Fact]
+    public async Task TellsTheModelNotToQuoteTheLyricsAtLength()
+    {
+        var http = Handler();
+
+        await Service(http).GetIntroAsync("T", "A", "v", lyricExcerpt: "some words");
+
+        var sent = Assert.Single(http.Requests);
+        Assert.Contains("never quote more than a handful", sent);   // wraps in the literal
+    }
+
     [Fact]
     public async Task DoesNotSendAnotherPersonasWording()
     {
@@ -263,6 +321,14 @@ public class DjIntroServiceTests
     }
 
     // The move directive is the line beginning "This time:" in the system prompt.
+    /// <summary>The user message only — the per-track content, without the system prompt that
+    /// describes the fields in general terms.</summary>
+    private static string ExtractUserContent(string requestBody)
+    {
+        var json = System.Text.Json.Nodes.JsonNode.Parse(requestBody)!;
+        return json["messages"]![0]!["content"]!.GetValue<string>();
+    }
+
     private static string ExtractMoveLine(string requestBody)
     {
         var i = requestBody.IndexOf("This time:", StringComparison.Ordinal);

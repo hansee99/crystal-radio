@@ -75,7 +75,8 @@ public partial class MainWindow : Window
 
         // Phase C: local song-library index (metadata + AI description + local embedding on save).
         _libraryStore = new LibraryStore();
-        var songLibrary = new SongLibraryService(new HttpClient(), _libraryStore, _embeddingProvider, apiKey);
+        var songLibrary = new SongLibraryService(new HttpClient(), _libraryStore, _embeddingProvider,
+            apiKey, lyrics: lyrics);
 
         // Phase D: prompt-driven curation over the library index (cosine recall + LLM ordering).
         var curator = new SongCurator(new HttpClient(), _libraryStore, _embeddingProvider, apiKey);

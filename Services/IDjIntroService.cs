@@ -81,7 +81,14 @@ public interface IDjIntroService
     /// same song within a session). Cancellable so a fast track change can abort an in-flight call.
     /// <paramref name="curatorNote"/> — the curator's own one-line reason for picking this track,
     /// when it came from a curated playlist; grounds the patter in the actual selection logic.
+    ///
+    /// <para><paramref name="album"/> and <paramref name="lyricExcerpt"/> come from LRCLIB and are
+    /// absent about two thirds of the time (see <see cref="ILyricsService"/>). That is fine here and
+    /// is why this is the right consumer for partial data: a per-track line is better when they are
+    /// present and no worse when they aren't, with nothing stored and nothing compared. The same
+    /// data is deliberately kept OUT of the embedding index, where uneven coverage would make
+    /// cosine stop comparing like with like.</para>
     /// </summary>
     Task<string?> GetIntroAsync(string title, string? artist, string? vibe, string? curatorNote = null,
-        CancellationToken ct = default);
+        string? album = null, string? lyricExcerpt = null, CancellationToken ct = default);
 }

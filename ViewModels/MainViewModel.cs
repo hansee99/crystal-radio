@@ -2557,7 +2557,15 @@ public sealed class MainViewModel : ObservableObject
 
         try
         {
-            var line = await _djIntro.GetIntroAsync(title, artist, _djSessionVibe, curatorNote, cts.Token).ConfigureAwait(true);
+            // Ground the line in real metadata where LRCLIB has it. Free in practice: the same
+            // lookup already happened during enrichment for this track, and the service caches per
+            // session. No duration — a harvested segment is edge-trimmed and its length is not the
+            // track's, which would fail LRCLIB's ±2s match.
+            var found = await _lyricsService.LookupAsync(artist, title, ct: cts.Token)
+                .ConfigureAwait(true);
+
+            var line = await _djIntro.GetIntroAsync(title, artist, _djSessionVibe, curatorNote,
+                album: found?.Album, lyricExcerpt: found?.Excerpt(220), ct: cts.Token).ConfigureAwait(true);
             if (!cts.IsCancellationRequested)
             {
                 DjIntroLine = line;

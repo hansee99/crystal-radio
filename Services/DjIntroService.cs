@@ -29,6 +29,12 @@ public sealed class DjIntroService : IDjIntroService
         {PERSONA}
 
         You get the track title, the artist (may be blank), and the vibe the listener asked for.
+        Sometimes you also get the album, and an opening fragment of the lyrics. Use them as
+        grounding — an album name is a concrete detail worth a few words, and a lyric tells you what
+        the song is actually about. Two limits on the lyric: never quote more than a handful of
+        words, and never let the line become a summary of the words. It is an introduction, not a
+        review.
+
         Sometimes you also get a curator's note explaining why the track was picked. Treat that
         note as background for YOU, not as the subject of the line: it tells you why the track
         belongs, which you may draw on, but a line whose whole job is explaining the match gets
@@ -236,8 +242,13 @@ public sealed class DjIntroService : IDjIntroService
 
     public bool IsConfigured => _apiKey.IsConfigured;
 
+    /// <param name="album">Album name if known. From LRCLIB, so absent about two thirds of the
+    /// time — see <see cref="ILyricsService"/>. A concrete detail when present, nothing when not.</param>
+    /// <param name="lyricExcerpt">An opening fragment of the lyrics, not the whole text: enough for
+    /// the line to know what the song is about without paying for — or storing — all of it.</param>
     public async Task<string?> GetIntroAsync(string title, string? artist, string? vibe,
-        string? curatorNote = null, CancellationToken ct = default)
+        string? curatorNote = null, string? album = null, string? lyricExcerpt = null,
+        CancellationToken ct = default)
     {
         if (!IsConfigured || string.IsNullOrWhiteSpace(title))
             return null;
@@ -246,23 +257,28 @@ public sealed class DjIntroService : IDjIntroService
         if (_cache.TryGetValue(key, out var cached))
             return cached;
 
-        var line = await GenerateAsync(title, artist, vibe, curatorNote, ct).ConfigureAwait(false);
+        var line = await GenerateAsync(title, artist, vibe, curatorNote, album, lyricExcerpt, ct)
+            .ConfigureAwait(false);
         if (line is not null)
             StoreInCache(key, line);
         return line;
     }
 
     private async Task<string?> GenerateAsync(string title, string? artist, string? vibe,
-        string? curatorNote, CancellationToken ct)
+        string? curatorNote, string? album, string? lyricExcerpt, CancellationToken ct)
     {
         var sb = new StringBuilder();
         sb.Append("Track: \"").Append(title).Append('"');
         if (!string.IsNullOrWhiteSpace(artist))
             sb.Append(" by ").Append(artist);
+        if (!string.IsNullOrWhiteSpace(album))
+            sb.Append(", from the album \"").Append(album).Append('"');
         if (!string.IsNullOrWhiteSpace(vibe))
             sb.Append(".\nListener's original request: \"").Append(vibe).Append('"');
         if (!string.IsNullOrWhiteSpace(curatorNote))
             sb.Append(".\nCurator's note (why this track was picked): \"").Append(curatorNote).Append('"');
+        if (!string.IsNullOrWhiteSpace(lyricExcerpt))
+            sb.Append(".\nHow the lyrics open: \"").Append(lyricExcerpt).Append('"');
         sb.Append('.');
 
         // Cycle the move. Interlocked because two tracks can land close together and the counter

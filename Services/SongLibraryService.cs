@@ -24,7 +24,9 @@ public sealed class SongLibraryService : ISongLibraryService
     private const int MaxConcurrent = 3;
 
     private const string SystemPrompt = """
-        You describe a piece of music for a personal library index, from its title and artist.
+        You describe a piece of music for a personal library index, from its title and artist, and
+        sometimes its album. The album is real metadata looked up from a lyrics database, not a
+        guess — treat it as reliable, and let it inform which release and era you are describing.
         Use your general music knowledge. If you are not confident which track/artist this is,
         still give a best-effort description from the title's style — never invent specific facts
         (labels, years, chart positions) you are unsure of.
@@ -51,6 +53,10 @@ public sealed class SongLibraryService : ISongLibraryService
     private readonly HttpClient _http;
     private readonly LibraryStore _store;
     private readonly IEmbeddingProvider _embeddings;
+
+    /// <summary>Optional: album lookup is an enhancement, and every existing caller (and test)
+    /// that doesn't supply one still enriches exactly as before.</summary>
+    private readonly ILyricsService? _lyrics;
     private readonly ApiKeySource _apiKey;
     private readonly string _model;
 
@@ -58,8 +64,9 @@ public sealed class SongLibraryService : ISongLibraryService
     private readonly ConcurrentDictionary<string, byte> _inFlight = new();
 
     public SongLibraryService(HttpClient http, LibraryStore store, IEmbeddingProvider embeddings,
-        ApiKeySource? apiKey, string model = DefaultModel)
+        ApiKeySource? apiKey, string model = DefaultModel, ILyricsService? lyrics = null)
     {
+        _lyrics = lyrics;
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
@@ -184,7 +191,16 @@ public sealed class SongLibraryService : ISongLibraryService
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var distilled = CanDistill ? await DistillAsync(title, artist).ConfigureAwait(false) : null;
+                // LRCLIB knows the album for roughly a third of harvested tracks, and the app has
+                // no other source for it — ICY metadata carries title and artist only. Deliberately
+                // no duration: a harvested segment is edge-trimmed, so its length is not the
+                // track's and would fail LRCLIB's ±2s match. See ILyricsService.LookupAsync.
+                var album = _lyrics is null
+                    ? null
+                    : (await _lyrics.LookupAsync(artist, title, ct: CancellationToken.None)
+                        .ConfigureAwait(false))?.Album;
+
+                var distilled = CanDistill ? await DistillAsync(title, artist, album).ConfigureAwait(false) : null;
 
                 if (distilled is { IsSong: false })
                 {
@@ -240,9 +256,11 @@ public sealed class SongLibraryService : ISongLibraryService
 
     // --- LLM distillation (cheap model, general music knowledge) ---------------
 
-    private async Task<DistillResult?> DistillAsync(string title, string artist)
+    private async Task<DistillResult?> DistillAsync(string title, string artist, string? album)
     {
         var userContent = $"Title: {title}\nArtist: {(string.IsNullOrWhiteSpace(artist) ? "(unknown)" : artist)}";
+        if (!string.IsNullOrWhiteSpace(album))
+            userContent += $"\nAlbum: {album}";
 
         var body = new JsonObject
         {

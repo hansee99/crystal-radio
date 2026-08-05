@@ -150,6 +150,79 @@ public sealed class SongLibraryRetirementTests : IDisposable
         Assert.Equal(1, handler.CallCount);
     }
 
+    // --- Album name from LRCLIB (#36) ---------------------------------------------------------
+    // ICY metadata carries title and artist only, so the album is information the app has no other
+    // source for. Unlike the embedding index, enrichment already degrades gracefully — it has a
+    // tags-only fallback — so partial coverage is the existing norm here rather than a new hazard.
+
+    private sealed class StubLyrics : ILyricsService
+    {
+        public string? Album { get; init; }
+        public int Calls { get; private set; }
+        public double? DurationAsked { get; private set; }
+
+        public Task<TrackLyrics?> LookupAsync(string? artist, string? title,
+            double? durationSeconds = null, CancellationToken ct = default)
+        {
+            Calls++;
+            DurationAsked = durationSeconds;
+            return Task.FromResult(Album is null
+                ? null
+                : new TrackLyrics(title ?? "", artist ?? "", Album, false, null, 0));
+        }
+    }
+
+    [Fact]
+    public async Task TheAlbumReachesTheDescriptionPrompt()
+    {
+        var handler = new FakeHttpMessageHandler()
+            .RespondWithText("""{ "is_song": true, "description": "Melodic hard rock." }""");
+        var path = WriteAudioFile("with-album.mp3");
+        var service = new SongLibraryService(new HttpClient(handler), _store, new NoEmbeddings(),
+            apiKey: "test-key", lyrics: new StubLyrics { Album = "Empire" });
+
+        service.AddAndEnrich(Song(path, "Silent Lucidity", "Queensrÿche", SongSource.Harvested));
+
+        Assert.True(await Settles(() => handler.CallCount > 0));
+        Assert.Contains("Empire", handler.Requests[0]);
+    }
+
+    /// <summary>The ±2s trap: a harvested segment is edge-trimmed, so its length is not the track's
+    /// and sending it would turn a hit into a miss. This path must never pass one.</summary>
+    [Fact]
+    public async Task NoDurationIsSentFromTheEnrichmentPath()
+    {
+        var stub = new StubLyrics { Album = "Empire" };
+        var handler = new FakeHttpMessageHandler()
+            .RespondWithText("""{ "is_song": true, "description": "d" }""");
+        var path = WriteAudioFile("no-duration.mp3");
+        var service = new SongLibraryService(new HttpClient(handler), _store, new NoEmbeddings(),
+            apiKey: "test-key", lyrics: stub);
+
+        service.AddAndEnrich(Song(path, "Wasted Years", "Iron Maiden", SongSource.Harvested));
+
+        Assert.True(await Settles(() => stub.Calls > 0));
+        Assert.Null(stub.DurationAsked);
+    }
+
+    /// <summary>LRCLIB misses roughly two thirds of harvested tracks. Enrichment must be exactly as
+    /// good as before when it does.</summary>
+    [Fact]
+    public async Task AMissedAlbumStillEnriches()
+    {
+        var handler = new FakeHttpMessageHandler()
+            .RespondWithText("""{ "is_song": true, "description": "Still described fine." }""");
+        var path = WriteAudioFile("no-album.mp3");
+        var service = new SongLibraryService(new HttpClient(handler), _store, new NoEmbeddings(),
+            apiKey: "test-key", lyrics: new StubLyrics { Album = null });
+
+        service.AddAndEnrich(Song(path, "Nectarine", "Linkwood", SongSource.Harvested));
+
+        Assert.True(await Settles(() => _store.GetAll()
+            .Any(s => s.Path == path && !string.IsNullOrWhiteSpace(s.Description))));
+        Assert.Contains("Still described fine.", _store.GetAll().Single(s => s.Path == path).Description);
+    }
+
     /// <summary>A 500, a timeout or a reply we can't parse means we learned nothing — which must
     /// not be confused with "not music".</summary>
     [Fact]
