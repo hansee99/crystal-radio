@@ -976,7 +976,20 @@
                                  full width. It now sits on its own line under the status. -->
                             <StackPanel>
                                 <StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                    <!-- DockPanel so the action pins to the card's top-RIGHT corner
+                                         rather than trailing the eyebrow text. -->
+                                    <DockPanel Margin="0,0,0,7">
+                                        <!-- Docked child FIRST: DockPanel.LastChildFill defaults to
+                                             true, so a Dock="Right" element placed last would
+                                             stretch across the row instead of pinning to the edge. -->
+                                        <Button Content="Change vibe" DockPanel.Dock="Right"
+                                                VerticalAlignment="Center"
+                                                Style="{StaticResource CardPillButton}"
+                                                ToolTip="Re-tune this session to a new vibe"
+                                                Command="{Binding BeginEditDjVibeCommand}"
+                                                Visibility="{Binding ShowDjSessionVibeText,
+                                                             Converter={StaticResource BoolToVis}}"/>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <!-- Amber while bridging a live station, teal once the
                                              mix itself is playing. -->
                                         <Ellipse Width="6" Height="6" VerticalAlignment="Center"
@@ -1005,14 +1018,8 @@
                                         </Ellipse>
                                         <TextBlock Text="THIS SESSION" FontSize="10.5" FontWeight="SemiBold"
                                                    Foreground="{StaticResource TealText}" VerticalAlignment="Center"/>
-                                        <!-- The affordance sits on the line it edits. -->
-                                        <Button Content="Change vibe" Margin="10,0,0,0"
-                                                VerticalAlignment="Center"
-                                                Style="{StaticResource AboutLinkButton}"
-                                                Command="{Binding BeginEditDjVibeCommand}"
-                                                Visibility="{Binding ShowDjSessionVibeText,
-                                                             Converter={StaticResource BoolToVis}}"/>
                                     </StackPanel>
+                                    </DockPanel>
 
                                     <!-- READING: the vibe as text. Wraps freely — the card grows
                                          downward and the Mix list below absorbs it. Deliberately no

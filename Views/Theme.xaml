@@ -571,6 +571,45 @@
         </Setter>
     </Style>
 
+    <!-- Compact card action: a small teal pill for an action that lives INSIDE a card header, where
+         AboutPillButton is too tall (36px against a 14px eyebrow) and GhostPillButton already reads
+         as "End session" in the one card that has both.
+
+         Exists because DJ "Change vibe" started life as an AboutLinkButton — bare text with an icon
+         — and nobody could tell it was clickable. A visible fill and border is the whole point; it is
+         the smallest thing that still looks like a control. Icon comes from Tag, as AboutPillButton
+         does, defaulting to the sparkle. -->
+    <Style x:Key="CardPillButton" TargetType="Button">
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Tag" Value="{StaticResource SparkleGeometry}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="b" CornerRadius="7" Padding="9,4,11,5"
+                            Background="{StaticResource TealTint10}"
+                            BorderBrush="{StaticResource TealBorder35}" BorderThickness="1">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{TemplateBinding Tag}" Stretch="Uniform" Width="12" Height="12"
+                                  Fill="#FF62D2C4" VerticalAlignment="Center"/>
+                            <TextBlock Text="{TemplateBinding Content}" Margin="6,0,0,0" FontSize="11.5"
+                                       FontWeight="SemiBold" Foreground="{StaticResource TealText}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{StaticResource TealTint16}"/>
+                            <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Teal}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="b" Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Ghost pill: a quiet sibling of AboutPillButton for non-AI secondary actions (DJ
          "End session" — UX audit: Stop must not carry the sparkle or match Start's weight).
          Hairline border, muted label, no icon; disabled fades. -->
