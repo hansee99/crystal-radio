@@ -2523,6 +2523,14 @@ public sealed class MainViewModel : ObservableObject
     /// EndDjWarmupIfActive() (hooked into OnLocalTrackChanged) hands over the instant the queue
     /// actually starts playing for real.
     /// </summary>
+    /// <summary>
+    /// How long the bridge takes to fade in or out. Deliberately shorter than the mix's own 5s
+    /// track-to-track crossfade: that one trades two songs against each other, whereas this trades
+    /// a song against live radio, and a long overlap of two different pieces of music is muddle
+    /// rather than a transition.
+    /// </summary>
+    private const int BridgeFadeMs = 1500;
+
     private void BeginDjWarmupLivePlayback()
     {
         var topStation = _djHarvest.TopStation;
@@ -2530,6 +2538,7 @@ public sealed class MainViewModel : ObservableObject
             return; // nothing rankable to play live — fall back to the existing silent warm-up
 
         SetDjWarmingUp(true);
+        _engine.FadeInNextStream(BridgeFadeMs); // arm the ramp before Play creates the stream
         NowPlayingTitle = "Connecting...";
         NowPlayingArtist = topStation.Name;
         NowPlayingStation = topStation.Name;
@@ -2557,16 +2566,33 @@ public sealed class MainViewModel : ObservableObject
         BeginDjWarmupLivePlayback();
     }
 
-    /// <summary>No-ops if warm-up isn't active. Called both on a genuine handover (the queue's
-    /// first track landing) and when the DJ session is stopped mid-warm-up.</summary>
-    private void EndDjWarmupIfActive()
+    /// <summary>
+    /// No-ops if warm-up isn't active. Called both on a genuine handover (the queue's first track
+    /// landing) and when the DJ session is stopped mid-warm-up.
+    ///
+    /// <para><paramref name="fade"/> distinguishes the two, and only the handover wants it: there
+    /// the mix has already started underneath and the station should recede into it. On teardown
+    /// the listener has asked for silence, and a station still audible for a second and a half
+    /// after "stop" is a bug, not a nicety.</para>
+    /// </summary>
+    private void EndDjWarmupIfActive(bool fade = false)
     {
         if (!_djWarmingUp) return;
         _engine.StateChanged -= OnDjWarmupStateChanged;
         _engine.MetadataChanged -= OnDjWarmupMetadataChanged;
-        _engine.Stop();
+
+        // Crossfade, not a cut — but only on a handover. This runs from OnLocalTrackChanged, i.e.
+        // AFTER the local engine's first track is already playing: both engines are audible right
+        // now either way, and the abruptness was the station dropping to nothing under a track that
+        // had just begun. The local side ramps up over FadeInMs; this ramps the station down to
+        // meet it.
+        if (fade) _engine.FadeOutAndStop(BridgeFadeMs);
+        else _engine.Stop();
+
         SetDjWarmingUp(false);
-        ActiveEngineChanged?.Invoke(ActiveEngine); // repoints SMTC back at _local
+        // Repoint SMTC immediately rather than when the fade ends: the local engine is the one
+        // playing the track the listener is now hearing, and the station is on its way out.
+        ActiveEngineChanged?.Invoke(ActiveEngine);
     }
 
     private void OnDjWarmupStateChanged(object? sender, PlaybackState state)
@@ -2652,7 +2678,7 @@ public sealed class MainViewModel : ObservableObject
         // UsesLocalEngine check below: while warm-up is still active that property is false
         // (RadioEngine is "the" engine until this call flips it), so ending warm-up first is what
         // makes the rest of this method correctly apply to the track that just started.
-        EndDjWarmupIfActive();
+        EndDjWarmupIfActive(fade: true);
         if (!UsesLocalEngine) return;
 
         NowPlayingTitle = track.Title;

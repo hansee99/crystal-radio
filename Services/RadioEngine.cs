@@ -140,6 +140,49 @@ public sealed class RadioEngine : IPlaybackEngine
     }
 
     /// <summary>
+    /// Ramps the current stream to silence over <paramref name="milliseconds"/>, then stops. Used
+    /// for DJ mode's bridge → mix handover, where the local engine is ALREADY playing by the time
+    /// this is called, so an instant stop is heard as the station being chopped off mid-bar.
+    ///
+    /// <para>Slides the channel attribute only, never <see cref="Volume"/>. The user's setting has
+    /// to survive the fade — <see cref="StartStream"/> applies <c>_volume</c> to each new stream,
+    /// so the next station starts at full loudness rather than inheriting the ramp.</para>
+    ///
+    /// <para>Stopping is scheduled rather than awaited: this runs on the UI thread during a track
+    /// change, and blocking it for the length of a fade would stall the very handover being
+    /// smoothed. If anything starts a new station before the timer fires, the guard below sees a
+    /// different stream handle and leaves it alone.</para>
+    /// </summary>
+    public void FadeOutAndStop(int milliseconds)
+    {
+        var fading = _stream;
+        if (fading == 0 || milliseconds <= 0)
+        {
+            Stop();
+            return;
+        }
+
+        Bass.ChannelSlideAttribute(fading, ChannelAttribute.Volume, 0f, milliseconds);
+
+        // Station stays published until the fade completes — it IS still the audible one.
+        Task.Delay(milliseconds + 120).ContinueWith(_ => _dispatcher.BeginInvoke(() =>
+        {
+            if (_stream != fading) return; // something else took over; not ours to stop
+            Stop();
+        }));
+    }
+
+    /// <summary>
+    /// Makes the NEXT stream this engine opens ramp up from silence instead of starting at full
+    /// volume. Armed before <see cref="Play"/> because the stream doesn't exist yet at that point;
+    /// consumed by the first stream created after, so a reconnect later in the session still starts
+    /// at normal loudness.
+    /// </summary>
+    public void FadeInNextStream(int milliseconds) => _fadeInNextMs = Math.Max(0, milliseconds);
+
+    private int _fadeInNextMs;
+
+    /// <summary>
     /// Probe whether a stream can actually be opened by the engine, WITHOUT disturbing current
     /// playback: it creates a throwaway BASS handle and frees it immediately. Used to validate
     /// search results before showing them — Radio Browser's <c>lastcheckok</c> can be stale.
@@ -234,7 +277,12 @@ public sealed class RadioEngine : IPlaybackEngine
         }
 
         _stream = handle;
-        Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, _volume);
+
+        // One-shot fade-in, armed by FadeInNextStream before Play. A mid-session reconnect must NOT
+        // inherit it, or every network dropout would sound like the station being re-introduced.
+        var fadeInMs = _fadeInNextMs;
+        _fadeInNextMs = 0;
+        Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, fadeInMs > 0 ? 0f : _volume);
 
         // Read the station info that arrives with the headers.
         PublishIcyStationInfo(_stream, station);
@@ -259,6 +307,11 @@ public sealed class RadioEngine : IPlaybackEngine
             FailOrRetry(station, pendingState, $"Could not start playback: {Bass.LastError}");
             return;
         }
+
+        // Slide AFTER ChannelPlay, never before: a slide on a stopped channel can run to completion
+        // against nothing, and the station then arrives at full volume with no fade at all.
+        if (fadeInMs > 0)
+            Bass.ChannelSlideAttribute(_stream, ChannelAttribute.Volume, (float)_volume, fadeInMs);
 
         SetState(PlaybackState.Playing);
     }

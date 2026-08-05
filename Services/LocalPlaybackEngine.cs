@@ -31,6 +31,11 @@ public sealed record LocalTrack(string Path, string Title, string Artist, Stream
 /// </summary>
 public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
 {
+    /// <summary>How long the first track of a queue takes to reach full volume. Much shorter than
+    /// the track-to-track <see cref="FadeSeconds"/>: there is no outgoing track to trade against
+    /// here, so a long ramp just sounds like the player is slow to start.</summary>
+    private const int FadeInMs = 1200;
+
     private const double FadeSeconds = 5.0;
     private const int FadeMs = (int)(FadeSeconds * 1000);
     // Require real headroom before the crossfade trigger point AND enough runway that a second
@@ -390,13 +395,23 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
             return AudioStart.OpenFailed;
 
         _stream = handle;
-        Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, _volume);
+
+        // Fade in rather than starting at full volume. Track-to-track transitions already ramp
+        // (BeginCrossfade), so the only hard edge left was the FIRST track of a queue — which in DJ
+        // mode is the bridge → mix handover, the one seam a listener hits on every cold start.
+        Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, 0f);
         SeekToEffectiveStart();
 
         _endSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => OnTrackEnded(generation));
         Bass.ChannelSetSync(_stream, SyncFlags.End, 0, _endSync);
 
-        return Bass.ChannelPlay(_stream) ? AudioStart.Started : AudioStart.PlayFailed;
+        if (!Bass.ChannelPlay(_stream))
+            return AudioStart.PlayFailed;
+
+        // Slide AFTER ChannelPlay, never before: a slide on a stopped channel can run to completion
+        // against nothing, and the track then arrives at full volume with no fade at all.
+        Bass.ChannelSlideAttribute(_stream, ChannelAttribute.Volume, (float)_volume, FadeInMs);
+        return AudioStart.Started;
     }
 
     private void OnTrackEnded(int generation)
