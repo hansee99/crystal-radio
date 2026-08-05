@@ -27,6 +27,17 @@ public sealed class SongCurator : ISongCurator
     // song descriptions specifically — revisit if it turns out too strict/loose in practice.
     private const double MinRelevanceScore = 0.30;
 
+    /// <summary>
+    /// Below this, the best match in the entire library is so weak that the PROMPT is the more
+    /// likely problem. Measured on this app's own index: real music requests peak at 0.45–0.63,
+    /// while "happy musing for a coding session" peaked at 0.197 — one letter from "music", which
+    /// reached 0.501 over the same songs. Deliberately well clear of
+    /// <see cref="MinRelevanceScore"/>, since the two conclusions ("you have nothing like this"
+    /// versus "that doesn't read as a music request") deserve different messages and a borderline
+    /// score should get the gentler one.
+    /// </summary>
+    private const double OutOfDomainScore = 0.25;
+
     private const string SystemPrompt = """
         You are a music curator building a playlist from a listener's personal library for a
         free-text request. You get the request and a numbered list of candidate songs (title,
@@ -67,12 +78,12 @@ public sealed class SongCurator : ISongCurator
 
     private bool CanRank => _apiKey.IsConfigured;
 
-    public async Task<IReadOnlyList<CuratedSong>> CurateAsync(string prompt, int max = 20,
+    public async Task<CurationResult> CurateAsync(string prompt, int max = 20,
         IReadOnlyCollection<string>? excludeKeys = null, bool requireRelevance = false,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(prompt))
-            return [];
+            return CurationResult.Empty(CurationOutcome.LibraryEmpty);
 
         // Semantic recall over the library vectors (off the UI thread).
         var ranked = await Task.Run(() => RankByCosine(prompt), ct).ConfigureAwait(false);
@@ -90,15 +101,30 @@ public sealed class SongCurator : ISongCurator
         // No embeddings yet → let the user play their library anyway. Except under
         // requireRelevance, where recency says nothing about fit and the caller has a better
         // answer than the wrong song.
+        // The top score over the WHOLE library, before any floor: the number that tells "your
+        // library lacks this" apart from "that prompt doesn't read as music".
+        var bestScore = ranked.Count > 0 ? ranked[0].Score : 0;
+
         if (ranked.Count == 0)
-            return requireRelevance ? [] : FallbackRecent(max, excludeKeys);
+            return requireRelevance
+                ? CurationResult.Empty(CurationOutcome.LibraryEmpty)
+                : new CurationResult(FallbackRecent(max, excludeKeys), CurationOutcome.Ok, 0);
 
         // Relevance floor: prefer genuinely-matching candidates over "closest available, however
         // weak." Only fall through to the unfiltered top-K when literally nothing clears the
         // floor — "unless nothing else is available" is a real carve-out, not the common case.
         var aboveFloor = ranked.Where(r => r.Score >= MinRelevanceScore).ToList();
         if (requireRelevance && aboveFloor.Count == 0)
-            return []; // nothing fits; the caller bridges live rather than playing filler
+        {
+            // Nothing fits; the caller bridges live rather than playing filler. WHICH kind of
+            // nothing matters to the message the listener sees.
+            var outcome = bestScore < OutOfDomainScore
+                ? CurationOutcome.PromptOutOfDomain
+                : CurationOutcome.NothingRelevant;
+            AppLog.Info($"[Curate] nothing cleared the {MinRelevanceScore:0.00} floor for "
+                        + $"\"{prompt}\" — best was {bestScore:0.000} ({outcome})");
+            return CurationResult.Empty(outcome, bestScore);
+        }
 
         var pool = (aboveFloor.Count > 0 ? aboveFloor : ranked).Take(RecallPoolSize).ToList();
 
@@ -106,13 +132,25 @@ public sealed class SongCurator : ISongCurator
         if (CanRank)
         {
             var ordered = await ArrangeAsync(prompt, pool, max, ct).ConfigureAwait(false);
-            if (ordered is not null)
-                return ordered;
+
+            // An EMPTY arrangement is not the same as a failed one. Null means we couldn't get an
+            // answer, and falling through to cosine order is right. Empty means the model looked at
+            // a pool that cleared the floor and chose nothing from it — a real signal, and one that
+            // used to be indistinguishable from "your prompt matched nothing".
+            if (ordered is { Count: > 0 })
+                return new CurationResult(ordered, CurationOutcome.Ok, bestScore);
+
+            if (ordered is not null && requireRelevance)
+            {
+                AppLog.Info($"[Curate] the ranker declined all {pool.Count} candidate(s) for "
+                            + $"\"{prompt}\" (best score {bestScore:0.000})");
+                return CurationResult.Empty(CurationOutcome.RankerDeclined, bestScore);
+            }
         }
 
-        return pool.Take(max)
-            .Select(r => new CuratedSong(r.Row.Path, r.Row.Title, r.Row.Artist, null))
-            .ToList();
+        return new CurationResult(
+            pool.Take(max).Select(r => new CuratedSong(r.Row.Path, r.Row.Title, r.Row.Artist, null)).ToList(),
+            CurationOutcome.Ok, bestScore);
     }
 
     private List<(SavedSongVector Row, double Score)> RankByCosine(string prompt)

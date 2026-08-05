@@ -100,8 +100,13 @@ public sealed class DjQueueService : IDisposable
         var seed = await _curator
             .CurateAsync(prompt, _maxSeed, requireRelevance: true, ct: ct)
             .ConfigureAwait(true);
+
+        // Kept so the caller can explain the bridge instead of leaving it looking like a normal
+        // cold start. A mistyped prompt used to be silently indistinguishable from one.
+        SeedOutcome = seed.Outcome;
+
         var seedTracks = new List<LocalTrack>();
-        foreach (var song in seed)
+        foreach (var song in seed.Songs)
         {
             if (!File.Exists(song.Path)) continue; // library entry moved/deleted since save
             if (!_seen.Add(DedupKey(song.Artist, song.Title))) continue;
@@ -118,6 +123,12 @@ public sealed class DjQueueService : IDisposable
         _local.TrackChanged += OnLocalTrackChanged;
         return seedTracks.Count > 0;
     }
+
+    /// <summary>
+    /// Why the warm-start seed came out as it did, for the caller's status message. Set by
+    /// <see cref="StartAsync"/>; meaningful immediately after it returns.
+    /// </summary>
+    public CurationOutcome SeedOutcome { get; private set; }
 
     public void Stop()
     {
@@ -191,7 +202,7 @@ public sealed class DjQueueService : IDisposable
                 .CurateAsync(_prompt, _maxSeed, exclude, requireRelevance: true)
                 .ConfigureAwait(true);
             var fresh = new List<LocalTrack>();
-            foreach (var song in more)
+            foreach (var song in more.Songs)
             {
                 if (!File.Exists(song.Path)) continue;
                 if (!_seen.Add(DedupKey(song.Artist, song.Title))) continue;

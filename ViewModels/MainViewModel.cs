@@ -1998,7 +1998,8 @@ public sealed class MainViewModel : ObservableObject
         {
             // Library mode keeps the "closest available" fallback: the user asked this library
             // for a set and an empty result reads as broken. DJ mode is the opposite case.
-            var songs = await _curator.CurateAsync(prompt, 20, ct: curateCts.Token);
+            var curated = await _curator.CurateAsync(prompt, 20, ct: curateCts.Token);
+            var songs = curated.Songs;
             CuratedQueue.Clear();
             foreach (var s in songs)
                 CuratedQueue.Add(new CuratedQueueItem(s));
@@ -2359,7 +2360,9 @@ public sealed class MainViewModel : ObservableObject
             }
             DjProgress.Step(DjStageRecord);
             var seeded = await _djQueue.StartAsync(prompt, startCts.Token).ConfigureAwait(true);
-            AppLog.Info($"[Dj] session started · warm-start {(seeded ? "seeded the queue" : "was empty, bridging live")}");
+            _seedOutcome = seeded ? CurationOutcome.Ok : _djQueue.SeedOutcome;
+            AppLog.Info($"[Dj] session started · warm-start "
+                        + (seeded ? "seeded the queue" : $"was empty ({_seedOutcome}), bridging live"));
             if (!seeded)
             {
                 SpeakMoment(DjMoment.Waiting);
@@ -2614,6 +2617,11 @@ public sealed class MainViewModel : ObservableObject
     private System.Windows.Threading.DispatcherTimer? _djSessionTimer;
     private DjSessionLog? _djSessionLog;
 
+    /// <summary>Why the warm-start seed was empty, so the bridge can explain itself. Ok whenever
+    /// the seed worked or the mix later ran dry — a mid-session dry spell is not a prompt problem
+    /// and must not inherit a prompt-shaped message.</summary>
+    private CurationOutcome _seedOutcome;
+
     /// <summary>
     /// The session card's one-line summary. Rebuilt both when the harvest pool reports in and on
     /// a slow timer — otherwise the elapsed figure would only move when a song happened to land,
@@ -2630,9 +2638,21 @@ public sealed class MainViewModel : ObservableObject
         if (_djWarmingUp)
         {
             var station = _djHarvest.TopStation?.Name;
-            DjStatus = station is null
-                ? "Bridging a live station until the mix fills"
-                : $"Bridging {station} until the mix fills";
+            var bridging = station is null ? "Bridging a live station" : $"Bridging {station}";
+
+            // Say WHY, not just that it's bridging. These read identically to a normal cold start
+            // otherwise, which is how a one-letter typo ("happy musing…") silently degraded a whole
+            // session with nothing on screen to explain it.
+            DjStatus = _seedOutcome switch
+            {
+                CurationOutcome.PromptOutOfDomain =>
+                    $"That prompt didn't match anything in your library — check the wording. {bridging} meanwhile.",
+                CurationOutcome.NothingRelevant =>
+                    $"Nothing in your library fits that yet. {bridging} while I collect.",
+                CurationOutcome.RankerDeclined =>
+                    $"Your library had near-misses but nothing worth opening with. {bridging} while I collect.",
+                _ => $"{bridging} until the mix fills",
+            };
             return;
         }
 
@@ -2715,6 +2735,9 @@ public sealed class MainViewModel : ObservableObject
     {
         if (!IsDjMode || !IsDjRunning || _djWarmingUp)
             return;
+        // Clear the seed reason: this bridge is the mix running out, not the prompt missing, and
+        // reusing "check the wording" here would be actively misleading.
+        _seedOutcome = CurationOutcome.Ok;
         AppLog.Info("[Dj] mix ran dry — bridging live until it refills");
         SpeakMoment(DjMoment.Bridging);
         BeginDjWarmupLivePlayback();

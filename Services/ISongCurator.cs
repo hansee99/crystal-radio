@@ -25,8 +25,13 @@ public interface ISongCurator
     /// harvested songs from every past session, so "closest available" happily serves last
     /// week's happy hardcore into a deep-house set. An empty result is useful there — the caller
     /// bridges live radio instead, which beats playing the wrong thing.
+    ///
+    /// <para>Returns a <see cref="CurationResult"/> rather than a bare list because an empty result
+    /// has several different causes and the caller needs to tell them apart — see
+    /// <see cref="CurationOutcome"/>. Swallowing that distinction meant a mistyped prompt looked
+    /// identical to a normal cold start.</para>
     /// </summary>
-    Task<IReadOnlyList<CuratedSong>> CurateAsync(string prompt, int max = 20,
+    Task<CurationResult> CurateAsync(string prompt, int max = 20,
         IReadOnlyCollection<string>? excludeKeys = null, bool requireRelevance = false,
         CancellationToken ct = default);
 }
