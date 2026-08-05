@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#0A1211; }
+  body { font-family:'Hanken Grotesk', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#56C7BA; text-decoration:none; }
+  a:hover { color:#8FE0D5; }
+</style>
+</helmet>
+
+<div style="background:#0A1211;box-sizing:border-box;padding:44px 44px 90px;display:flex;flex-direction:column;gap:34px;color:#F3F9F7">
+
+  <div style="display:flex;flex-direction:column;gap:10px;max-width:78ch">
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.18em;color:#7D938E;text-transform:uppercase">DJ panel · vibe prompt field</div>
+    <div style="font-size:28px;letter-spacing:-0.01em">The prompt row shouldn't shrink when the session starts</div>
+    <div style="font-size:14.5px;color:#8A9F9A;line-height:1.65;text-wrap:pretty">"Change vibe" is 2.4× wider than "Start", so the field loses ~90px exactly when the text in it gets long. Three ways out, cheapest last. Panels drawn at the real 364px panel width.</div>
+  </div>
+
+  <section id="turn1" style="display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start">
+
+    <!-- ============ 1a ============ -->
+    <div id="1a" style="display:flex;flex-direction:column;gap:14px;width:800px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:500;color:#0A1211;background:#56C7BA;padding:3px 8px;border-radius:5px">1a</div>
+        <div style="font-size:16.5px;color:#F3F9F7;font-weight:600">The session card owns the vibe</div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:#56C7BA;text-transform:uppercase;padding:3px 8px;border:1px solid rgba(86,199,186,0.42);border-radius:20px">Recommended</div>
+      </div>
+      <div style="font-size:13.5px;color:#8A9F9A;line-height:1.62;max-width:74ch;text-wrap:pretty">The prompt row disappears once a session runs — the vibe is already printed in the session card, so that line becomes the editable one. Editing expands to the panel's full 332px and wraps to as many lines as the text needs. No cramped field, and the vibe stays next to the stats it produced.</div>
+
+      <div style="display:flex;gap:18px;flex-wrap:wrap">
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;color:#6F857F;text-transform:uppercase">Session running</div>
+          <div style="width:364px;box-sizing:border-box;background:#060E0D;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;gap:4px;padding:5px;background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.07);border-radius:11px">
+              <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#8A9F9A">Radio</div>
+              <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#8A9F9A">Library</div>
+              <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#CDEEE7;font-weight:600;background:rgba(86,199,186,0.14);border:1px solid rgba(86,199,186,0.4);border-radius:8px">DJ</div>
+            </div>
+            <div style="border:1px solid rgba(86,199,186,0.22);background:rgba(86,199,186,0.055);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:11px">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <div style="width:6px;height:6px;border-radius:50%;background:#56C7BA"></div>
+                  <div style="font-size:10.5px;font-weight:700;letter-spacing:0.14em;color:#8FE0D5;text-transform:uppercase">This session</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:#8FE0D5;padding:4px 9px;border:1px solid rgba(86,199,186,0.38);border-radius:7px">✎ Change vibe</div>
+              </div>
+              <div style="font-size:15.5px;color:#F3F9F7;line-height:1.42;text-wrap:pretty">mellow background music for a late night coding session</div>
+              <div style="font-size:12px;color:#7D938E;line-height:1.5">Tuned into 4 stations · 0 songs collected · 1 min</div>
+              <div style="align-self:flex-start;font-size:12.5px;color:#B8CDC8;padding:7px 13px;border:1px solid rgba(255,255,255,0.14);border-radius:8px;background:rgba(255,255,255,0.03)">End session</div>
+            </div>
+            <div style="display:flex;gap:20px;padding-top:2px;border-bottom:1px solid rgba(255,255,255,0.07)">
+              <div style="font-size:13px;color:#F3F9F7;font-weight:600;padding-bottom:8px;border-bottom:2px solid #56C7BA">Mix</div>
+              <div style="font-size:13px;color:#8A9F9A;padding-bottom:8px">Sources</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;opacity:0.5">
+              <div style="display:flex;gap:12px;align-items:center"><div style="width:34px;height:34px;border-radius:8px;background:rgba(86,199,186,0.14);flex:none"></div><div style="display:flex;flex-direction:column;gap:3px"><div style="height:9px;width:150px;background:rgba(255,255,255,0.16);border-radius:3px"></div><div style="height:8px;width:96px;background:rgba(255,255,255,0.08);border-radius:3px"></div></div></div>
+              <div style="display:flex;gap:12px;align-items:center"><div style="width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.05);flex:none"></div><div style="display:flex;flex-direction:column;gap:3px"><div style="height:9px;width:120px;background:rgba(255,255,255,0.14);border-radius:3px"></div><div style="height:8px;width:70px;background:rgba(255,255,255,0.07);border-radius:3px"></div></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;color:#6F857F;text-transform:uppercase">Editing the vibe</div>
+          <div style="width:364px;box-sizing:border-box;background:#060E0D;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;gap:4px;padding:5px;background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.07);border-radius:11px">
+              <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#8A9F9A">Radio</div>
+              <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#8A9F9A">Library</div>
+              <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#CDEEE7;font-weight:600;background:rgba(86,199,186,0.14);border:1px solid rgba(86,199,186,0.4);border-radius:8px">DJ</div>
+            </div>
+            <div style="border:1px solid rgba(86,199,186,0.4);background:rgba(86,199,186,0.055);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:11px">
+              <div style="display:flex;align-items:center;gap:7px">
+                <div style="width:6px;height:6px;border-radius:50%;background:#56C7BA"></div>
+                <div style="font-size:10.5px;font-weight:700;letter-spacing:0.14em;color:#8FE0D5;text-transform:uppercase">New vibe</div>
+              </div>
+              <div style="background:#040A09;border:1px solid rgba(86,199,186,0.55);border-radius:9px;padding:10px 11px;font-size:14.5px;color:#F3F9F7;line-height:1.45;min-height:62px;box-shadow:0 0 0 3px rgba(86,199,186,0.1)">mellow background music for a late night coding session<span style="color:#56C7BA">|</span></div>
+              <div style="display:flex;gap:8px">
+                <div style="flex:1;text-align:center;font-size:13px;font-weight:600;color:#04100E;background:#56C7BA;padding:9px 0;border-radius:8px">Update vibe</div>
+                <div style="text-align:center;font-size:13px;color:#B8CDC8;padding:9px 15px;border:1px solid rgba(255,255,255,0.14);border-radius:8px">Cancel</div>
+              </div>
+              <div style="font-size:11.5px;color:#7D938E;line-height:1.5">Keeps the mix collected so far and re-tunes from here.</div>
+            </div>
+            <div style="display:flex;gap:20px;padding-top:2px;border-bottom:1px solid rgba(255,255,255,0.07)">
+              <div style="font-size:13px;color:#F3F9F7;font-weight:600;padding-bottom:8px;border-bottom:2px solid #56C7BA">Mix</div>
+              <div style="font-size:13px;color:#8A9F9A;padding-bottom:8px">Sources</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;opacity:0.5">
+              <div style="display:flex;gap:12px;align-items:center"><div style="width:34px;height:34px;border-radius:8px;background:rgba(86,199,186,0.14);flex:none"></div><div style="display:flex;flex-direction:column;gap:3px"><div style="height:9px;width:150px;background:rgba(255,255,255,0.16);border-radius:3px"></div><div style="height:8px;width:96px;background:rgba(255,255,255,0.08);border-radius:3px"></div></div></div>
+              <div style="display:flex;gap:12px;align-items:center"><div style="width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.05);flex:none"></div><div style="display:flex;flex-direction:column;gap:3px"><div style="height:9px;width:120px;background:rgba(255,255,255,0.14);border-radius:3px"></div><div style="height:8px;width:70px;background:rgba(255,255,255,0.07);border-radius:3px"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:746px;box-sizing:border-box;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.08);border-left:2px solid #56C7BA;border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:7px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;color:#8FE0D5;text-transform:uppercase">Build notes</div>
+        <div style="font-size:13px;color:#93A8A3;line-height:1.65">Idle state is unchanged (the screenshot's <em>Describe a vibe… / Start</em> row). On <code style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#CDEEE7">SessionActive</code>, collapse that row and swap the card's vibe <code style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#CDEEE7">TextBlock</code> for a 2-line-min <code style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#CDEEE7">TextBox</code> (<code style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#CDEEE7">AcceptsReturn=False</code>, <code style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#CDEEE7">TextWrapping=Wrap</code>, auto-height, cap ~4 lines then scroll). Enter = Update, Esc = Cancel, and focus lands in the box with text selected so retyping is one gesture. Card grows downward; the Mix list absorbs it.</div>
+      </div>
+    </div>
+
+    <!-- ============ 1b ============ -->
+    <div id="1b" style="display:flex;flex-direction:column;gap:14px;width:392px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:500;color:#0A1211;background:#8A9F9A;padding:3px 8px;border-radius:5px">1b</div>
+        <div style="font-size:16.5px;color:#F3F9F7;font-weight:600">Prompt gets its own row</div>
+      </div>
+      <div style="font-size:13.5px;color:#8A9F9A;line-height:1.62;text-wrap:pretty">Keep the live prompt row, but stop making the field and the button share a line. Field spans the full panel and wraps; the button drops beneath it, right-aligned, and only appears once the text differs from the running vibe.</div>
+      <div style="width:364px;box-sizing:border-box;background:#060E0D;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;gap:4px;padding:5px;background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.07);border-radius:11px">
+          <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#8A9F9A">Radio</div>
+          <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#8A9F9A">Library</div>
+          <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#CDEEE7;font-weight:600;background:rgba(86,199,186,0.14);border:1px solid rgba(86,199,186,0.4);border-radius:8px">DJ</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="display:flex;gap:9px;align-items:flex-start;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:11px 12px">
+            <div style="color:#56C7BA;font-size:13px;line-height:1.45;flex:none">✦</div>
+            <div style="font-size:14.5px;color:#F3F9F7;line-height:1.45;text-wrap:pretty">mellow background music for a late night coding session</div>
+          </div>
+          <div style="align-self:flex-end;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#04100E;background:#56C7BA;padding:8px 15px;border-radius:9px">✦ Change vibe</div>
+        </div>
+        <div style="border:1px solid rgba(86,199,186,0.22);background:rgba(86,199,186,0.055);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <div style="display:flex;align-items:center;gap:7px">
+              <div style="width:6px;height:6px;border-radius:50%;background:#56C7BA"></div>
+              <div style="font-size:10.5px;font-weight:700;letter-spacing:0.14em;color:#8FE0D5;text-transform:uppercase">This session</div>
+            </div>
+            <div style="font-size:12.5px;color:#B8CDC8;padding:6px 12px;border:1px solid rgba(255,255,255,0.14);border-radius:8px">End session</div>
+          </div>
+          <div style="font-size:12px;color:#7D938E;line-height:1.5">Tuned into 4 stations · 0 songs collected · 1 min</div>
+        </div>
+        <div style="display:flex;gap:20px;padding-top:2px;border-bottom:1px solid rgba(255,255,255,0.07)">
+          <div style="font-size:13px;color:#F3F9F7;font-weight:600;padding-bottom:8px;border-bottom:2px solid #56C7BA">Mix</div>
+          <div style="font-size:13px;color:#8A9F9A;padding-bottom:8px">Sources</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;opacity:0.5">
+          <div style="display:flex;gap:12px;align-items:center"><div style="width:34px;height:34px;border-radius:8px;background:rgba(86,199,186,0.14);flex:none"></div><div style="display:flex;flex-direction:column;gap:3px"><div style="height:9px;width:150px;background:rgba(255,255,255,0.16);border-radius:3px"></div><div style="height:8px;width:96px;background:rgba(255,255,255,0.08);border-radius:3px"></div></div></div>
+          <div style="display:flex;gap:12px;align-items:center"><div style="width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,0.05);flex:none"></div><div style="display:flex;flex-direction:column;gap:3px"><div style="height:9px;width:120px;background:rgba(255,255,255,0.14);border-radius:3px"></div><div style="height:8px;width:70px;background:rgba(255,255,255,0.07);border-radius:3px"></div></div></div>
+        </div>
+      </div>
+      <div style="box-sizing:border-box;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:13px 15px;font-size:12.5px;color:#93A8A3;line-height:1.6">Duplicates the vibe text in two places (field + card) unless you drop it from the card, and the button row eats 44px of vertical space permanently.</div>
+    </div>
+
+    <!-- ============ 1c ============ -->
+    <div id="1c" style="display:flex;flex-direction:column;gap:14px;width:392px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:500;color:#0A1211;background:#8A9F9A;padding:3px 8px;border-radius:5px">1c</div>
+        <div style="font-size:16.5px;color:#F3F9F7;font-weight:600">One-line fix: icon button</div>
+      </div>
+      <div style="font-size:13.5px;color:#8A9F9A;line-height:1.62;text-wrap:pretty">Same row, but "Change vibe" collapses to a 40px send-style button with a tooltip. The field keeps its full idle width — and actually gains ~20px. Cheapest change; still a single-line field for a 55-character prompt.</div>
+      <div style="width:364px;box-sizing:border-box;background:#060E0D;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;gap:4px;padding:5px;background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.07);border-radius:11px">
+          <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#8A9F9A">Radio</div>
+          <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#8A9F9A">Library</div>
+          <div style="flex:1;text-align:center;padding:7px 0;font-size:12.5px;color:#CDEEE7;font-weight:600;background:rgba(86,199,186,0.14);border:1px solid rgba(86,199,186,0.4);border-radius:8px">DJ</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:stretch">
+          <div style="flex:1;min-width:0;display:flex;gap:9px;align-items:center;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0 12px;height:44px">
+            <div style="color:#56C7BA;font-size:13px;flex:none">✦</div>
+            <div style="font-size:14px;color:#F3F9F7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">mellow background music for a late nig</div>
+          </div>
+          <div style="width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;background:#56C7BA;border-radius:10px;color:#04100E;font-size:16px">✦</div>
+        </div>
+        <div style="font-size:11.5px;color:#7D938E;line-height:1.5;margin-top:-6px">Tooltip: “Change vibe (Enter)”</div>
+        <div style="border:1px solid rgba(86,199,186,0.22);background:rgba(86,199,186,0.055);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <div style="display:flex;align-items:center;gap:7px">
+              <div style="width:6px;height:6px;border-radius:50%;background:#56C7BA"></div>
+              <div style="font-size:10.5px;font-weight:700;letter-spacing:0.14em;color:#8FE0D5;text-transform:uppercase">This session</div>
+            </div>
+            <div style="font-size:12.5px;color:#B8CDC8;padding:6px 12px;border:1px solid rgba(255,255,255,0.14);border-radius:8px">End session</div>
+          </div>
+          <div style="font-size:14.5px;color:#F3F9F7;line-height:1.42;text-wrap:pretty">mellow background music for a late night coding session</div>
+          <div style="font-size:12px;color:#7D938E;line-height:1.5">Tuned into 4 stations · 0 songs collected · 1 min</div>
+        </div>
+        <div style="display:flex;gap:20px;padding-top:2px;border-bottom:1px solid rgba(255,255,255,0.07)">
+          <div style="font-size:13px;color:#F3F9F7;font-weight:600;padding-bottom:8px;border-bottom:2px solid #56C7BA">Mix</div>
+          <div style="font-size:13px;color:#8A9F9A;padding-bottom:8px">Sources</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;opacity:0.5">
+          <div style="display:flex;gap:12px;align-items:center"><div style="width:34px;height:34px;border-radius:8px;background:rgba(86,199,186,0.14);flex:none"></div><div style="display:flex;flex-direction:column;gap:3px"><div style="height:9px;width:150px;background:rgba(255,255,255,0.16);border-radius:3px"></div><div style="height:8px;width:96px;background:rgba(255,255,255,0.08);border-radius:3px"></div></div></div>
+        </div>
+      </div>
+      <div style="box-sizing:border-box;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:13px 15px;font-size:12.5px;color:#93A8A3;line-height:1.6">Icon-only loses the label that told users the button re-tunes rather than restarts. Fine as a stopgap, not the answer.</div>
+    </div>
+
+  </section>
+
+  <div style="width:1000px;box-sizing:border-box;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:18px 20px;display:flex;flex-direction:column;gap:9px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.14em;color:#8FE0D5;text-transform:uppercase">Shared measurements</div>
+    <div style="font-size:13px;color:#93A8A3;line-height:1.7">Panel 364px, 16px gutters → 332px usable. Idle field today ≈ 232px; with "Change vibe" it drops to ≈ 142px, about 17 characters. <a href="#1a">1a</a> and <a href="#1b">1b</a> both give the prompt the full 332px and wrap to 2–4 lines (≈ 40 chars per line at 14.5px), which covers the 55-character example with room left. Wrapped field caps at 4 lines, then scrolls internally — the panel never grows past the Mix tab strip.</div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

@@ -48,7 +48,7 @@
                      nothing calls it when a segment finishes recording, so the button would go
                      stale. CanSave raises PropertyChanged, so this tracks live. -->
                 <Button Margin="0,0,6,0" ToolTipService.ShowOnDisabled="True"
-                        IsEnabled="{Binding CanSave}"
+                        IsEnabled="{Binding CanSaveOrMark}"
                         Command="{Binding DataContext.SaveSongCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                         CommandParameter="{Binding}">
                     <Button.Style>
@@ -59,6 +59,22 @@
                                 <DataTrigger Binding="{Binding HasSegment}" Value="False">
                                     <Setter Property="ToolTip"
                                             Value="Can't save this one — it wasn't recorded while it played"/>
+                                </DataTrigger>
+                                <!-- The PLAYING row. It has no completed recording yet, so the
+                                     "wasn't recorded" message above is untrue for it: the audio is
+                                     being captured right now. This is the only save affordance for
+                                     the current song since the Now Playing header lost its
+                                     duplicate (#37), so it must offer the deferred save rather than
+                                     sit disabled with a wrong explanation. Ordered after HasSegment
+                                     so it wins. -->
+                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                    <Setter Property="ToolTip" Value="Save this song when it finishes"/>
+                                </DataTrigger>
+                                <!-- Marked while playing: same teal plus the header used to show. -->
+                                <DataTrigger Binding="{Binding MarkedForSave}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource TealBright}"/>
+                                    <Setter Property="ToolTip"
+                                            Value="Marked — saves when the song ends; click to cancel"/>
                                 </DataTrigger>
                                 <!-- Saved: hand over to the teal mark beside it. -->
                                 <DataTrigger Binding="{Binding IsSaved}" Value="True">
@@ -1143,10 +1159,28 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- ===== Now playing (vertically centred). Swaps with the About reading view. ===== -->
-                <StackPanel Grid.Row="0" VerticalAlignment="Center"
-                            MaxWidth="440" HorizontalAlignment="Left"
-                            Visibility="{Binding ShowNowPlaying, Converter={StaticResource BoolToVis}}">
+                <!-- ===== Now playing (vertically centred). Swaps with the About reading view. =====
+                     Centred by a pair of star-height SPACERS rather than VerticalAlignment="Center",
+                     and that is the fix for #38. A centred panel taller than its row is centred on
+                     its DESIRED size, so the overflow splits equally above and below and the first
+                     thing inside it — the "NOW PLAYING" eyebrow with its Copy button — slides off
+                     the top of the screen. Measured before the fix: a one-line title left the
+                     eyebrow 8px inside the row, two lines put it 50px above, three lines 107px.
+
+                     With star spacers the Grid gives the Auto row its desired height first and
+                     shares what remains between the spacers, so as the title grows the TOP spacer
+                     collapses to zero before anything else moves. The eyebrow cannot rise past the
+                     top edge, overflow can only spill downward, and the last child (the recent
+                     list) is what gets cut instead of the header. Short titles still centre exactly
+                     as before. -->
+                <Grid Grid.Row="0" MaxWidth="440" HorizontalAlignment="Left"
+                      Visibility="{Binding ShowNowPlaying, Converter={StaticResource BoolToVis}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                <StackPanel Grid.Row="1">
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
                         <TextBlock Text="NOW PLAYING" FontSize="11" FontWeight="SemiBold"
                                    Foreground="#FF6F8C87" VerticalAlignment="Center"/>
@@ -1154,38 +1188,23 @@
                                 Content="{StaticResource CopyGeometry}" ToolTip="Copy title &amp; artist"
                                 Width="32" Height="32" Margin="8,0,0,0" VerticalAlignment="Center"
                                 Visibility="{Binding HasTrackInfo, Converter={StaticResource BoolToVis}}"/>
-                        <!-- Save this song (download→check pair — same mark as everywhere else Save
-                             appears): marks it now, saved automatically once its recording
-                             completes at the next track change. -->
-                        <Button Command="{Binding MarkForSaveCommand}" Width="32" Height="32"
-                                Margin="4,0,0,0" VerticalAlignment="Center"
-                                Visibility="{Binding CanMarkForSave, Converter={StaticResource BoolToVis}}">
-                            <Button.Style>
-                                <!-- Same three-state save family as the history rows: plus →
-                                     teal plus (marked, saves when the song ends) → teal check. -->
-                                <Style TargetType="Button" BasedOn="{StaticResource TitleIconButton}">
-                                    <Setter Property="Content" Value="{StaticResource AddCircleGeometry}"/>
-                                    <Setter Property="ToolTip" Value="Save this song when it finishes"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsCurrentSongMarked}" Value="True">
-                                            <Setter Property="Foreground" Value="{StaticResource TealBright}"/>
-                                            <Setter Property="ToolTip" Value="Marked — saves when the song ends; click to cancel"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsCurrentSongSaved}" Value="True">
-                                            <Setter Property="Content" Value="{StaticResource CheckCircleGeometry}"/>
-                                            <Setter Property="Foreground" Value="{StaticResource TealBright}"/>
-                                            <Setter Property="ToolTip" Value="In your library"/>
-                                            <Setter Property="IsHitTestVisible" Value="False"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
+                        <!-- No save button here. It used to duplicate the one on this same song's
+                             row in the list below, which meanwhile insisted the song "wasn't
+                             recorded while it played" — two buttons for one song and one of them
+                             lying (#37). The list row owns saving now, for every song including
+                             this one. -->
                     </StackPanel>
 
                     <!-- Idle quiets to 28px Light + a mode-specific next step (UX audit: an
                          absence must not be the loudest element on screen). -->
-                    <TextBlock Text="{Binding NowPlayingTitle}" TextWrapping="Wrap">
+                    <!-- Wraps freely: the star-spacer grid above absorbs the growth, so a long
+                         title no longer costs the header row. Deliberately NOT capped with
+                         MaxHeight + TextTrimming — WPF's TextBlock will not wrap-then-trim, and every
+                         arrangement of those two collapsed the title to a single ellipsised line
+                         (MaxHeight alone cut it through the middle of the glyphs instead). Tooltip
+                         carries the full text for the case where it does get clipped. -->
+                    <TextBlock Text="{Binding NowPlayingTitle}" TextWrapping="Wrap"
+                               ToolTip="{Binding NowPlayingTitle}">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Setter Property="FontSize" Value="44"/>
@@ -1406,6 +1425,7 @@
                         </ItemsControl>
                     </StackPanel>
                 </StackPanel>
+                </Grid>
 
                 <!-- ===== About this track reading view (swaps with Now Playing) =====
                      Stretches to the right column's width; bottom margin keeps the footer off

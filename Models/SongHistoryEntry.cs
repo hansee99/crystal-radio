@@ -15,6 +15,7 @@ public sealed class SongHistoryEntry : ObservableObject
     private string? _segmentFile;
     private string? _savedPath;
     private bool _markedForSave;
+    private bool _isCurrent;
 
     public string Title { get; set; } = string.Empty;
     public string Artist { get; set; } = string.Empty;
@@ -35,6 +36,9 @@ public sealed class SongHistoryEntry : ObservableObject
             {
                 OnPropertyChanged(nameof(HasSegment));
                 OnPropertyChanged(nameof(CanSave));
+                // Must move with the others, or the button goes stale exactly when the recording
+                // completes — the trap the IsEnabled comment in MainWindow.xaml already warns about.
+                OnPropertyChanged(nameof(CanSaveOrMark));
             }
         }
     }
@@ -52,6 +56,7 @@ public sealed class SongHistoryEntry : ObservableObject
             {
                 OnPropertyChanged(nameof(IsSaved));
                 OnPropertyChanged(nameof(CanSave));
+                OnPropertyChanged(nameof(CanSaveOrMark));
             }
         }
     }
@@ -65,9 +70,35 @@ public sealed class SongHistoryEntry : ObservableObject
         set => SetProperty(ref _markedForSave, value);
     }
 
+    /// <summary>
+    /// This row is the song playing right now. Set by the view model as playback moves on.
+    ///
+    /// <para>It exists so the row can offer the RIGHT save affordance. The playing song has no
+    /// completed recording yet, so it used to render a disabled button saying "Can't save this one —
+    /// it wasn't recorded while it played", which is simply untrue: it is being recorded, and it
+    /// will be saveable in a moment. Now it offers "save when it finishes" instead.</para>
+    /// </summary>
+    [JsonIgnore]
+    public bool IsCurrent
+    {
+        get => _isCurrent;
+        set
+        {
+            if (SetProperty(ref _isCurrent, value))
+                OnPropertyChanged(nameof(CanSaveOrMark));
+        }
+    }
+
     [JsonIgnore] public bool HasSegment => SegmentFile is not null;
     [JsonIgnore] public bool IsSaved => SavedPath is not null;
     [JsonIgnore] public bool CanSave => HasSegment && !IsSaved;
+
+    /// <summary>
+    /// Whether the row's save button does anything at all: either the audio is already captured, or
+    /// this is the playing song and the click means "save it when it finishes". Everything else is a
+    /// row whose audio was genuinely missed, and stays disabled with an honest explanation.
+    /// </summary>
+    [JsonIgnore] public bool CanSaveOrMark => (HasSegment || IsCurrent) && !IsSaved;
 
     /// <summary>Secondary display line: "Artist · Station · time" (non-empty parts only).</summary>
     [JsonIgnore]

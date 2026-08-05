@@ -233,8 +233,7 @@ public sealed class MainViewModel : ObservableObject
             e => { if (e is not null) _ = GenerateAboutAsync(e.Title, e.Artist, e.Station, forceRefresh: false); });
         OpenLyricsCommand = new RelayCommand(() => _ = ShowLyricsAsync(), () => CanShowLyrics);
         BackToNowPlayingCommand = new RelayCommand(BackToNowPlaying);
-        SaveSongCommand = new RelayCommand<SongHistoryEntry>(SaveSong, e => e?.CanSave == true);
-        MarkForSaveCommand = new RelayCommand(ToggleMarkForSave, () => CanMarkForSave && !IsCurrentSongSaved);
+        SaveSongCommand = new RelayCommand<SongHistoryEntry>(SaveOrMark, e => e?.CanSaveOrMark == true);
 
         // Every list panel's state is derived from its collection's count, so each collection
         // drives its own panel's change notification (UX audit: PanelState).
@@ -296,7 +295,6 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand<SongHistoryEntry> SaveSongCommand { get; }
 
     /// <summary>Mark/unmark the currently-playing song to be saved when its segment completes.</summary>
-    public RelayCommand MarkForSaveCommand { get; }
 
     /// <summary>Cap on stored history rows (metadata is tiny; this is a UI/file sanity bound).</summary>
     private const int HistoryCap = 100;
@@ -401,35 +399,39 @@ public sealed class MainViewModel : ObservableObject
 
     private SongHistoryEntry? _currentSong;
 
-    /// <summary>The mark toggle is available while a radio song is playing (the library plays
-    /// already-saved files).</summary>
-    public bool CanMarkForSave => IsRadioMode && _currentSong is not null;
-
-    /// <summary>Whether the current song is marked (drives the toggle button's state).</summary>
-    public bool IsCurrentSongMarked => _currentSong?.MarkedForSave == true;
-
-    /// <summary>Whether the current song has already been saved (button becomes a non-interactive
-    /// check, matching the download→check pair used everywhere else Save appears).</summary>
-    public bool IsCurrentSongSaved => _currentSong?.IsSaved == true;
-
     private void SetCurrentSong(SongHistoryEntry? entry)
     {
+        // The flag lives on the ROW so its own save button can offer the right thing. Clearing the
+        // previous one matters as much as setting the new: a stale IsCurrent would leave an older
+        // row promising to save a song that has already finished.
+        if (_currentSong is not null) _currentSong.IsCurrent = false;
         _currentSong = entry;
-        OnPropertyChanged(nameof(CanMarkForSave));
-        OnPropertyChanged(nameof(IsCurrentSongMarked));
-        OnPropertyChanged(nameof(IsCurrentSongSaved));
-        MarkForSaveCommand.RaiseCanExecuteChanged();
+        if (entry is not null) entry.IsCurrent = true;
+
+        SaveSongCommand.RaiseCanExecuteChanged();
     }
 
-    private void ToggleMarkForSave()
+    /// <summary>
+    /// The single save action behind every save button in the app. Either the audio is already
+    /// captured — save it now — or this is the playing song, and the click means "save it when it
+    /// finishes", resolved by OnSegmentCompleted.
+    ///
+    /// <para>Unifying the two is issue #37: there used to be a "save when it finishes" button in the
+    /// Now Playing header AND a disabled one on the same song's history row insisting it "wasn't
+    /// recorded while it played". Two buttons, one song, and one of them lying.</para>
+    /// </summary>
+    private void SaveOrMark(SongHistoryEntry? entry)
     {
-        if (_currentSong is null || _currentSong.IsSaved) return;
-        _currentSong.MarkedForSave = !_currentSong.MarkedForSave;
-        OnPropertyChanged(nameof(IsCurrentSongMarked));
+        if (entry is null || entry.IsSaved) return;
 
-        // If it's already saveable (segment complete) and just got marked, save immediately.
-        if (_currentSong.MarkedForSave && _currentSong.CanSave)
-            SaveSong(_currentSong);
+        if (entry.CanSave)
+        {
+            SaveSong(entry);
+            return;
+        }
+
+        if (!entry.IsCurrent) return;   // audio genuinely missed; the button is disabled anyway
+        entry.MarkedForSave = !entry.MarkedForSave;
     }
 
     /// <summary>Evict the oldest cached segments until the cache fits the configured cap.
@@ -482,11 +484,6 @@ public sealed class MainViewModel : ObservableObject
                 SavedAt: DateTimeOffset.Now));
             RefreshLibrarySongs(); // so the Songs tab shows it immediately (description fills in later)
 
-            if (ReferenceEquals(entry, _currentSong))
-            {
-                OnPropertyChanged(nameof(IsCurrentSongSaved));
-                MarkForSaveCommand.RaiseCanExecuteChanged();
-            }
         }
         catch (Exception ex)
         {
