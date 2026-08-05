@@ -884,10 +884,14 @@
                              record — vibe, state, counts — with End session as a quiet ghost
                              that only exists while there IS something to end. -->
 
-                        <!-- The prompt field, in both states: it starts a session when idle and
-                             re-points a running one at a new vibe. The mix keeps playing across a
-                             change, so this is a steering wheel, not a restart. -->
-                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+                        <!-- The prompt field, IDLE ONLY. It used to serve both states, but sharing a
+                             line with "Change vibe" (2.4x wider than "Start") cost the field ~90px
+                             — down to about 17 visible characters — at exactly the moment the text
+                             in it got long. And the vibe was then printed twice, here and in the
+                             card below. Once a session runs this collapses and the card's own vibe
+                             line becomes the editable one (#39). -->
+                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16"
+                                    Visibility="{Binding ShowDjPromptRow, Converter={StaticResource BoolToVis}}">
 
                             <Border Height="42" CornerRadius="10" Background="{StaticResource FillSubtle}"
                                     BorderBrush="{StaticResource Hairline}" BorderThickness="1"
@@ -966,11 +970,11 @@
                                 Background="{StaticResource TealTint10}" BorderBrush="#3D56C7BA"
                                 BorderThickness="1"
                                 Visibility="{Binding IsDjRunning, Converter={StaticResource BoolToVis}}">
-                            <DockPanel>
-                                <Button DockPanel.Dock="Right" Content="End session"
-                                        Style="{StaticResource GhostPillButton}"
-                                        VerticalAlignment="Center" Margin="10,0,0,0"
-                                        Command="{Binding StopDjCommand}"/>
+                            <!-- A StackPanel, not a DockPanel with End session docked right: docking
+                                 it stole ~130px from every line beside it, so the vibe wrapped in a
+                                 200px column when the whole point of #39 is giving it the panel's
+                                 full width. It now sits on its own line under the status. -->
+                            <StackPanel>
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
                                         <!-- Amber while bridging a live station, teal once the
@@ -1001,14 +1005,96 @@
                                         </Ellipse>
                                         <TextBlock Text="THIS SESSION" FontSize="10.5" FontWeight="SemiBold"
                                                    Foreground="{StaticResource TealText}" VerticalAlignment="Center"/>
+                                        <!-- The affordance sits on the line it edits. -->
+                                        <Button Content="Change vibe" Margin="10,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Style="{StaticResource AboutLinkButton}"
+                                                Command="{Binding BeginEditDjVibeCommand}"
+                                                Visibility="{Binding ShowDjSessionVibeText,
+                                                             Converter={StaticResource BoolToVis}}"/>
                                     </StackPanel>
+
+                                    <!-- READING: the vibe as text. Wraps freely — the card grows
+                                         downward and the Mix list below absorbs it. Deliberately no
+                                         MaxHeight + TextTrimming, which is what used to be here: on
+                                         a wrapping TextBlock that pair collapses the text to a
+                                         single ellipsised line (the same WPF behaviour that made
+                                         #38's obvious fix unusable), so a two-line vibe was being
+                                         cut to one for no reason. -->
                                     <TextBlock Text="{Binding DjSessionVibe}" FontSize="13.5" FontWeight="Medium"
                                                Foreground="{StaticResource TextBody}" TextWrapping="Wrap"
-                                               MaxHeight="36" TextTrimming="CharacterEllipsis"/>
+                                               Visibility="{Binding ShowDjSessionVibeText,
+                                                            Converter={StaticResource BoolToVis}}"/>
+
+                                    <!-- EDITING: the same line becomes the field, at the card's full
+                                         width instead of the ~142px the old shared row left it. -->
+                                    <StackPanel Visibility="{Binding IsEditingDjVibe,
+                                                             Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="NEW VIBE" FontSize="10.5" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TealText}" Margin="0,4,0,6"/>
+                                        <Border CornerRadius="8" Background="{StaticResource FillSubtle}"
+                                                BorderBrush="{StaticResource Hairline}" BorderThickness="1"
+                                                Padding="9,7">
+                                            <!-- AcceptsReturn=False so Enter submits rather than
+                                                 inserting a newline; MinLines/MaxLines give it two
+                                                 lines to start and scroll past four. -->
+                                            <TextBox x:Name="DjVibeEditBox" Background="Transparent"
+                                                     BorderThickness="0" AcceptsReturn="False"
+                                                     TextWrapping="Wrap" MinLines="2" MaxLines="4"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     FontSize="13.5" Foreground="{StaticResource TextBody}"
+                                                     CaretBrush="{StaticResource Teal}"
+                                                     Text="{Binding DjPrompt, UpdateSourceTrigger=PropertyChanged}">
+                                                <TextBox.InputBindings>
+                                                    <KeyBinding Key="Return" Command="{Binding DjPromptSubmitCommand}"/>
+                                                    <KeyBinding Key="Escape" Command="{Binding CancelEditDjVibeCommand}"/>
+                                                </TextBox.InputBindings>
+                                            </TextBox>
+                                        </Border>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                                            <!-- Style as an ELEMENT only. Setting it as an attribute
+                                                 as well collides — the same mistake that shipped
+                                                 once already in this file. -->
+                                            <Button Command="{Binding DjPromptSubmitCommand}">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource AboutPillButton}">
+                                                        <Setter Property="Content" Value="Update vibe"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsChangingDjVibe}" Value="True">
+                                                                <Setter Property="Content" Value="Finding…"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                            <Button Content="Cancel" Margin="8,0,0,0"
+                                                    Style="{StaticResource GhostPillButton}"
+                                                    Command="{Binding CancelEditDjVibeCommand}"/>
+                                        </StackPanel>
+
+                                        <!-- The one thing a listener needs to know before pressing
+                                             it: this steers, it doesn't start over. -->
+                                        <TextBlock Text="Keeps the mix collected so far and re-tunes from here."
+                                                   FontSize="11.5" Margin="0,8,0,0" TextWrapping="Wrap"
+                                                   Foreground="{StaticResource TextMuted}"/>
+                                    </StackPanel>
+
                                     <TextBlock Text="{Binding DjStatus}" FontSize="11.5" Margin="0,4,0,0"
-                                               Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"/>
+                                               Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"
+                                               Visibility="{Binding ShowDjSessionVibeText,
+                                                            Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>
-                            </DockPanel>
+
+                                <!-- Steps aside while editing: Update / Cancel own the card then, and
+                                     a third button beside them invites ending the session by accident
+                                     when the intent was only to change it. -->
+                                <Button Content="End session" HorizontalAlignment="Right"
+                                        Style="{StaticResource GhostPillButton}" Margin="0,11,0,0"
+                                        Command="{Binding StopDjCommand}"
+                                        Visibility="{Binding ShowDjSessionVibeText,
+                                                     Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
                         </Border>
 
                         <!-- Sub-nav (UX audit b08): content first, like Stations-then-Search and

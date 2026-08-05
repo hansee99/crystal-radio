@@ -209,6 +209,14 @@ public sealed class MainViewModel : ObservableObject
             () => { if (IsDjRunning) _ = ChangeDjVibeAsync(); else _ = StartDjAsync(); },
             () => !string.IsNullOrWhiteSpace(DjPrompt) && !IsChangingDjVibe);
 
+        // Editing happens where the text already lives — in the session card (#39). Seeding the box
+        // with the running vibe is what makes "change" feel like editing rather than retyping.
+        BeginEditDjVibeCommand = new RelayCommand(
+            () => { DjPrompt = DjSessionVibe ?? string.Empty; IsEditingDjVibe = true; },
+            () => IsDjRunning && !IsChangingDjVibe);
+
+        CancelEditDjVibeCommand = new RelayCommand(() => IsEditingDjVibe = false);
+
         // Staged progress for the three long AI waits, each with its own Cancel (UX audit).
         SearchProgress = new StagedProgress { CancelCommand = new RelayCommand(() => _searchCts?.Cancel()) };
         CurateProgress = new StagedProgress { CancelCommand = new RelayCommand(() => _curateCts?.Cancel()) };
@@ -1103,6 +1111,12 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>What the prompt field's button and Enter key invoke: start when idle, change the
     /// vibe when running.</summary>
     public RelayCommand DjPromptSubmitCommand { get; }
+
+    /// <summary>Opens the card's vibe line for editing (#39).</summary>
+    public RelayCommand BeginEditDjVibeCommand { get; }
+
+    /// <summary>Closes it without re-tuning. Bound to Esc as well as the button.</summary>
+    public RelayCommand CancelEditDjVibeCommand { get; }
     public RelayCommand<CuratedQueueItem> PlayQueueItemCommand { get; }
     public RelayCommand<LibrarySongItem> PlayLibrarySongCommand { get; }
 
@@ -2152,6 +2166,8 @@ public sealed class MainViewModel : ObservableObject
                 StopDjCommand.RaiseCanExecuteChanged();
                 ChangeDjVibeCommand.RaiseCanExecuteChanged();
                 DjPromptSubmitCommand.RaiseCanExecuteChanged();
+                BeginEditDjVibeCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(ShowDjPromptRow));
                 RaiseDjIndicatorChanged();
                 OnPropertyChanged(nameof(DjSourcesPanelState));
                 OnPropertyChanged(nameof(DjMixPanelState));
@@ -2460,6 +2476,7 @@ public sealed class MainViewModel : ObservableObject
             }
 
             DjSessionVibe = prompt;
+            IsEditingDjVibe = false;    // the card goes back to showing the new vibe as text
             RefreshDjSessionMeta();
         }
         catch (OperationCanceledException)
@@ -2497,6 +2514,7 @@ public sealed class MainViewModel : ObservableObject
         SpeakMoment(DjMoment.SigningOff);
 
         DjSessionVibe = null;
+        IsEditingDjVibe = false;
         _djSessionTimer?.Stop();
         _djLastStatus = null;
 
@@ -2613,6 +2631,35 @@ public sealed class MainViewModel : ObservableObject
     private DateTime _djSessionStarted;
     private System.Windows.Threading.DispatcherTimer? _djSessionTimer;
     private DjSessionLog? _djSessionLog;
+
+    private bool _isEditingDjVibe;
+
+    /// <summary>
+    /// The session card's vibe line is open for editing. While true the card shows a text box, an
+    /// Update/Cancel pair and the "keeps the mix" reassurance; while false it shows the vibe as text
+    /// with a "Change vibe" affordance.
+    ///
+    /// <para>The idle prompt row is collapsed for the whole session either way (#39): the vibe was
+    /// printed twice, and the row's field lost ~90px to the wider "Change vibe" button at exactly
+    /// the moment the text in it got long.</para>
+    /// </summary>
+    public bool IsEditingDjVibe
+    {
+        get => _isEditingDjVibe;
+        private set
+        {
+            if (SetProperty(ref _isEditingDjVibe, value))
+                OnPropertyChanged(nameof(ShowDjSessionVibeText));
+        }
+    }
+
+    /// <summary>The card shows the vibe as read-only text whenever it isn't being edited.</summary>
+    public bool ShowDjSessionVibeText => !IsEditingDjVibe;
+
+    /// <summary>The idle "Describe a vibe… / Start" row, shown only before a session runs. A derived
+    /// property rather than an inverting converter, since the app has no such converter and one
+    /// property is less machinery than a new one.</summary>
+    public bool ShowDjPromptRow => !IsDjRunning;
 
     /// <summary>Why the warm-start seed was empty, so the bridge can explain itself. Ok whenever
     /// the seed worked or the mix later ran dry — a mid-session dry spell is not a prompt problem

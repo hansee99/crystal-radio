@@ -114,6 +114,19 @@ public partial class MainWindow : Window
             {
                 AboutScroll.ScrollToTop();
             }
+
+            // Opening the vibe editor puts the caret in it with the text selected, so retyping the
+            // whole vibe is one gesture rather than select-all-then-type (#39). View wiring, not
+            // view-model state: the box only exists once the template has realised it, hence the
+            // dispatcher hop.
+            if (e.PropertyName == nameof(MainViewModel.IsEditingDjVibe) && _viewModel.IsEditingDjVibe)
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    DjVibeEditBox.Focus();
+                    DjVibeEditBox.SelectAll();
+                }, System.Windows.Threading.DispatcherPriority.Input);
+            }
         };
 
         // Seek slider: suspend the position timer while the user drags the thumb, so ticks
