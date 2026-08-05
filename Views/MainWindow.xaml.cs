@@ -96,7 +96,9 @@ public partial class MainWindow : Window
             minSongSeconds: djSettings.DjMinSongSeconds,
             stationIdleMinutes: djSettings.DjStationIdleMinutes,
             maxHarvestCacheBytes: djSettings.ResolveHarvestCacheBytes(),
-            maxRejectedCacheBytes: djSettings.ResolveRejectedCacheBytes());
+            maxRejectedCacheBytes: djSettings.ResolveRejectedCacheBytes(),
+            // So a session can still start off the local catalog when the mirrors are down (#26).
+            semanticSearch: semanticSearch);
 
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new SongHistoryStore(), _recorder,

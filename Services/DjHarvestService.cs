@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Http;
 using System.Threading;
 using System.Windows.Threading;
 using ManagedBass;
@@ -60,6 +61,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     private readonly IAgenticSearchService _agenticSearch;
     private readonly ISearchRanker _ranker;
     private readonly IEnrichmentService _enrichment;
+    private readonly ISemanticSearchService? _semanticSearch;
     private readonly ISongLibraryService _songLibrary;
     private readonly SegmentQualityChecker _qc;
     private readonly string _harvestDir;
@@ -135,13 +137,17 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         double minSongSeconds = 60,
         double stationIdleMinutes = 15,
         long maxHarvestCacheBytes = 500L * 1024 * 1024,
-        long maxRejectedCacheBytes = 250L * 1024 * 1024)
+        long maxRejectedCacheBytes = 250L * 1024 * 1024,
+        // Last, and optional, so every existing call site and test keeps its positional arguments.
+        // Null just means "no offline fallback" — sourcing then fails the way it always did.
+        ISemanticSearchService? semanticSearch = null)
     {
         _searchService = searchService;
         _interpreter = interpreter;
         _agenticSearch = agenticSearch;
         _ranker = ranker;
         _enrichment = enrichment;
+        _semanticSearch = semanticSearch;
         _songLibrary = songLibrary;
         _harvestDir = harvestDir;
         _scratchDir = Path.Combine(harvestDir, "_scratch");
@@ -933,10 +939,17 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
 
     private sealed record SourceCandidate(Station Station, string DescriptiveText, string? Country);
 
+    /// <summary>
+    /// Why the last <see cref="StartAsync"/>/<see cref="ChangeVibeAsync"/> sourcing attempt returned
+    /// what it did, so the caller can say something true about an empty result (#26).
+    /// </summary>
+    public DjSourcingOutcome LastSourcingOutcome { get; private set; } = DjSourcingOutcome.Ok;
+
     private async Task<List<Station>> SourceStationsAsync(string prompt, int count, CancellationToken ct)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var pool = new List<SourceCandidate>();
+        LastSourcingOutcome = DjSourcingOutcome.Ok;
 
         var query = _interpreter.IsConfigured
             ? await _interpreter.InterpretAsync(prompt, ct).ConfigureAwait(false) ?? FallbackQuery(prompt)
@@ -946,16 +959,43 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
                     + $"ranker={_ranker.IsConfigured} web={_agenticSearch.IsConfigured} "
                     + $"tags=[{string.Join(",", query.Tags ?? [])}] want={count}");
 
-        var cheap = await _searchService.SearchCandidatesAsync(query, 0, ct).ConfigureAwait(false);
-        AddUniqueCandidates(pool, seen, cheap.Select(ToCandidate));
-        AppLog.Info($"[Dj] directory returned {cheap.Count} playable candidate(s)");
+        // The observed failure (#26): every Radio Browser mirror answers 503 or not at all, and a
+        // session that could have run off the local catalog never starts. The directory stays the
+        // source of truth whenever it answers — this only catches the case where it doesn't.
+        IReadOnlyList<StationCandidate> cheap = [];
+        var directoryDown = false;
+        try
+        {
+            cheap = await _searchService.SearchCandidatesAsync(query, 0, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (DirectoryFailure.IsUnreachable(ex, ct))
+        {
+            directoryDown = true;
+            AppLog.Warn($"[Dj] directory unreachable ({ex.GetType().Name}: {ex.Message}) "
+                        + "— falling back to the local catalog");
+        }
 
-        // Grow the local catalog from DJ sessions too (fire-and-forget, same as the visible
-        // search does): next time these stations are judged, the ranker gets a real description.
-        if (cheap.Count > 0)
-            _enrichment.EnrichInBackground(cheap);
+        if (directoryDown)
+        {
+            var offline = await SourceFromLocalCatalogAsync(prompt, count, ct).ConfigureAwait(false);
+            AddUniqueCandidates(pool, seen, offline);
+        }
+        else
+        {
+            AddUniqueCandidates(pool, seen, cheap.Select(ToCandidate));
+            AppLog.Info($"[Dj] directory returned {cheap.Count} playable candidate(s)");
 
-        var relevant = await RankRelevantAsync(prompt, pool, count, ct).ConfigureAwait(false);
+            // Grow the local catalog from DJ sessions too (fire-and-forget, same as the visible
+            // search does): next time these stations are judged, the ranker gets a real description.
+            // This is also what fills the offline catalog the branch above draws on.
+            if (cheap.Count > 0)
+                _enrichment.EnrichInBackground(cheap);
+        }
+
+        // Offline, the ranker is the only relevance judgment left, so it becomes mandatory rather
+        // than a nicety: without it there is nothing standing between a thin catalog's least-bad
+        // cosine hits and a whole session of unrelated stations.
+        var relevant = await RankRelevantAsync(prompt, pool, count, directoryDown, ct).ConfigureAwait(false);
         AppLog.Info($"[Dj] ranker kept {relevant.Count} of {pool.Count} as genuinely relevant");
 
         // Escalate only when the RELEVANT count (not the raw pool size) falls short — the fix
@@ -963,20 +1003,58 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         // just because it's smaller than `count`; a big cheap pool that's mostly irrelevant does.
         // maxResults: count — Pattern B's default answer cap is one visible-search page (6),
         // which would leave the reserve almost empty here.
-        if (relevant.Count < count && _agenticSearch.IsConfigured)
+        //
+        // Never when the directory is down: Pattern B's own search_radio_browser tool resolves its
+        // web findings through the same mirrors, so escalating would just spend a Sonnet loop to
+        // arrive back at the outage.
+        if (!directoryDown && relevant.Count < count && _agenticSearch.IsConfigured)
         {
             AppLog.Info($"[Dj] escalating to web discovery ({relevant.Count} < {count})");
             var web = await _agenticSearch.SearchAsync(prompt, count, ct).ConfigureAwait(false);
             AddUniqueCandidates(pool, seen, web.Select(r => new SourceCandidate(r.Station, r.Reason, null)));
-            relevant = await RankRelevantAsync(prompt, pool, count, ct).ConfigureAwait(false);
+            relevant = await RankRelevantAsync(prompt, pool, count, directoryDown, ct).ConfigureAwait(false);
             AppLog.Info($"[Dj] web added {web.Count}; ranker now keeps {relevant.Count} of {pool.Count}");
         }
 
         if (relevant.Count == 0)
-            AppLog.Warn($"[Dj] nothing relevant for \"{prompt}\" — session will not start");
+        {
+            // OfflineUnranked is set by RankRelevantAsync and outranks everything else here: it
+            // means we refused to answer, not that there was no answer.
+            if (LastSourcingOutcome != DjSourcingOutcome.OfflineUnranked)
+                LastSourcingOutcome = directoryDown
+                    ? DjSourcingOutcome.OfflineNoMatch
+                    : DjSourcingOutcome.NothingRelevant;
+            AppLog.Warn($"[Dj] nothing relevant for \"{prompt}\" ({LastSourcingOutcome})"
+                        + " — session will not start");
+        }
 
         return relevant;
     }
+
+    /// <summary>
+    /// Stations from the local catalog alone, for when the directory is unreachable. Asks for a
+    /// wider net than the pool needs (the ranker still has to throw some away) but every hit is
+    /// already above the cosine floor, so a small result here means the catalog genuinely doesn't
+    /// cover this vibe.
+    /// </summary>
+    private async Task<List<SourceCandidate>> SourceFromLocalCatalogAsync(
+        string prompt, int count, CancellationToken ct)
+    {
+        if (_semanticSearch is null || !_semanticSearch.IsAvailable)
+        {
+            AppLog.Warn("[Dj] no local semantic index available — nothing to fall back on");
+            return [];
+        }
+
+        var hits = await _semanticSearch.SearchOfflineAsync(prompt, count * 2, ct: ct).ConfigureAwait(false);
+        AppLog.Info($"[Dj] local catalog offered {hits.Count} station(s) above the relevance floor");
+        return hits.Select(h => new SourceCandidate(
+            h.Station,
+            // The cached description IS the thing that matched — hand the ranker the same text.
+            string.IsNullOrWhiteSpace(h.Description) ? h.Station.Name : h.Description!,
+            h.Country)).ToList();
+    }
+
 
     /// <summary>
     /// Judges the whole candidate pool for genuine relevance to the prompt via the same
@@ -985,16 +1063,37 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     /// (unfiltered) only when the ranker itself can't run at all (no API key) — that's a
     /// capability fallback, not a substitute for the real judgment call.
     /// </summary>
+    /// <param name="rankerRequired">
+    /// True when the pool came from the offline catalog (#26). That degrade-to-the-raw-pool escape
+    /// hatch is the worst possible move there: the directory pool it was written for is at least
+    /// sorted by votes and tag-matched, whereas an unranked cosine pool on a thin catalog is a
+    /// list of the least-bad matches. So refuse instead — an empty result the caller can explain
+    /// beats a session of stations that don't fit the vibe.
+    /// </param>
     private async Task<List<Station>> RankRelevantAsync(
-        string prompt, List<SourceCandidate> pool, int count, CancellationToken ct)
+        string prompt, List<SourceCandidate> pool, int count, bool rankerRequired, CancellationToken ct)
     {
-        if (!_ranker.IsConfigured || pool.Count == 0)
-            return pool.Take(count).Select(c => c.Station).ToList();
+        if (pool.Count == 0)
+            return [];
+
+        List<Station> Unranked()
+        {
+            if (!rankerRequired)
+                return pool.Take(count).Select(c => c.Station).ToList();
+
+            AppLog.Warn("[Dj] directory down AND ranker unavailable — refusing to start a session "
+                        + "on unranked local matches");
+            LastSourcingOutcome = DjSourcingOutcome.OfflineUnranked;
+            return [];
+        }
+
+        if (!_ranker.IsConfigured)
+            return Unranked();
 
         var candidates = pool.Select((c, i) => new RankCandidate(i, c.Station.Name, c.DescriptiveText, c.Country)).ToList();
         var verdicts = await _ranker.RankAsync(prompt, candidates, count, ct).ConfigureAwait(false);
         if (verdicts is null) // ranker unavailable for this call specifically — degrade, don't block starting DJ mode
-            return pool.Take(count).Select(c => c.Station).ToList();
+            return Unranked();
 
         return verdicts.OrderByDescending(v => v.Score).Select(v => pool[v.Id].Station).ToList();
     }

@@ -1,6 +1,25 @@
+using System.Net.Http;
 using RadioPlayer.Models;
 
 namespace RadioPlayer.Services;
+
+/// <summary>
+/// Telling "the directory is down" apart from "something else went wrong", which decides whether
+/// the offline catalog gets a turn (#26). Lives next to the interface because it's a statement
+/// about how this service fails, and both the visible search and DJ sourcing need the same answer.
+/// </summary>
+public static class DirectoryFailure
+{
+    /// <summary>
+    /// True for a transport failure against the directory. A <see cref="TaskCanceledException"/> is
+    /// ambiguous — HttpClient raises it for its own timeout as well — so the caller's token
+    /// decides: a user who pressed Cancel has not hit an outage, and their intent shouldn't be
+    /// papered over with a fallback search.
+    /// </summary>
+    public static bool IsUnreachable(Exception ex, CancellationToken ct) =>
+        !ct.IsCancellationRequested &&
+        ex is HttpRequestException or TaskCanceledException or TimeoutException;
+}
 
 /// <summary>
 /// Queries a station directory and returns only stations the BASS engine can play.

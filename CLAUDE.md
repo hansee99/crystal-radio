@@ -462,6 +462,36 @@ metal from scandinavia" comes back thin from the cheap sources and escalates aut
 enrichment DB / vector index still **augments** web discovery — Pattern B's finds get enriched
 (Phase 1) and embedded (Phase 2), so the cheap pool keeps improving and escalates less over time.
 
+### Offline fallback — when the directory is unreachable (#26)
+
+Both cheap sources go through Radio Browser (the semantic one resolves its own hits back to live
+stations there), so a mirror outage silences both at once and the search used to read as "nothing
+matched". `SemanticSearchService.SearchOfflineAsync` answers from the local catalog alone —
+`EnrichmentStore.GetPlayableRows` returns rows carrying **both** a vector and a cached stream url,
+and stations are rebuilt from those cached columns with no network call in the path.
+
+- **Detection**, not guessing: `DirectoryFailure.IsUnreachable` (transport exception, and *not* a
+  cancelled token — a user who pressed Cancel has not hit an outage). Wired into
+  `MainViewModel.RunUnifiedSearchAsync` and `DjHarvestService.SourceStationsAsync`.
+- **The floor is the relevance gate**, `DefaultOfflineFloor = 0.35`, and it **drops** rather than
+  demotes. Measured against 60 real enriched stations, not picked: at 0.30, "hard rock and metal"
+  admitted a jazz station (0.319) and "classical piano" a smooth-jazz one (0.311), while every
+  genuine match scored 0.390+. See the constant's comment for the full measurement.
+- **The ranker becomes mandatory offline.** `RankRelevantAsync`'s degrade-to-the-raw-pool escape
+  hatch is for a directory pool (tag-matched, vote-sorted); against an unranked cosine pool it
+  would hand a whole session to the least-bad matches. With no ranker, sourcing returns nothing and
+  `DjSourcingOutcome` tells the UI which kind of nothing it was, so the panel can say the directory
+  is down instead of blaming the prompt.
+- **No web escalation during an outage** — Pattern B resolves its findings through the same
+  mirrors, so it would spend a Sonnet loop to arrive back at the same failure.
+- **Cached urls are not re-resolved**, by definition: `lastcheckok` needs the directory. Expect a
+  higher connect-failure rate on a fallback session; a harvester that can't connect is retired and
+  replaced from the reserve, which is how that degrades.
+- The playable columns are written on **every sighting** (`EnrichmentStore.TopUpPlayableFields`),
+  not only on a description refresh — they arrive free in the search response, and gating them on
+  the 30-day staleness window would have left an existing 2,500-row catalog unplayable for a month.
+  A `tools/SeedEnrichment --tags-only` run repairs an old catalog at zero LLM cost.
+
 - *Design history:* earlier drafts used (a) a cheap LLM **classifier** to route literal→Pattern A
   vs fuzzy→semantic+web, then (b) "fuzzy = always run semantic AND web". Both were replaced: the
   classifier kept mis-routing borderline prompts (genre+region, genre+qualifier) that are *both*

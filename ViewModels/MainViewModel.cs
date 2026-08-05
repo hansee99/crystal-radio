@@ -814,10 +814,32 @@ public sealed class MainViewModel : ObservableObject
         // Await each independently so one source failing doesn't sink the other.
         IReadOnlyList<StationCandidate> structured = [];
         IReadOnlyList<SemanticResult> semantic = [];
+        var directoryDown = false;
         try { structured = await structuredTask; }
-        catch (Exception ex) { AppLog.Debug($"[Search] structured failed: {ex.Message}"); }
+        catch (Exception ex)
+        {
+            directoryDown = DirectoryFailure.IsUnreachable(ex, ct);
+            AppLog.Debug($"[Search] structured failed: {ex.Message}");
+        }
         try { semantic = await semanticTask; }
-        catch (Exception ex) { AppLog.Debug($"[Search] semantic failed: {ex.Message}"); }
+        catch (Exception ex)
+        {
+            directoryDown |= DirectoryFailure.IsUnreachable(ex, ct);
+            AppLog.Debug($"[Search] semantic failed: {ex.Message}");
+        }
+
+        // Both cheap sources go through the directory — the semantic one resolves its own hits back
+        // to live stations there — so an outage silences both at once and the search reads as
+        // "nothing matched". Retry from the local catalog alone (#26). Everything it returns is
+        // already above the cosine floor, so there is nothing loosely-related to demote: the
+        // heuristic merge's "append the rest of the pool" has nothing left to append.
+        if (directoryDown && structured.Count == 0 && semantic.Count == 0 && _semanticSearch.IsAvailable)
+        {
+            try { semantic = await _semanticSearch.SearchOfflineAsync(prompt, CandidatePoolSize, ct: ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { AppLog.Debug($"[Search] offline catalog failed: {ex.Message}"); }
+            AppLog.Info($"[Search] directory unreachable — offline catalog offered {semantic.Count}");
+        }
 
         // Lazily enrich the structured finds (fire-and-forget) so the local side keeps growing.
         if (structured.Count > 0)
@@ -839,8 +861,10 @@ public sealed class MainViewModel : ObservableObject
 
         var shortlist = await RankOrMerge(prompt, pool, semantic, ct);
 
-        // 3. Escalate to web discovery only when the cheap sources came back thin.
-        if (NeedsWebEscalation(shortlist) && _agenticSearch.IsConfigured)
+        // 3. Escalate to web discovery only when the cheap sources came back thin — but never
+        //    during an outage: Pattern B resolves its web findings to playable streams through the
+        //    same mirrors, so it would spend a Sonnet loop to arrive back at the same failure.
+        if (!directoryDown && NeedsWebEscalation(shortlist) && _agenticSearch.IsConfigured)
         {
             SearchProgress.Step(SearchStageWeb); // inserted into the checklist only when it runs
             IReadOnlyList<RankedStation> web = [];
@@ -860,9 +884,13 @@ public sealed class MainViewModel : ObservableObject
         {
             // "Nothing found" is Empty, not Error — the panel says it, so the status line
             // doesn't repeat it two inches above.
-            SearchEmptyMessage = isRegenerate
-                ? "That's everything I could find for this — try a new description."
-                : "Nothing turned up — try describing it differently.";
+            SearchEmptyMessage = directoryDown
+                // Don't send someone rewording a perfectly good prompt during an outage.
+                ? "The station directory is unreachable, and nothing in your offline catalog is a "
+                  + "close match. Try again in a few minutes."
+                : isRegenerate
+                    ? "That's everything I could find for this — try a new description."
+                    : "Nothing turned up — try describing it differently.";
             SearchStatus = string.Empty;
             return;
         }
@@ -2365,7 +2393,7 @@ public sealed class MainViewModel : ObservableObject
             if (!_djHarvest.IsRunning)
             {
                 // No matching stations is Empty, not Error — the panel invites another try.
-                DjSourcesEmptyMessage = "Nothing out there matched that vibe — try a different prompt.";
+                DjSourcesEmptyMessage = DescribeEmptySourcing(_djHarvest.LastSourcingOutcome);
                 DjStatus = string.Empty;
                 EndDjSessionLog(); // never started harvesting, so the service won't close it
                 IsDjRunning = false;
@@ -2420,6 +2448,23 @@ public sealed class MainViewModel : ObservableObject
     /// on 2026-08-02), and "hit a snag" invites the user to retry immediately, which is exactly
     /// what won't work. Anything genuinely unexpected keeps the generic wording.
     /// </summary>
+    /// <summary>
+    /// An empty station list has several causes and they call for different things from the
+    /// listener (#26), so the panel says which one it was rather than always blaming the prompt.
+    /// The offline wordings are deliberately explicit that the directory is the thing that's down —
+    /// "try a different prompt" would send someone rewording a perfectly good vibe.
+    /// </summary>
+    private static string DescribeEmptySourcing(DjSourcingOutcome outcome) => outcome switch
+    {
+        DjSourcingOutcome.OfflineNoMatch =>
+            "The station directory is unreachable, and nothing in your offline catalog matches that "
+            + "vibe closely enough. Try a broader prompt, or again in a few minutes.",
+        DjSourcingOutcome.OfflineUnranked =>
+            "The station directory is unreachable and the vibe matching is offline too, so there's "
+            + "no way to tell a good match from a bad one right now. Try again in a few minutes.",
+        _ => "Nothing out there matched that vibe — try a different prompt."
+    };
+
     private static string DescribeDjStartFailure(Exception ex) =>
         ex is HttpRequestException or TaskCanceledException or TimeoutException
             ? "Couldn't reach the station directory — it may be down. Try again in a few minutes."
