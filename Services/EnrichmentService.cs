@@ -60,11 +60,16 @@ public sealed partial class EnrichmentService : IEnrichmentService
     {
         if (candidates is null) return;
 
-        foreach (var candidate in candidates)
+        var seen = candidates.Where(c => !string.IsNullOrWhiteSpace(c.StationUuid)).ToList();
+        if (seen.Count == 0) return;
+
+        // Free, so it runs for every sighting rather than only for stale rows: the stream url and
+        // friends came in the same directory response the search already paid for (#26).
+        TopUpPlayableFieldsInBackground(seen);
+
+        foreach (var candidate in seen)
         {
             var uuid = candidate.StationUuid;
-            if (string.IsNullOrWhiteSpace(uuid))
-                continue;
 
             // Enrich each station once until stale; never re-summarize on every search.
             if (!_store.IsStale(_store.Get(uuid)))
@@ -112,10 +117,16 @@ public sealed partial class EnrichmentService : IEnrichmentService
             try
             {
                 // Idempotent/resumable: only (re)enrich missing or stale rows.
-                if (!string.IsNullOrWhiteSpace(candidate.StationUuid) &&
-                    _store.IsStale(_store.Get(candidate.StationUuid)))
+                if (!string.IsNullOrWhiteSpace(candidate.StationUuid))
                 {
-                    await EnrichOneAsync(candidate).ConfigureAwait(false);
+                    if (_store.IsStale(_store.Get(candidate.StationUuid)))
+                        await EnrichOneAsync(candidate).ConfigureAwait(false);
+                    else
+                        // Fresh description, but it may predate #26 and carry no url. Topping up
+                        // is free, so a re-run of the seed tool repairs an existing catalog.
+                        _store.TopUpPlayableFields(candidate.StationUuid, candidate.Station.Name,
+                            candidate.Station.Url, candidate.Station.Format.ToString(),
+                            candidate.Bitrate, candidate.Country);
                 }
             }
             catch (Exception ex)
@@ -131,6 +142,28 @@ public sealed partial class EnrichmentService : IEnrichmentService
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Write the directory-supplied playable fields for candidates whose row already exists.
+    /// Off the caller's thread because it touches SQLite and the search paths call this from the
+    /// UI thread; failures are swallowed, since this only ever improves an offline fallback.
+    /// </summary>
+    private void TopUpPlayableFieldsInBackground(IReadOnlyList<StationCandidate> candidates) =>
+        _ = Task.Run(() =>
+        {
+            foreach (var c in candidates)
+            {
+                try
+                {
+                    _store.TopUpPlayableFields(c.StationUuid, c.Station.Name, c.Station.Url,
+                        c.Station.Format.ToString(), c.Bitrate, c.Country);
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Debug($"[Enrich] top-up {c.StationUuid} failed: {ex.Message}");
+                }
+            }
+        });
 
     private async Task EnrichOneAsync(StationCandidate candidate)
     {
@@ -200,7 +233,10 @@ public sealed partial class EnrichmentService : IEnrichmentService
                     var distilled = await DistillAsync(c.Station.Name, c.Tags, text).ConfigureAwait(false);
                     if (distilled is not null && !string.IsNullOrWhiteSpace(distilled.Description))
                         return new EnrichmentRecord(c.StationUuid, distilled.Description.Trim(),
-                            distilled.FacetsJson, EnrichmentSource.Homepage, DateTimeOffset.UtcNow);
+                            distilled.FacetsJson, EnrichmentSource.Homepage, DateTimeOffset.UtcNow,
+                            Name: c.Station.Name, Url: c.Station.Url,
+                            Codec: c.Station.Format.ToString(), Bitrate: c.Bitrate,
+                            Country: c.Country);
                 }
             }
             catch (Exception ex)
@@ -210,8 +246,13 @@ public sealed partial class EnrichmentService : IEnrichmentService
         }
 
         // Fallback: a description from name + Radio Browser tags (cached so we don't refetch).
+        // Still carries the playable fields — a tags-only description is a perfectly usable offline
+        // catalog entry, and 899 of one real machine's 2,448 rows came through this path.
         return new EnrichmentRecord(c.StationUuid, BuildTagsDescription(c), TagsFacets(c.Tags),
-            EnrichmentSource.TagsOnly, DateTimeOffset.UtcNow);
+            EnrichmentSource.TagsOnly, DateTimeOffset.UtcNow,
+            Name: c.Station.Name, Url: c.Station.Url,
+            Codec: c.Station.Format.ToString(), Bitrate: c.Bitrate,
+            Country: c.Country);
     }
 
     // --- Homepage fetch + extraction (untrusted I/O) --------------------------
