@@ -137,6 +137,10 @@
     <!-- Save (history rows, Now Playing mark-for-save): arrow down into a tray.
          Superseded by the Add/Check circle pair below for save affordances — kept because the
          taskbar thumbnail glyphs still reference this shape. -->
+    <!-- Lines of text: the lyrics pill's icon. Explicitly NOT the sparkle — see AboutPillButton. -->
+    <PathGeometry x:Key="LyricsGeometry"
+                  Figures="M6 8.2 H18 V9.8 H6 Z M6 11.4 H18 V13 H6 Z M6 14.6 H13.5 V16.2 H6 Z"/>
+
     <PathGeometry x:Key="SaveGeometry" Figures="M12 4.5 L12 14 M8 10.5 L12 14.5 L16 10.5 M5.5 18 L18.5 18"/>
 
     <!-- Save-to-library, as its own family distinct from the sparkle (UX audit: the sparkle is
@@ -535,17 +539,22 @@
 
     <!-- ===== "About this track" controls ===== -->
 
-    <!-- Trigger pill: sparkle + "About this track", teal-tinted. Content is the label text. -->
+    <!-- Trigger pill: icon + label, teal-tinted. Content is the label; Tag is the icon geometry.
+         Defaults to the sparkle, which in this app means AI-GENERATED — GhostPillButton exists
+         precisely because DJ "End session" must not carry it. So anything sourced rather than
+         generated overrides Tag: lyrics come verbatim from LRCLIB, and a sparkle on that pill would
+         claim a model wrote them. -->
     <Style x:Key="AboutPillButton" TargetType="Button">
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="Tag" Value="{StaticResource SparkleGeometry}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="b" CornerRadius="10" Padding="13,9,16,9"
                             Background="#1F56C7BA" BorderBrush="#4D56C7BA" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
-                            <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform"
+                            <Path Data="{TemplateBinding Tag}" Stretch="Uniform"
                                   Width="16" Height="16" Fill="#FF62D2C4" VerticalAlignment="Center"/>
                             <TextBlock Text="{TemplateBinding Content}" Margin="9,0,0,0" FontSize="13"
                                        FontWeight="SemiBold" Foreground="#FFBDEEE6" VerticalAlignment="Center"/>

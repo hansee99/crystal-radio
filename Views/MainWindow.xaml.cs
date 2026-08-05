@@ -67,6 +67,8 @@ public partial class MainWindow : Window
             new HttpClient(), searchService, enrichment, apiKey);
         var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
         var trackInfo = new TrackInfoService(new HttpClient(), apiKey); // "About this track" briefings
+        // LRCLIB needs no key, so lyrics work on a fresh install with nothing configured.
+        var lyrics = new LyricsService(new HttpClient());
         // DJ Mode's on-air intro line; its voice is a settings.json knob (DjPersonality).
         _djIntro = new DjIntroService(new HttpClient(), apiKey, _settingsStore.Load().ResolveDjPersonality());
 
@@ -97,15 +99,15 @@ public partial class MainWindow : Window
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new SongHistoryStore(), _recorder,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
-            semanticSearch, ranker, trackInfo, songLibrary, _localEngine, curator, _djHarvest, _djIntro);
+            semanticSearch, ranker, trackInfo, lyrics, songLibrary, _localEngine, curator, _djHarvest, _djIntro);
         DataContext = _viewModel;
 
         // Reset the About reading view to the top whenever fresh content loads (a new briefing
         // or a regenerate), so the previous track's scroll offset isn't carried over.
         _viewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(MainViewModel.AboutState)
-                && _viewModel.AboutState is AboutViewState.Loading or AboutViewState.Result)
+            if (e.PropertyName == nameof(MainViewModel.OverlayState)
+                && _viewModel.OverlayState is OverlayViewState.Loading or OverlayViewState.Result)
             {
                 AboutScroll.ScrollToTop();
             }

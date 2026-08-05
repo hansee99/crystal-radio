@@ -35,6 +35,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly ISemanticSearchService _semanticSearch;
     private readonly ISearchRanker _ranker;
     private readonly ITrackInfoService _trackInfoService;
+    private readonly ILyricsService _lyricsService;
     private readonly ISongLibraryService _songLibrary;
     private readonly LocalPlaybackEngine _local;
     private readonly ISongCurator _curator;
@@ -89,16 +90,16 @@ public sealed class MainViewModel : ObservableObject
     private double _volume;
 
     // "About this track" reading-view state.
-    private AboutViewState _aboutState = AboutViewState.Home;
+    private OverlayViewState _overlayState = OverlayViewState.Home;
     private TrackInfo? _trackInfo;
-    private string _aboutError = string.Empty;
-    private CancellationTokenSource? _aboutCts;
+    private string _overlayError = string.Empty;
+    private CancellationTokenSource? _overlayCts;
     // The track a briefing is ABOUT, frozen when it opens. The reading view shows these (not the
     // live now-playing fields) so a new song can start underneath without disturbing what the
     // user is reading — the view stays put until they hit Back. Since the subject can also come
     // from a history row, the originating station is frozen alongside (for Regenerate).
-    private string _aboutSubjectTitle = string.Empty;
-    private string _aboutSubjectArtist = string.Empty;
+    private string _overlaySubjectTitle = string.Empty;
+    private string _overlaySubjectArtist = string.Empty;
     private string? _aboutSubjectStation;
 
     // When set, changing SelectedStation won't auto-start playback. Used by the
@@ -110,6 +111,7 @@ public sealed class MainViewModel : ObservableObject
         IStationDialog stationDialog, IPromptInterpreter interpreter, IStationSearchService searchService,
         IAgenticSearchService agenticSearch, IEnrichmentService enrichment,
         ISemanticSearchService semanticSearch, ISearchRanker ranker, ITrackInfoService trackInfoService,
+        ILyricsService lyricsService,
         ISongLibraryService songLibrary, LocalPlaybackEngine local, ISongCurator curator,
         DjHarvestService djHarvest, IDjIntroService djIntro)
     {
@@ -127,6 +129,7 @@ public sealed class MainViewModel : ObservableObject
         _semanticSearch = semanticSearch;
         _ranker = ranker;
         _trackInfoService = trackInfoService;
+        _lyricsService = lyricsService;
         _songLibrary = songLibrary;
         _local = local;
         _curator = curator;
@@ -222,10 +225,11 @@ public sealed class MainViewModel : ObservableObject
             () => _ = GenerateAboutAsync(NowPlayingTitle, NowPlayingArtist, NowPlayingStation, forceRefresh: false),
             () => CanShowAbout);
         RegenerateAboutCommand = new RelayCommand(
-            () => _ = GenerateAboutAsync(AboutSubjectTitle, AboutSubjectArtist, _aboutSubjectStation, forceRefresh: true),
+            () => _ = GenerateAboutAsync(OverlaySubjectTitle, OverlaySubjectArtist, _aboutSubjectStation, forceRefresh: true),
             () => CanRegenerateAbout);
         OpenAboutForEntryCommand = new RelayCommand<SongHistoryEntry>(
             e => { if (e is not null) _ = GenerateAboutAsync(e.Title, e.Artist, e.Station, forceRefresh: false); });
+        OpenLyricsCommand = new RelayCommand(() => _ = ShowLyricsAsync(), () => CanShowLyrics);
         BackToNowPlayingCommand = new RelayCommand(BackToNowPlaying);
         SaveSongCommand = new RelayCommand<SongHistoryEntry>(SaveSong, e => e?.CanSave == true);
         MarkForSaveCommand = new RelayCommand(ToggleMarkForSave, () => CanMarkForSave && !IsCurrentSongSaved);
@@ -278,6 +282,7 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand OpenAboutCommand { get; }
     public RelayCommand RegenerateAboutCommand { get; }
     public RelayCommand<SongHistoryEntry> OpenAboutForEntryCommand { get; }
+    public RelayCommand OpenLyricsCommand { get; }
     public RelayCommand BackToNowPlayingCommand { get; }
 
     // ===== Song history + rolling cache (Phases A/B) =====
@@ -1221,6 +1226,8 @@ public sealed class MainViewModel : ObservableObject
                 OnPropertyChanged(nameof(NowPlayingClipboardText));
                 OnPropertyChanged(nameof(CanShowAbout));
                 OpenAboutCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(CanShowLyrics));
+                OpenLyricsCommand.RaiseCanExecuteChanged();
                 RegenerateAboutCommand.RaiseCanExecuteChanged();
             }
         }
@@ -1234,30 +1241,54 @@ public sealed class MainViewModel : ObservableObject
 
     // ===== "About this track" reading view =====
 
-    /// <summary>State of the right pane's upper region (Now Playing ⟷ About reading view).</summary>
-    public AboutViewState AboutState
+    /// <summary>How far along the open overlay is (Now Playing ⟷ a reading view).</summary>
+    public OverlayViewState OverlayState
     {
-        get => _aboutState;
-        private set
-        {
-            if (SetProperty(ref _aboutState, value))
-            {
-                OnPropertyChanged(nameof(ShowNowPlaying));
-                OnPropertyChanged(nameof(ShowAbout));
-                OnPropertyChanged(nameof(IsAboutLoading));
-                OnPropertyChanged(nameof(IsAboutResult));
-                OnPropertyChanged(nameof(IsAboutError));
-                OnPropertyChanged(nameof(CanRegenerateAbout));
-                RegenerateAboutCommand.RaiseCanExecuteChanged();
-            }
-        }
+        get => _overlayState;
+        private set { if (SetProperty(ref _overlayState, value)) RaiseOverlayFlags(); }
     }
 
-    public bool ShowNowPlaying => AboutState == AboutViewState.Home;
-    public bool ShowAbout => AboutState != AboutViewState.Home;
-    public bool IsAboutLoading => AboutState == AboutViewState.Loading;
-    public bool IsAboutResult => AboutState == AboutViewState.Result;
-    public bool IsAboutError => AboutState == AboutViewState.Error;
+    /// <summary>Which reading view is open. Set together with <see cref="OverlayState"/> — see
+    /// <see cref="SetOverlay"/>, which is the only thing that should touch either.</summary>
+    public OverlayContent Overlay
+    {
+        get => _overlay;
+        private set { if (SetProperty(ref _overlay, value)) RaiseOverlayFlags(); }
+    }
+
+    /// <summary>Everything the two overlays share, so the chrome is bound once.</summary>
+    public bool ShowNowPlaying => OverlayState == OverlayViewState.Home;
+    public bool ShowOverlay => OverlayState != OverlayViewState.Home;
+    public bool IsOverlayLoading => OverlayState == OverlayViewState.Loading;
+    public bool IsOverlayError => OverlayState == OverlayViewState.Error;
+
+    /// <summary>...and the parts that differ. Result content is per-overlay; nothing else is.</summary>
+    public bool IsAboutOverlay => Overlay == OverlayContent.About;
+    public bool IsLyricsOverlay => Overlay == OverlayContent.Lyrics;
+    public bool ShowAboutResult => IsAboutOverlay && OverlayState == OverlayViewState.Result;
+    public bool ShowLyricsResult => IsLyricsOverlay && OverlayState == OverlayViewState.Result;
+
+    private void RaiseOverlayFlags()
+    {
+        OnPropertyChanged(nameof(ShowNowPlaying));
+        OnPropertyChanged(nameof(ShowOverlay));
+        OnPropertyChanged(nameof(IsOverlayLoading));
+        OnPropertyChanged(nameof(IsOverlayError));
+        OnPropertyChanged(nameof(IsAboutOverlay));
+        OnPropertyChanged(nameof(IsLyricsOverlay));
+        OnPropertyChanged(nameof(ShowAboutResult));
+        OnPropertyChanged(nameof(ShowLyricsResult));
+        OnPropertyChanged(nameof(CanRegenerateAbout));
+        RegenerateAboutCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>The one place content and phase move together, so they cannot disagree.</summary>
+    private void SetOverlay(OverlayContent content, OverlayViewState state)
+    {
+        _overlay = content;
+        OverlayState = state;           // raises the flags for both
+        OnPropertyChanged(nameof(Overlay));
+    }
 
     /// <summary>The generated briefing (song/artist/notable), set in the Result state.</summary>
     public TrackInfo? TrackInfo
@@ -1267,32 +1298,61 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>User-facing message shown in the Error state.</summary>
-    public string AboutError
+    public string OverlayError
     {
-        get => _aboutError;
-        private set => SetProperty(ref _aboutError, value);
+        get => _overlayError;
+        private set => SetProperty(ref _overlayError, value);
     }
 
     /// <summary>Title of the track the open briefing is about (frozen — see the fields above).</summary>
-    public string AboutSubjectTitle
+    public string OverlaySubjectTitle
     {
-        get => _aboutSubjectTitle;
-        private set => SetProperty(ref _aboutSubjectTitle, value);
+        get => _overlaySubjectTitle;
+        private set => SetProperty(ref _overlaySubjectTitle, value);
     }
 
     /// <summary>Artist of the track the open briefing is about (frozen).</summary>
-    public string AboutSubjectArtist
+    public string OverlaySubjectArtist
     {
-        get => _aboutSubjectArtist;
-        private set => SetProperty(ref _aboutSubjectArtist, value);
+        get => _overlaySubjectArtist;
+        private set => SetProperty(ref _overlaySubjectArtist, value);
     }
 
     /// <summary>The "About this track" trigger shows only with a playing track and an API key.</summary>
     public bool CanShowAbout => HasTrackInfo && _trackInfoService.IsConfigured;
 
+    /// <summary>
+    /// The lyrics trigger needs a playing track but NOT an API key — LRCLIB is keyless, so this is
+    /// the one AI-adjacent surface that works on a fresh install with nothing configured.
+    ///
+    /// <para>Deliberately gated on the NOW-PLAYING track only: unlike a briefing, lyrics are never
+    /// offered for a history or library row (issue #36 asks for exactly that).</para>
+    /// </summary>
+    public bool CanShowLyrics => HasTrackInfo && !string.IsNullOrWhiteSpace(NowPlayingArtist);
+
+    /// <summary>The lyric text itself, in the Result state. Null when the record exists but has no
+    /// words — see <see cref="LyricsNote"/>.</summary>
+    public string? LyricsText
+    {
+        get => _lyricsText;
+        private set => SetProperty(ref _lyricsText, value);
+    }
+
+    /// <summary>Shown instead of the lyrics when LRCLIB knows the track but has no words for it —
+    /// an instrumental, or a record without lyric text. Distinct from an error: nothing failed.</summary>
+    public string? LyricsNote
+    {
+        get => _lyricsNote;
+        private set => SetProperty(ref _lyricsNote, value);
+    }
+
+    private string? _lyricsText;
+    private string? _lyricsNote;
+    private OverlayContent _overlay;
+
     /// <summary>Regenerate needs an open reading view (a frozen subject) — not a playing track,
     /// since briefings can be opened from history rows while stopped.</summary>
-    public bool CanRegenerateAbout => ShowAbout && _trackInfoService.IsConfigured;
+    public bool CanRegenerateAbout => IsAboutOverlay && ShowOverlay && _trackInfoService.IsConfigured;
 
     /// <summary>
     /// Generate a briefing for an explicit subject (the now-playing track, a history row, or —
@@ -1306,16 +1366,16 @@ public sealed class MainViewModel : ObservableObject
             return;
 
         // Cancel any in-flight generation and start a fresh token for this run.
-        _aboutCts?.Cancel();
-        _aboutCts?.Dispose();
-        var cts = _aboutCts = new CancellationTokenSource();
+        _overlayCts?.Cancel();
+        _overlayCts?.Dispose();
+        var cts = _overlayCts = new CancellationTokenSource();
 
         // Freeze the subject: the reading view binds to these, independent of live now-playing.
-        AboutSubjectTitle = title;
-        AboutSubjectArtist = artist ?? string.Empty;
+        OverlaySubjectTitle = title;
+        OverlaySubjectArtist = artist ?? string.Empty;
         _aboutSubjectStation = station;
 
-        AboutState = AboutViewState.Loading;
+        SetOverlay(OverlayContent.About, OverlayViewState.Loading);
         try
         {
             var info = await _trackInfoService.GetTrackInfoAsync(title, artist, station, forceRefresh, cts.Token);
@@ -1324,13 +1384,13 @@ public sealed class MainViewModel : ObservableObject
 
             if (info is null)
             {
-                AboutError = "Couldn't find reliable notes on this song.";
-                AboutState = AboutViewState.Error;
+                OverlayError = "Couldn't find reliable notes on this song.";
+                SetOverlay(OverlayContent.About, OverlayViewState.Error);
             }
             else
             {
                 TrackInfo = info;
-                AboutState = AboutViewState.Result;
+                SetOverlay(OverlayContent.About, OverlayViewState.Result);
             }
         }
         catch (OperationCanceledException)
@@ -1342,16 +1402,82 @@ public sealed class MainViewModel : ObservableObject
             AppLog.Debug($"[TrackInfo] generation failed: {ex.Message}");
             if (!cts.IsCancellationRequested)
             {
-                AboutError = "Couldn't generate notes right now.";
-                AboutState = AboutViewState.Error;
+                OverlayError = "Couldn't generate notes right now.";
+                SetOverlay(OverlayContent.About, OverlayViewState.Error);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Opens the lyrics view for whatever is playing right now. Shares the About overlay's chrome
+    /// and its cancellation token, so Back or a track change aborts either the same way and the two
+    /// can never be open at once.
+    /// </summary>
+    private async Task ShowLyricsAsync()
+    {
+        var title = NowPlayingTitle;
+        var artist = NowPlayingArtist;
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(artist))
+            return;
+
+        _overlayCts?.Cancel();
+        _overlayCts?.Dispose();
+        var cts = _overlayCts = new CancellationTokenSource();
+
+        OverlaySubjectTitle = title;
+        OverlaySubjectArtist = artist;
+        LyricsText = null;
+        LyricsNote = null;
+        SetOverlay(OverlayContent.Lyrics, OverlayViewState.Loading);
+
+        // Duration is passed ONLY for a local file. A live stream has none, and a harvested
+        // segment's length is the trimmed segment's, not the track's — LRCLIB matches within ±2s,
+        // so sending it would turn a hit into a miss. See ILyricsService.LookupAsync.
+        double? duration = UsesLocalEngine && _local.DurationSeconds > 1
+            ? _local.DurationSeconds
+            : null;
+
+        try
+        {
+            var found = await _lyricsService.LookupAsync(artist, title, duration, cts.Token)
+                .ConfigureAwait(true);
+            if (cts.IsCancellationRequested) return;
+
+            if (found is null)
+            {
+                // 63% of lookups land here. Phrase it as an absence, not a failure.
+                OverlayError = "No lyrics found for this song.";
+                SetOverlay(OverlayContent.Lyrics, OverlayViewState.Error);
+                return;
+            }
+
+            LyricsText = found.Lyrics;
+            LyricsNote = found.Lyrics is null
+                ? (found.Instrumental
+                    ? "This one's an instrumental — no words to follow."
+                    : "Found the track, but no lyrics have been written up for it yet.")
+                : null;
+            SetOverlay(OverlayContent.Lyrics, OverlayViewState.Result);
+        }
+        catch (OperationCanceledException)
+        {
+            // Back or a track change — leave the state as whoever cancelled us set it.
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug($"[Lyrics] view failed: {ex.Message}");
+            if (!cts.IsCancellationRequested)
+            {
+                OverlayError = "Couldn't fetch lyrics right now.";
+                SetOverlay(OverlayContent.Lyrics, OverlayViewState.Error);
             }
         }
     }
 
     private void BackToNowPlaying()
     {
-        _aboutCts?.Cancel();
-        AboutState = AboutViewState.Home;
+        _overlayCts?.Cancel();
+        SetOverlay(OverlayContent.None, OverlayViewState.Home);
     }
 
     public string StatusText
@@ -1645,7 +1771,7 @@ public sealed class MainViewModel : ObservableObject
         NowPlayingArtist = meta.Artist ?? meta.StationName ?? string.Empty;
         HasTrackInfo = !string.IsNullOrWhiteSpace(NowPlayingTitle);
         // An open briefing is deliberately left in place when a new track starts: it's frozen on
-        // its subject (AboutSubjectTitle/Artist), so the user can finish reading. Only Back
+        // its subject (OverlaySubjectTitle/Artist), so the user can finish reading. Only Back
         // returns to Now Playing.
 
         _nowPlayingChanged?.Invoke(NowPlayingTitle, NowPlayingArtist); // mirror to OS media controls

@@ -1357,10 +1357,18 @@
                         </TextBlock>
                     </StackPanel>
 
-                    <!-- "About this song" trigger (only with a playing track + an API key) -->
-                    <Button Style="{StaticResource AboutPillButton}" Content="About this song"
-                            Command="{Binding OpenAboutCommand}" Margin="0,28,0,0"
-                            Visibility="{Binding CanShowAbout, Converter={StaticResource BoolToVis}}"/>
+                    <!-- Reading-view triggers. "About this song" needs an API key; "Lyrics" does
+                         not, because LRCLIB is keyless — so on a fresh install this row can hold
+                         one, both or neither. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,28,0,0">
+                        <Button Style="{StaticResource AboutPillButton}" Content="About this song"
+                                Command="{Binding OpenAboutCommand}"
+                                Visibility="{Binding CanShowAbout, Converter={StaticResource BoolToVis}}"/>
+                        <Button Style="{StaticResource AboutPillButton}" Content="Lyrics"
+                                Tag="{StaticResource LyricsGeometry}"
+                                Command="{Binding OpenLyricsCommand}" Margin="10,0,0,0"
+                                Visibility="{Binding CanShowLyrics, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
 
                     <!-- "Recently on this station" (Radio only) — the space Library uses for a
                          scrubber has no seekable equivalent on a live stream, so it's used for
@@ -1406,7 +1414,7 @@
                      (which sit higher than this column's top padding). -->
                 <Grid Grid.Row="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                       Margin="0,-18,0,22"
-                      Visibility="{Binding ShowAbout, Converter={StaticResource BoolToVis}}">
+                      Visibility="{Binding ShowOverlay, Converter={StaticResource BoolToVis}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -1431,9 +1439,17 @@
                         <Button Style="{StaticResource AboutBackButton}" Command="{Binding BackToNowPlayingCommand}"
                                 ToolTip="Back to now playing"/>
                         <Path Data="{StaticResource SparkleGeometry}" Stretch="Uniform" Width="15" Height="15"
-                              Fill="#FF62D2C4" VerticalAlignment="Center" Margin="13,0,0,0"/>
+                              Fill="#FF62D2C4" VerticalAlignment="Center" Margin="13,0,0,0"
+                              Visibility="{Binding IsAboutOverlay, Converter={StaticResource BoolToVis}}"/>
                         <TextBlock Text="ABOUT THIS SONG" Margin="8,0,0,0" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="#FF8FD6CB" VerticalAlignment="Center"/>
+                                   Foreground="#FF8FD6CB" VerticalAlignment="Center"
+                                   Visibility="{Binding IsAboutOverlay, Converter={StaticResource BoolToVis}}"/>
+                        <Path Data="{StaticResource LyricsGeometry}" Stretch="Uniform" Width="14" Height="14"
+                              Fill="#FF62D2C4" VerticalAlignment="Center" Margin="13,0,0,0"
+                              Visibility="{Binding IsLyricsOverlay, Converter={StaticResource BoolToVis}}"/>
+                        <TextBlock Text="LYRICS" Margin="8,0,0,0" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="#FF8FD6CB" VerticalAlignment="Center"
+                                   Visibility="{Binding IsLyricsOverlay, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
 
                     <!-- Scroll region: track context (title + artist) scrolls together with the
@@ -1444,15 +1460,15 @@
                             <!-- Context: the SUBJECT track title + artist (frozen when the briefing
                                  opened, so it stays put if a new song starts; scrolls with content) -->
                             <StackPanel Margin="0,0,0,20">
-                                <TextBlock Text="{Binding AboutSubjectTitle}" FontSize="24" FontWeight="Light"
+                                <TextBlock Text="{Binding OverlaySubjectTitle}" FontSize="24" FontWeight="Light"
                                            Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap"/>
-                                <TextBlock Text="{Binding AboutSubjectArtist}" FontSize="14" Margin="0,3,0,0"
+                                <TextBlock Text="{Binding OverlaySubjectArtist}" FontSize="14" Margin="0,3,0,0"
                                            Foreground="#FF9FB3AE" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
 
                         <Grid>
                             <!-- Loading skeleton -->
-                            <StackPanel Visibility="{Binding IsAboutLoading, Converter={StaticResource BoolToVis}}">
+                            <StackPanel Visibility="{Binding IsOverlayLoading, Converter={StaticResource BoolToVis}}">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                                     <Grid Width="13" Height="13" Margin="0,0,9,0" VerticalAlignment="Center"
                                           RenderTransformOrigin="0.5,0.5">
@@ -1517,8 +1533,8 @@
                                 </StackPanel>
                             </StackPanel>
 
-                            <!-- Result: THE SONG / THE ARTIST / NOTABLE -->
-                            <StackPanel Visibility="{Binding IsAboutResult, Converter={StaticResource BoolToVis}}">
+                            <!-- Result: THE SONG / THE ARTIST / NOTABLE (About overlay only) -->
+                            <StackPanel Visibility="{Binding ShowAboutResult, Converter={StaticResource BoolToVis}}">
                                 <StackPanel>
                                     <TextBlock Text="THE SONG" FontSize="11" FontWeight="SemiBold"
                                                Foreground="#FF62D2C4" Margin="0,0,0,9"/>
@@ -1574,8 +1590,45 @@
                             </StackPanel>
 
                             <!-- Error -->
-                            <TextBlock Visibility="{Binding IsAboutError, Converter={StaticResource BoolToVis}}"
-                                       Text="{Binding AboutError}" FontSize="13.5" LineHeight="21"
+                            <!-- Result: the words. Monospace-ish line height and preserved line
+                                 breaks, because lyrics ARE their line breaks. -->
+                            <StackPanel Visibility="{Binding ShowLyricsResult, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding LyricsText}" FontSize="14.5" LineHeight="26"
+                                           Foreground="#FFCDD9D6" TextWrapping="Wrap">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding LyricsText}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <!-- Not an error: LRCLIB knows the track, it just has no words for
+                                     it (an instrumental, or nobody has written them up yet). -->
+                                <TextBlock Text="{Binding LyricsNote}" FontSize="13.5" LineHeight="21"
+                                           FontStyle="Italic" Foreground="#FF9FB3AE" TextWrapping="Wrap">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding LyricsNote}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <TextBlock Text="Lyrics from LRCLIB" FontSize="11" Margin="0,24,0,0"
+                                           Foreground="#FF5F736F"/>
+                            </StackPanel>
+
+                            <TextBlock Visibility="{Binding IsOverlayError, Converter={StaticResource BoolToVis}}"
+                                       Text="{Binding OverlayError}" FontSize="13.5" LineHeight="21"
                                        Foreground="#FF7D938E" TextWrapping="Wrap"/>
                         </Grid>
                         </StackPanel>
@@ -1596,9 +1649,12 @@
                         </Rectangle.Fill>
                     </Rectangle>
 
-                    <!-- Footer: regenerate (result/error) + disclaimer -->
+                    <!-- Footer: regenerate (result/error) + disclaimer. About only — there is
+                         nothing to regenerate about a lyric sheet, and the AI disclaimer would be
+                         a lie over text fetched verbatim from a database. -->
                     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,14,0,0"
-                                Background="Transparent">
+                                Background="Transparent"
+                                Visibility="{Binding IsAboutOverlay, Converter={StaticResource BoolToVis}}">
                         <Border BorderBrush="#0FFFFFFF" BorderThickness="0,1,0,0"
                                 Padding="0,13,0,0" HorizontalAlignment="Stretch">
                             <StackPanel Orientation="Horizontal">
@@ -1609,7 +1665,7 @@
                                         <Style TargetType="Button" BasedOn="{StaticResource AboutLinkButton}">
                                             <Setter Property="Visibility" Value="Visible"/>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsAboutLoading}" Value="True">
+                                                <DataTrigger Binding="{Binding IsOverlayLoading}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
