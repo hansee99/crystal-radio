@@ -59,6 +59,7 @@ public partial class OptionsDialog : AppDialog
             .ToArray();
         DjVoiceBox.SelectedValue = settings.ResolveDjPersonality();
 
+        DjNotificationsBox.IsChecked = settings.DjNotificationsEnabled;
         HarvesterCountBox.Text = settings.DjHarvesterCount.ToString(CultureInfo.CurrentCulture);
         DiskSpaceBox.Text = settings.DjDiskSpaceMb.ToString(CultureInfo.CurrentCulture);
         IntroSkipBox.Text = settings.IntroSkipSeconds.ToString("0.#", CultureInfo.CurrentCulture);
@@ -164,6 +165,7 @@ public partial class OptionsDialog : AppDialog
 
         // Unparseable input keeps the current value rather than resetting to a default — a typo
         // shouldn't silently change a setting the user wasn't editing.
+        settings.DjNotificationsEnabled = DjNotificationsBox.IsChecked == true;
         settings.DjHarvesterCount = ParseInt(HarvesterCountBox.Text, settings.DjHarvesterCount);
         settings.DjDiskSpaceMb = ParseInt(DiskSpaceBox.Text, settings.DjDiskSpaceMb);
         settings.IntroSkipSeconds = ParseDouble(IntroSkipBox.Text, settings.IntroSkipSeconds);

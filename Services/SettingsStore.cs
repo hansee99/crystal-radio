@@ -163,6 +163,16 @@ public sealed class AppSettings
     public double DjMusicFractionFloor { get; set; } = 0.15;
 
     /// <summary>
+    /// Show a Windows notification when the DJ introduces a track — title, artist and the DJ's
+    /// remark. On by default because it is the point of the feature, and one click to turn off:
+    /// the alternative is shipping something the listener has to go and find.
+    ///
+    /// <para>Only fires for a track introduction, never for the DJ's between-track patter, which
+    /// is session chatter rather than an announcement about a song.</para>
+    /// </summary>
+    public bool DjNotificationsEnabled { get; set; } = true;
+
+    /// <summary>
     /// Bumped whenever a default changes in a way an existing settings file should adopt. Without
     /// it a new default only reaches new installs: every existing file already has the old value
     /// written out, so the change is invisible to exactly the people running the app.

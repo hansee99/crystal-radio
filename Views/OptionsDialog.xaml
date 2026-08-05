@@ -146,6 +146,11 @@
                                            Text="Collected songs are kept only while the mix might use them, then the oldest are deleted. Songs you save are never touched."/>
                             </StackPanel>
                         </Grid>
+
+                        <CheckBox x:Name="DjNotificationsBox" Style="{StaticResource DialogCheckBox}"
+                                  Content="Show a notification for each track" Margin="0,18,0,0"/>
+                        <TextBlock Style="{StaticResource DialogHint}"
+                                   Text="A Windows notification when the DJ introduces a song, with what the DJ said about it."/>
                     </StackPanel>
 
                     <!-- ===== 4. Track edges — one explanation covers both, so no field hints ===== -->

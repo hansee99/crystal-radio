@@ -36,6 +36,7 @@ public sealed class MainViewModel : ObservableObject
     private readonly ISearchRanker _ranker;
     private readonly ITrackInfoService _trackInfoService;
     private readonly ILyricsService _lyricsService;
+    private readonly INotificationService _notifications;
     private readonly ISongLibraryService _songLibrary;
     private readonly LocalPlaybackEngine _local;
     private readonly ISongCurator _curator;
@@ -111,7 +112,7 @@ public sealed class MainViewModel : ObservableObject
         IStationDialog stationDialog, IPromptInterpreter interpreter, IStationSearchService searchService,
         IAgenticSearchService agenticSearch, IEnrichmentService enrichment,
         ISemanticSearchService semanticSearch, ISearchRanker ranker, ITrackInfoService trackInfoService,
-        ILyricsService lyricsService,
+        ILyricsService lyricsService, INotificationService notifications,
         ISongLibraryService songLibrary, LocalPlaybackEngine local, ISongCurator curator,
         DjHarvestService djHarvest, IDjIntroService djIntro)
     {
@@ -130,6 +131,7 @@ public sealed class MainViewModel : ObservableObject
         _ranker = ranker;
         _trackInfoService = trackInfoService;
         _lyricsService = lyricsService;
+        _notifications = notifications;
         _songLibrary = songLibrary;
         _local = local;
         _curator = curator;
@@ -2557,7 +2559,10 @@ public sealed class MainViewModel : ObservableObject
         {
             var line = await _djIntro.GetIntroAsync(title, artist, _djSessionVibe, curatorNote, cts.Token).ConfigureAwait(true);
             if (!cts.IsCancellationRequested)
+            {
                 DjIntroLine = line;
+                NotifyDjTrack(title, artist, line);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -2568,6 +2573,21 @@ public sealed class MainViewModel : ObservableObject
             AppLog.Debug($"[DjIntro] generation failed: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Toasts the track the DJ just introduced. Deliberately hung off the INTRO, not the track
+    /// change: the remark is the reason the notification exists, and it lands a beat later.
+    /// SpeakMoment's between-track patter never comes through here — that is session chatter, not
+    /// an announcement about a song.
+    /// </summary>
+    private void NotifyDjTrack(string title, string? artist, string? remark)
+    {
+        if (!DjNotificationsEnabled || !IsDjMode || !IsDjRunning) return;
+        _notifications.ShowDjTrack(title, artist, remark);
+    }
+
+    /// <summary>Applied live from the options dialog (MainWindow.ApplySettings), like the rest.</summary>
+    public bool DjNotificationsEnabled { get; set; }
 
     private void OnDjStatusChanged(HarvestStatus status)
     {

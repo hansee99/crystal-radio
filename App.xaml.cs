@@ -41,6 +41,10 @@ public partial class App : Application
         HookCrashLogging();
         AppLog.BeginSession(Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "?");
 
+        // Before the first window: the shell reads the process's AppUserModelID when windows
+        // appear, and toasts are attributed by it. See WindowsNotificationService.
+        Services.WindowsNotificationService.ApplyAppIdentity();
+
         base.OnStartup(e);
         new MainWindow().Show();
     }

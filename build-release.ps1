@@ -41,10 +41,118 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Must match WindowsNotificationService.AppUserModelId exactly. The string IS the pairing between
+# the running process and this shortcut; a mismatch fails silently in both directions.
+$AppUserModelId = 'HansSeebacher.CrystalRadio'
+
 $repo    = $PSScriptRoot
 $project = Join-Path $repo 'crystal-radio.csproj'
 $tests   = Join-Path $repo 'tests\RadioPlayer.Tests\RadioPlayer.Tests.csproj'
 $staging = Join-Path $env:TEMP ('crystal-radio-publish-' + [Guid]::NewGuid().ToString('n').Substring(0, 8))
+
+<#
+.SYNOPSIS
+    Writes a .lnk carrying System.AppUserModel.ID.
+.DESCRIPTION
+    WScript.Shell can create a shortcut but cannot set that property, and it is the only part that
+    matters here — so this goes through IShellLink + IPropertyStore. The inline C# is the shortest
+    honest way to reach them from PowerShell.
+
+    The shortcut lands in the INVOKING user's Start Menu. Elevating the same account via UAC keeps
+    the same profile, which is the normal case; running this as a different admin account would put
+    it in that account's Start Menu instead, and toasts would not appear for you.
+#>
+function New-Shortcut {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Target,
+        [Parameter(Mandatory)] [string] $AppId,
+        [string] $Description = ''
+    )
+
+    if (-not ('CrystalRadio.Shortcut' -as [type])) {
+        Add-Type -Language CSharp -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace CrystalRadio {
+  [ComImport, Guid("00021401-0000-0000-C000-000000000046")] internal class CShellLink { }
+
+  [ComImport, Guid("000214F9-0000-0000-C000-000000000046"),
+   InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  internal interface IShellLinkW {
+    void GetPath(System.Text.StringBuilder f, int c, IntPtr d, uint g);
+    void GetIDList(out IntPtr ppidl); void SetIDList(IntPtr pidl);
+    void GetDescription(System.Text.StringBuilder n, int c);
+    void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string name);
+    void GetWorkingDirectory(System.Text.StringBuilder d, int c);
+    void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string dir);
+    void GetArguments(System.Text.StringBuilder a, int c);
+    void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string args);
+    void GetHotkey(out short k); void SetHotkey(short k);
+    void GetShowCmd(out int c); void SetShowCmd(int c);
+    void GetIconLocation(System.Text.StringBuilder i, int c, out int idx);
+    void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string icon, int index);
+    void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string path, uint reserved);
+    void Resolve(IntPtr hwnd, uint flags);
+    void SetPath([MarshalAs(UnmanagedType.LPWStr)] string file);
+  }
+
+  [ComImport, Guid("0000010b-0000-0000-C000-000000000046"),
+   InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  internal interface IPersistFile {
+    void GetClassID(out Guid clsid); [PreserveSig] int IsDirty();
+    void Load([MarshalAs(UnmanagedType.LPWStr)] string file, uint mode);
+    void Save([MarshalAs(UnmanagedType.LPWStr)] string file, [MarshalAs(UnmanagedType.Bool)] bool remember);
+    void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string file);
+    void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string file);
+  }
+
+  [ComImport, Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"),
+   InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  internal interface IPropertyStore {
+    void GetCount(out uint c); void GetAt(uint i, out PropertyKey key);
+    void GetValue(ref PropertyKey key, out PropVariant v);
+    void SetValue(ref PropertyKey key, ref PropVariant v);
+    void Commit();
+  }
+
+  [StructLayout(LayoutKind.Sequential, Pack = 4)]
+  internal struct PropertyKey { public Guid FormatId; public int PropertyId; }
+
+  [StructLayout(LayoutKind.Explicit)]
+  internal struct PropVariant {
+    [FieldOffset(0)] public ushort Type;
+    [FieldOffset(8)] public IntPtr Ptr;
+  }
+
+  public static class Shortcut {
+    public static void Create(string path, string target, string appId, string description) {
+      var link = (IShellLinkW)new CShellLink();
+      link.SetPath(target);
+      link.SetWorkingDirectory(System.IO.Path.GetDirectoryName(target));
+      if (!string.IsNullOrEmpty(description)) link.SetDescription(description);
+
+      // PKEY_AppUserModel_ID
+      var key = new PropertyKey {
+        FormatId = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), PropertyId = 5 };
+      var value = new PropVariant { Type = 31 /* VT_LPWSTR */,
+                                    Ptr = Marshal.StringToCoTaskMemUni(appId) };
+      var store = (IPropertyStore)link;
+      store.SetValue(ref key, ref value);
+      store.Commit();
+      Marshal.FreeCoTaskMem(value.Ptr);
+
+      ((IPersistFile)link).Save(path, true);
+    }
+  }
+}
+'@
+    }
+
+    [CrystalRadio.Shortcut]::Create($Path, $Target, $AppId, $Description)
+    Write-Host "  $Path"
+}
 
 function Fail($message) {
     Write-Host ""
@@ -130,11 +238,24 @@ Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
 
 if ($robocopy -ge 8) { Fail "robocopy failed (exit $robocopy) — the installed build may be incomplete." }
 
+# --- Start Menu shortcut ------------------------------------------------------------------------
+# Not a convenience: Windows will not display a toast from an unpackaged app unless a Start Menu
+# shortcut carries the same AppUserModelID the process sets. Established by experiment — with the
+# AUMID alone the API reports success and nothing appears. See WindowsNotificationService.
+#
+# Also makes the app launchable from Start, which a folder copy into Program Files otherwise isn't.
+
+Step "Creating the Start Menu shortcut"
+New-Shortcut -Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Crystal Radio.lnk') `
+             -Target (Join-Path $Destination 'crystal-radio.exe') `
+             -AppId $AppUserModelId -Description 'Crystal Radio'
+
 $files = @(Get-ChildItem $Destination -Recurse -File).Count
 Write-Host ""
 Write-Host "  Crystal Radio $version installed" -ForegroundColor Green
 Write-Host "  $Destination  ($files files)"
 Write-Host "  $(Join-Path $Destination 'crystal-radio.exe')"
+Write-Host "  Start Menu shortcut written (required for notifications)"
 Write-Host ""
 
 # robocopy's success codes are non-zero (1 = files copied), and a script's exit code defaults to

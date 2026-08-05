@@ -42,6 +42,8 @@ public class OptionsDialogRailTests
     [InlineData("DialogHint", typeof(TextBlock))]
     [InlineData("DialogTextBox", typeof(TextBox))]
     [InlineData("DialogComboBox", typeof(ComboBox))]
+    // Added for the DJ notifications toggle (#35); #22 will want it for the rest of the knobs.
+    [InlineData("DialogCheckBox", typeof(CheckBox))]
     [InlineData("DialogPrimaryButton", typeof(Button))]
     [InlineData("DialogGhostButton", typeof(Button))]
     public void ThemeCarriesTheStyleForItsTargetType(string key, Type targetType)
