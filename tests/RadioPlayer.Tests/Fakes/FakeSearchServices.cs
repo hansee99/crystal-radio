@@ -55,7 +55,9 @@ public sealed class FakeSearchRanker : ISearchRanker
         if (ReturnsNull)
             return Task.FromResult<IReadOnlyList<RankVerdict>?>(null);
 
-        var ids = Keep ?? candidates.Select(c => c.Id).ToArray();
+        // Respects topK like the real ranker does — a caller asking for 4 stations gets 4, which is
+        // what leaves later candidates available to a subsequent pass.
+        var ids = Keep ?? candidates.Select(c => c.Id).Take(topK).ToArray();
         // Descending score in the given order, so OrderByDescending preserves the caller's intent.
         var verdicts = ids.Select((id, i) => new RankVerdict(id, 1.0 - i * 0.01)).ToList();
         return Task.FromResult<IReadOnlyList<RankVerdict>?>(verdicts);

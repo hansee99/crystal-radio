@@ -109,6 +109,36 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     private int _kept;
     private int _rejected;
 
+    // --- Mid-session pool top-up (#41) ----------------------------------------
+    //
+    // A session used to source its stations once and never again, so a pool could only shrink: when
+    // the reserve is empty, Retire loses the slot for good. Usually there is plenty of slack — a
+    // real 183-minute session used 9 stations out of a 4+15 pool — but a session started while the
+    // directory was down (#26) begins thin AND dies faster, because its cached urls were never
+    // re-verified. The outage's cost outlived the outage.
+
+    /// <summary>Minimum gap between top-up attempts. Each one costs an interpreter call and a
+    /// ranker call, and a burst of harvester deaths shouldn't turn into a burst of those.</summary>
+    private static readonly TimeSpan TopUpCooldown = TimeSpan.FromMinutes(10);
+
+    /// <summary>How long an offline-started session waits before trying to heal itself. Short: its
+    /// urls are stale and its pool thin, so reaching a live directory early is worth one query.</summary>
+    private static readonly TimeSpan OfflineHealAfter = TimeSpan.FromMinutes(3);
+
+    private string _prompt = string.Empty;
+    private bool _startedOffline;
+    private bool _reachedDirectorySinceOfflineStart;
+    private DateTime _poolSourcedUtc;
+    private DateTime _lastTopUpUtc = DateTime.MinValue;
+    private int _topUpInFlight;
+
+    // Dedupe keys for every station this session has tried, so a top-up can't return one that is
+    // already playing or was retired earlier for being useless. Written from the harvest dispatcher
+    // (InstallTopUp) and from whichever thread starts/changes the session; read from a background
+    // top-up task — so it's locked.
+    private readonly object _triedLock = new();
+    private readonly HashSet<string> _triedKeys = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Raised (background thread) for each harvested song kept after QC.</summary>
     public event EventHandler<HarvestedSong>? SegmentIndexed;
 
@@ -221,7 +251,8 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         Directory.CreateDirectory(_scratchDir);
 
         progress?.Report(HarvestStartStage.FindingStations);
-        var stations = await SourceStationsAsync(prompt, _harvesterCount + _reserveCount, ct).ConfigureAwait(false);
+        var sourced = await SourceStationsAsync(prompt, _harvesterCount + _reserveCount, ct).ConfigureAwait(false);
+        var stations = sourced.Stations;
         if (stations.Count == 0)
         {
             TopStation = null;
@@ -233,6 +264,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         _reserve = new Queue<Station>(stations.Skip(_harvesterCount));
         TopStation = hot[0]; // stations are already best-first out of RankRelevantAsync
         ResetSessionTotals();
+        BeginPoolTracking(prompt, stations, sourced.FromLocalCatalog);
         _running = true;
 
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -263,8 +295,9 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             return false;
 
         AppLog.Info($"[Dj] changing vibe to \"{prompt}\" — sourcing before the swap");
-        var stations = await SourceStationsAsync(prompt, _harvesterCount + _reserveCount, ct)
+        var sourced = await SourceStationsAsync(prompt, _harvesterCount + _reserveCount, ct)
             .ConfigureAwait(false);
+        var stations = sourced.Stations;
         if (stations.Count == 0)
         {
             AppLog.Warn($"[Dj] nothing relevant for \"{prompt}\" — keeping the current pool");
@@ -293,6 +326,10 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         // harvesters are retired in the same breath, so there are few, and over-counting by one is
         // a better failure than the whole total being wrong.
         ResetSessionTotals();
+
+        // A new vibe wants different stations, so the "already tried" set starts over with it — a
+        // station that was wrong for the old prompt may be exactly right for this one.
+        BeginPoolTracking(prompt, stations, sourced.FromLocalCatalog);
 
         dispatcher.Invoke(() => SwapPool(hot, reserve));
 
@@ -402,6 +439,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             RecordTitleCounts();
             RetireDuplicateStreams();
             RetireUnproductive();
+            HealOfflineStartIfDue();
         };
         _watchdog.Start();
 
@@ -446,9 +484,18 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         harvester.Dispose();
 
         if (_running && _reserve.Count > 0)
+        {
             StartHarvester(_reserve.Dequeue());
+        }
         else
+        {
             RaiseStatus();
+            // The slot is gone until something replaces it, so this is the moment to go looking (#41)
+            // — including for a session that started offline and may now be able to reach the
+            // directory. Throttled inside; no-op when the session is stopping.
+            if (_running)
+                BeginTopUp("reserve empty");
+        }
     }
 
     /// <summary>
@@ -940,14 +987,35 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     private sealed record SourceCandidate(Station Station, string DescriptiveText, string? Country);
 
     /// <summary>
+    /// The outcome of one sourcing pass. <paramref name="FromLocalCatalog"/> is returned rather than
+    /// stored on the service because sourcing can run concurrently — a background top-up (#41)
+    /// while the user changes the vibe — and a shared field would let one answer the other's
+    /// question.
+    /// </summary>
+    private sealed record SourcingResult(List<Station> Stations, bool FromLocalCatalog);
+
+    /// <summary>
     /// Why the last <see cref="StartAsync"/>/<see cref="ChangeVibeAsync"/> sourcing attempt returned
     /// what it did, so the caller can say something true about an empty result (#26).
     /// </summary>
     public DjSourcingOutcome LastSourcingOutcome { get; private set; } = DjSourcingOutcome.Ok;
 
-    private async Task<List<Station>> SourceStationsAsync(string prompt, int count, CancellationToken ct)
+    /// <param name="allowWebEscalation">
+    /// False for a mid-session top-up (#41): Pattern B is a multi-round-trip Sonnet loop, and a thin
+    /// top-up result means something different from a thin initial one — most of the good matches are
+    /// already in the pool, which is why they were excluded.
+    /// </param>
+    /// <param name="exclude">
+    /// Dedupe keys (as built by <see cref="AddUniqueCandidates"/>) for stations this session has
+    /// already tried. Seeding them means a top-up can't hand back the stations already playing, or
+    /// ones retired earlier for being useless.
+    /// </param>
+    private async Task<SourcingResult> SourceStationsAsync(string prompt, int count, CancellationToken ct,
+        bool allowWebEscalation = true, IReadOnlyCollection<string>? exclude = null)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (exclude is not null)
+            seen.UnionWith(exclude);
         var pool = new List<SourceCandidate>();
         LastSourcingOutcome = DjSourcingOutcome.Ok;
 
@@ -1007,7 +1075,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         // Never when the directory is down: Pattern B's own search_radio_browser tool resolves its
         // web findings through the same mirrors, so escalating would just spend a Sonnet loop to
         // arrive back at the outage.
-        if (!directoryDown && relevant.Count < count && _agenticSearch.IsConfigured)
+        if (allowWebEscalation && !directoryDown && relevant.Count < count && _agenticSearch.IsConfigured)
         {
             AppLog.Info($"[Dj] escalating to web discovery ({relevant.Count} < {count})");
             var web = await _agenticSearch.SearchAsync(prompt, count, ct).ConfigureAwait(false);
@@ -1028,7 +1096,205 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
                         + " — session will not start");
         }
 
-        return relevant;
+        return new SourcingResult(relevant, directoryDown);
+    }
+
+    // --- Mid-session top-up (#41) ---------------------------------------------
+
+    /// <summary>Starts (or restarts, on a vibe change) the bookkeeping a top-up needs: the prompt to
+    /// re-source with, the stations already spoken for, and whether this pool began handicapped.</summary>
+    private void BeginPoolTracking(string prompt, List<Station> stations, bool fromLocalCatalog)
+    {
+        _prompt = prompt;
+        _startedOffline = fromLocalCatalog;
+        _reachedDirectorySinceOfflineStart = false;
+        _poolSourcedUtc = DateTime.UtcNow;
+        _lastTopUpUtc = DateTime.MinValue;
+        lock (_triedLock)
+        {
+            _triedKeys.Clear();
+            AddTriedKeys(stations);
+        }
+    }
+
+    /// <summary>Caller holds <see cref="_triedLock"/>.</summary>
+    private void AddTriedKeys(IEnumerable<Station> stations)
+    {
+        foreach (var s in stations)
+            foreach (var key in DedupeKeys(s.Url, s.Name))
+                _triedKeys.Add(key);
+    }
+
+    /// <summary>
+    /// The identity of a station for pooling purposes, as two keys. Both the pool's own dedupe and
+    /// the "already tried this session" exclusion (#41) go through here, because two implementations
+    /// of the same rule is how exclusion silently stops working.
+    /// <para>
+    /// The name key is what stops codec variants of one station — "… (128k MP3)" and "… (128k AAC)"
+    /// — from taking two harvester slots and recording every song twice. The prefixes keep a url
+    /// from ever colliding with a name.
+    /// </para>
+    /// </summary>
+    internal static IEnumerable<string> DedupeKeys(string url, string name)
+    {
+        yield return "url:" + url;
+        yield return "name:" + StationNameFormatter.IdentityKey(name);
+    }
+
+    /// <summary>
+    /// Whether a top-up attempt may run now. Pure so the throttle can be tested without waiting ten
+    /// real minutes — and it is the part worth pinning: too eager and a run of harvester deaths
+    /// turns into a run of paid ranker calls, too lazy and a shrinking pool stays shrunk.
+    /// </summary>
+    internal static bool MayTopUp(DateTime lastAttemptUtc, DateTime nowUtc, TimeSpan cooldown) =>
+        nowUtc - lastAttemptUtc >= cooldown;
+
+    /// <summary>
+    /// Whether an offline-started session should try to heal itself yet. Keeps saying yes (subject to
+    /// the cooldown above) until a top-up has actually reached the directory, because until then the
+    /// pool really is degraded — stale urls, thin reserve — and there is always something to fix.
+    /// </summary>
+    internal static bool ShouldHealOfflineStart(bool startedOffline, bool reachedDirectory,
+        DateTime poolSourcedUtc, DateTime nowUtc, TimeSpan healAfter) =>
+        startedOffline && !reachedDirectory && nowUtc - poolSourcedUtc >= healAfter;
+
+    /// <summary>
+    /// One eager healing attempt for a session that started on the local catalog, driven off the
+    /// watchdog tick. Keeps trying on the cooldown until it actually reaches the directory: unlike a
+    /// healthy session, this pool is degraded for as long as the outage lasts, so there is always
+    /// something to fix. It stops the moment a top-up comes back from the directory.
+    /// </summary>
+    private void HealOfflineStartIfDue()
+    {
+        if (!_running)
+            return;
+        if (ShouldHealOfflineStart(_startedOffline, _reachedDirectorySinceOfflineStart,
+                _poolSourcedUtc, DateTime.UtcNow, OfflineHealAfter))
+            BeginTopUp("started offline");
+    }
+
+    /// <summary>
+    /// Fire-and-forget attempt to refill the reserve, throttled by <see cref="TopUpCooldown"/>.
+    /// Never blocks the caller: both trigger points (<see cref="Retire"/> and the watchdog) run on
+    /// the harvest dispatcher thread, and sourcing awaits the network.
+    /// </summary>
+    private void BeginTopUp(string reason)
+    {
+        if (Interlocked.CompareExchange(ref _topUpInFlight, 1, 0) != 0)
+            return; // one at a time
+
+        var now = DateTime.UtcNow;
+        if (!MayTopUp(_lastTopUpUtc, now, TopUpCooldown))
+        {
+            Volatile.Write(ref _topUpInFlight, 0);
+            return;
+        }
+        _lastTopUpUtc = now;
+
+        var prompt = _prompt;
+        // Compared, not stamped: if the vibe changes while this is in flight, the result belongs to
+        // a pool that no longer exists and is thrown away (see the #30 regression for why a captured
+        // generation must never be used to *label* an arrival).
+        var generation = VibeGeneration;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await TopUpAsync(prompt, generation, reason).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Best-effort by design: a session with a shrinking pool is still a session.
+                AppLog.Warn($"[Dj] pool top-up failed: {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                Volatile.Write(ref _topUpInFlight, 0);
+            }
+        });
+    }
+
+    private async Task TopUpAsync(string prompt, int generation, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(prompt) || !_running)
+            return;
+
+        var want = _harvesterCount + _reserveCount;
+        AppLog.Info($"[Dj] topping up the pool ({reason}) — looking for up to {want} station(s) "
+                    + "this session hasn't tried");
+
+        List<string> exclude;
+        lock (_triedLock)
+            exclude = _triedKeys.ToList();
+
+        // A background top-up must not overwrite what the UI is reporting about how the session
+        // started — LastSourcingOutcome answers "why is there no session", not "how is it going".
+        var reportedOutcome = LastSourcingOutcome;
+        SourcingResult sourced;
+        try
+        {
+            sourced = await SourceStationsAsync(prompt, want, CancellationToken.None,
+                allowWebEscalation: false, exclude: exclude).ConfigureAwait(false);
+        }
+        finally
+        {
+            LastSourcingOutcome = reportedOutcome;
+        }
+
+        if (sourced.Stations.Count == 0)
+        {
+            AppLog.Info("[Dj] top-up found nothing this session hasn't already tried");
+            return;
+        }
+
+        var dispatcher = _harvestDispatcher;
+        if (dispatcher is null || !_running || VibeGeneration != generation)
+        {
+            AppLog.Info("[Dj] top-up discarded — the session or vibe moved on while it was sourcing");
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(() => InstallTopUp(sourced, generation));
+    }
+
+    /// <summary>
+    /// Adds the new stations to the reserve and immediately fills any harvester slot that was lost,
+    /// which is the whole point — a slot lost to an empty reserve never came back before. Runs on
+    /// the harvest dispatcher, the same thread every other harvester lifecycle call uses.
+    /// </summary>
+    private void InstallTopUp(SourcingResult sourced, int generation)
+    {
+        if (!_running || VibeGeneration != generation)
+            return;
+
+        lock (_triedLock)
+            AddTriedKeys(sourced.Stations);
+
+        foreach (var station in sourced.Stations)
+            _reserve.Enqueue(station);
+
+        int missing;
+        lock (_activeLock)
+            missing = _harvesterCount - _active.Count;
+
+        var started = 0;
+        for (var i = 0; i < missing && _reserve.Count > 0; i++)
+        {
+            StartHarvester(_reserve.Dequeue());
+            started++;
+        }
+
+        // Reaching the directory is what ends the offline handicap — not the passage of time, and
+        // not a top-up that fell back to the same local catalog the pool already came from.
+        if (!sourced.FromLocalCatalog)
+            _reachedDirectorySinceOfflineStart = true;
+
+        SessionLog?.PoolToppedUp(sourced.Stations.Count, started, sourced.FromLocalCatalog);
+        AppLog.Info($"[Dj] top-up added {sourced.Stations.Count} station(s) "
+                    + $"({(sourced.FromLocalCatalog ? "local catalog" : "directory")}); "
+                    + $"{started} slot(s) refilled; reserve now {_reserve.Count}");
+        RaiseStatus();
     }
 
     /// <summary>
@@ -1118,21 +1384,28 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     }
 
     /// <summary>
-    /// Adds candidates the pool doesn't already have, by URL <b>and</b> by station identity.
-    /// The second check is what stops codec variants of one station — "… (128k MP3)" and
-    /// "… (128k AAC)" — from occupying two harvester slots and recording every song twice.
+    /// Adds candidates the pool doesn't already have, by URL <b>and</b> by station identity — see
+    /// <see cref="DedupeKeys"/> for what those are and why there are two. A pre-seeded
+    /// <paramref name="seen"/> is also how a top-up excludes stations already tried this session.
     /// </summary>
     private static void AddUniqueCandidates(
         List<SourceCandidate> pool, HashSet<string> seen, IEnumerable<SourceCandidate> candidates)
     {
         foreach (var c in candidates)
         {
-            // Both keys go in the same set; the prefixes keep a URL from ever colliding with a name.
-            if (!seen.Add("url:" + c.Station.Url))
-                continue;
-            if (!seen.Add("name:" + StationNameFormatter.IdentityKey(c.Station.Name)))
-                continue;
-            pool.Add(c);
+            // Short-circuits: a candidate rejected on its url does NOT register its name. Kept as
+            // it was — see DuplicateStreamTests for the behaviour this pins.
+            var fresh = true;
+            foreach (var key in DedupeKeys(c.Station.Url, c.Station.Name))
+            {
+                if (!seen.Add(key))
+                {
+                    fresh = false;
+                    break;
+                }
+            }
+            if (fresh)
+                pool.Add(c);
         }
     }
 

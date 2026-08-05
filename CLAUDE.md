@@ -492,6 +492,36 @@ and stations are rebuilt from those cached columns with no network call in the p
   the 30-day staleness window would have left an existing 2,500-row catalog unplayable for a month.
   A `tools/SeedEnrichment --tags-only` run repairs an old catalog at zero LLM cost.
 
+### Mid-session pool top-up (#41)
+
+A session used to source stations once, at start, so its pool could only **shrink**: when the reserve
+is empty, `DjHarvestService.Retire` loses the slot for good. That is survivable for a healthy pool
+(a real 183-minute session used 9 stations out of a 4+15 pool) but not for an offline-started one,
+which begins thin *and* dies faster because its urls were never re-verified — so the outage's cost
+outlived the outage.
+
+`BeginTopUp` re-sources mid-session, fire-and-forget, from two triggers:
+
+- **Reserve exhausted** (in `Retire`) — the moment a slot is actually lost. Deliberately *not* a
+  "is the directory back?" poll: that runs work when nothing is wrong.
+- **`ShouldHealOfflineStart`** off the watchdog tick, for a session that started on the local
+  catalog. It keeps trying on the cooldown until a top-up genuinely reaches the directory —
+  `FromLocalCatalog` on the sourcing result, not elapsed time, is what ends the handicap.
+
+Rules that keep it cheap and correct:
+
+- `MayTopUp` throttles to one attempt per 10 min — deaths arrive in bursts and each attempt costs an
+  interpreter + ranker call.
+- **No web escalation** on a top-up (`allowWebEscalation: false`). A thin top-up means the good
+  matches are already in the pool, which is *why* they were excluded.
+- `DedupeKeys` is the single definition of station identity, shared by the pool's own dedupe and the
+  "already tried this session" exclusion — two implementations of that rule is how exclusion
+  silently stops working. The name key is what makes codec variants of one station one station.
+- The vibe generation is **compared, not stamped**: a top-up in flight when the vibe changes is
+  discarded (see the #30 regression for why a captured generation must never label an arrival).
+- `LastSourcingOutcome` is saved and restored around a top-up — it answers "why is there no
+  session", not "how is it going", and the UI reads it after start.
+
 - *Design history:* earlier drafts used (a) a cheap LLM **classifier** to route literal→Pattern A
   vs fuzzy→semantic+web, then (b) "fuzzy = always run semantic AND web". Both were replaced: the
   classifier kept mis-routing borderline prompts (genre+region, genre+qualifier) that are *both*

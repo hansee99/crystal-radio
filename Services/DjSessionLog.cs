@@ -205,6 +205,22 @@ public sealed class DjSessionLog
         }
     }
 
+    /// <summary>
+    /// New stations joined the pool mid-session (#41). Worth a line for the same reason a vibe
+    /// change is: reading a session back, a station that appears an hour in is otherwise
+    /// inexplicable, and whether the top-up reached the directory or fell back to the local catalog
+    /// is exactly the detail that explains a run of connect failures afterwards.
+    /// </summary>
+    public void PoolToppedUp(int added, int slotsFilled, bool fromLocalCatalog)
+    {
+        lock (_gate)
+        {
+            Write("pool", $"topped up with {added} station(s) from "
+                          + $"{(fromLocalCatalog ? "the local catalog" : "the directory")}"
+                          + $" — {slotsFilled} harvester slot(s) refilled");
+        }
+    }
+
     /// <summary>A song started playing — the consumption side of the ratio.</summary>
     public void SongPlayed(string path, string title, string artist)
     {
