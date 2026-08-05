@@ -116,17 +116,33 @@ public sealed class WindowsNotificationService : INotificationService
     }
 
     /// <summary>
-    /// Three lines: what's playing, who by, and what the DJ said. The remark is the reason this
-    /// feature exists, so it gets its own line rather than being appended to the artist.
+    /// Track and artist as the two plain lines, then the DJ's remark in an adaptive
+    /// <c>group</c>/<c>subgroup</c>, then "Your DJ" as attribution.
+    ///
+    /// <para><b>The grouping is what buys the styling.</b> Three plain <c>text</c> elements run
+    /// together with no separation, and <c>hint-style</c> on a top-level <c>text</c> is ignored —
+    /// it only takes effect inside a subgroup. So the remark has to be grouped to be visually
+    /// distinct from the artist, which is the whole point: it is the DJ talking, not more metadata.
+    /// Confirmed by firing the layouts side by side rather than from documentation.</para>
+    ///
+    /// <para>Silent by design. A DJ mix changes track every few minutes and the default chime on
+    /// each one is intrusive — this is glanceable information, not something that wants attention.</para>
     /// </summary>
     internal static string BuildToastXml(string title, string? artist, string? remark)
     {
-        var lines = new List<string> { Escape(title) };
-        if (!string.IsNullOrWhiteSpace(artist)) lines.Add(Escape(artist));
-        if (!string.IsNullOrWhiteSpace(remark)) lines.Add(Escape(remark));
+        var body = $"<text>{Escape(title)}</text>";
+        if (!string.IsNullOrWhiteSpace(artist))
+            body += $"<text>{Escape(artist)}</text>";
 
-        var text = string.Concat(lines.Select(l => $"<text>{l}</text>"));
-        return $"<toast><visual><binding template=\"ToastGeneric\">{text}</binding></visual></toast>";
+        if (!string.IsNullOrWhiteSpace(remark))
+            body += "<group><subgroup>"
+                  + $"<text hint-style=\"captionSubtle\" hint-wrap=\"true\">{Escape(remark)}</text>"
+                  + "</subgroup></group>"
+                  + "<text placement=\"attribution\">Your DJ</text>";
+
+        return "<toast><visual><binding template=\"ToastGeneric\">"
+             + body
+             + "</binding></visual><audio silent=\"true\"/></toast>";
     }
 
     /// <summary>
