@@ -20,10 +20,23 @@ public sealed class LyricsService : ILyricsService
 {
     private const string BaseUrl = "https://lrclib.net";
 
-    /// <summary>Their docs: "your application's name, version, and a link to its homepage or
-    /// project page". Not decoration — it is how they attribute load, and the one thing they ask
-    /// for in exchange for an unauthenticated API.</summary>
-    internal const string UserAgent = "CrystalRadio/1.9.0 (https://github.com/hansee99/crystal-radio)";
+    /// <summary>
+    /// Their docs: "your application's name, version, and a link to its homepage or project page".
+    /// Not decoration — it is how they attribute load, and the one thing they ask for in exchange
+    /// for an unauthenticated API.
+    ///
+    /// <para>The version is read from the assembly rather than written here. It was hardcoded as
+    /// 1.9.0 in anticipation of a bump, which meant the app spent a while truthfully reporting 1.8.2
+    /// everywhere else while telling LRCLIB something else. A version string that can drift from the
+    /// build is worse than no version string.</para>
+    /// </summary>
+    internal static readonly string UserAgent =
+        $"CrystalRadio/{AppVersion} (https://github.com/hansee99/crystal-radio)";
+
+    private static string AppVersion =>
+        typeof(LyricsService).Assembly.GetName().Version is { } v
+            ? $"{v.Major}.{v.Minor}.{v.Build}"
+            : "0.0.0";
 
     /// <summary>LRCLIB asks for 200–500 ms between requests. Enforced across the whole app, not
     /// per caller, because background enrichment and a UI click share this service.</summary>

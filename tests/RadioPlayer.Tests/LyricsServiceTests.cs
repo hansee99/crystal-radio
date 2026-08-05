@@ -158,6 +158,11 @@ public class LyricsServiceTests
         var ua = client.DefaultRequestHeaders.UserAgent.ToString();
         Assert.Contains("CrystalRadio/", ua);
         Assert.Contains("github.com", ua);   // "a link to its homepage or project page"
+
+        // The version must come from the BUILD, not a literal. It was hardcoded to 1.9.0 while the
+        // assembly said 1.8.2, so LRCLIB was told a different version from the one running.
+        var version = typeof(LyricsService).Assembly.GetName().Version!;
+        Assert.Contains($"CrystalRadio/{version.Major}.{version.Minor}.{version.Build}", ua);
     }
 
     [Fact]

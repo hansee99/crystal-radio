@@ -41,6 +41,11 @@ Built with WPF on .NET 10, using the [BASS](https://www.un4seen.com/) audio libr
   dry, so it never falls silent (optional; needs an API key).
 - **"About this track"** — an on-demand AI briefing (web-sourced) about the now-playing
   song and artist, shown inside the player (optional; needs an API key).
+- **Lyrics** — the words to whatever is playing, in any of the three modes, fetched from
+  [LRCLIB](https://lrclib.net). No API key needed. Coverage is partial (measured at 37% of
+  harvested tracks — LRCLIB skews mainstream), so "no lyrics found" is a normal answer.
+- **Track notifications** — a Windows notification when the DJ introduces a song, carrying
+  the title, artist and what the DJ said about it. On by default; switch it off in Options.
 - **OS integration** — SMTC (Win11 flyout, lock screen, media keys) and taskbar thumbnail
   buttons.
 - Automatic reconnection on dropped streams; single running instance.
