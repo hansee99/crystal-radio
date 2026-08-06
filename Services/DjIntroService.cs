@@ -86,6 +86,21 @@ public sealed class DjIntroService : IDjIntroService
             + "the work. Precise, unfussy, no whimsy.",
     };
 
+    private const string VibeChangeSystemPromptTemplate = """
+        You are a radio DJ. Mid-session, the listener has changed their mind about what they want to
+        hear. Write ONE line — 1-2 sentences, never more — acknowledging the turn, on air, to them.
+
+        {PERSONA}
+
+        You get what they had asked for and what they have asked for now. Make the line about the
+        CHANGE: the pivot between the two is the interesting thing, not a description of either.
+        You are about to go and find stations for it, so a line that carries the listener over that
+        wait is doing its job.
+
+        Never mention prompts, settings, sessions, AI, models, or anything about how the app works.
+        No stage directions, no quotation marks around the whole line, no emoji. Just the line.
+        """;
+
     private const string PatterSystemPromptTemplate = """
         You are a radio DJ. A listener has asked for a particular kind of music and you are about to
         build them a mix from live radio. Write the short things you'd say at four moments that
@@ -121,6 +136,7 @@ public sealed class DjIntroService : IDjIntroService
     // generation already in flight on a background thread may read them mid-swap.
     private volatile string _systemPromptBase = "";
     private volatile string _patterSystemPrompt = "";
+    private volatile string _vibeChangeSystemPrompt = "";
     private DjPersonality _personality;
 
     // Which move to use next. Advanced per generated line, so consecutive intros differ in shape.
@@ -154,6 +170,7 @@ public sealed class DjIntroService : IDjIntroService
             var persona = Personas.TryGetValue(value, out var p) ? p : Personas[DjPersonality.Warm];
             _systemPromptBase = SystemPromptTemplate.Replace("{PERSONA}", persona);
             _patterSystemPrompt = PatterSystemPromptTemplate.Replace("{PERSONA}", persona);
+            _vibeChangeSystemPrompt = VibeChangeSystemPromptTemplate.Replace("{PERSONA}", persona);
         }
     }
 
@@ -199,6 +216,52 @@ public sealed class DjIntroService : IDjIntroService
         catch (Exception ex)
         {
             AppLog.Debug($"[DjIntro] patter generation failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    public async Task<string?> GetVibeChangeLineAsync(string? previousVibe, string newVibe,
+        CancellationToken ct = default)
+    {
+        if (!IsConfigured || string.IsNullOrWhiteSpace(newVibe))
+            return null;
+
+        var sb = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(previousVibe))
+            sb.Append("They had asked for: \"").Append(previousVibe).Append("\".\n");
+        sb.Append("They have just changed it to: \"").Append(newVibe).Append("\".");
+
+        var body = new JsonObject
+        {
+            ["model"] = _model,
+            ["max_tokens"] = 200,
+            ["system"] = _vibeChangeSystemPrompt,
+            ["messages"] = new JsonArray
+            {
+                new JsonObject { ["role"] = "user", ["content"] = sb.ToString() }
+            }
+        };
+
+        using var request = AnthropicApi.CreateRequest(_apiKey.Current, body);
+        try
+        {
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+            var responseBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                AppLog.Debug($"[DjIntro] vibe-change API returned {(int)response.StatusCode}: "
+                             + AnthropicApi.Truncate(responseBody));
+                return null;
+            }
+            return Clean(AnthropicApi.ExtractText(responseBody));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug($"[DjIntro] vibe-change line failed: {ex.Message}");
             return null;
         }
     }
@@ -351,9 +414,34 @@ public sealed class DjIntroService : IDjIntroService
         if (string.IsNullOrWhiteSpace(s))
             return "";
         var text = System.Text.RegularExpressions.Regex.Replace(s, "<[^>]+>", "");
-        text = System.Net.WebUtility.HtmlDecode(text);
-        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
-        return text.Trim();
+        text = System.Net.WebUtility.HtmlDecode(text).Trim();
+
+        // Fences BEFORE the whitespace collapse below, which would otherwise take the newline a
+        // language tag sits on and leave "text Alright, …" as the line.
+        //
+        // The JSON-returning calls never show fences because StripToJsonObject removes them on the
+        // way to parsing. The vibe-change line asks for plain prose, and a model answering plainly
+        // still wraps it sometimes — observed 2026-08-06 as "``` Alright... ```".
+        if (text.StartsWith("```", StringComparison.Ordinal))
+        {
+            text = text.Trim('`').Trim();
+            var firstBreak = text.IndexOf('\n');
+            if (firstBreak > 0)
+            {
+                var opener = text[..firstBreak].Trim();
+                if (opener.Length <= 12 && !opener.Contains(' '))
+                    text = text[(firstBreak + 1)..].Trim();   // a language tag on its own line
+            }
+        }
+
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+
+        // Whole-line quotes: asked against, still offered occasionally, and a quoted line reads as
+        // the DJ quoting somebody rather than speaking.
+        if (text.Length > 1 && text[0] == '"' && text[^1] == '"')
+            text = text[1..^1].Trim();
+
+        return text;
     }
 
 }

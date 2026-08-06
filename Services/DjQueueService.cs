@@ -70,6 +70,9 @@ public sealed class DjQueueService : IDisposable
             return;
         _prompt = prompt;
         _libraryExhausted = false;
+        // Held-back songs were harvested for the old vibe; releasing them later would put the very
+        // thing the change was meant to end back into the mix (#51 meeting #30).
+        _deferred.Clear();
         // Deliberately no generation bookkeeping here: at this moment the harvest hasn't sourced
         // the new pool yet, so its counter still reads the OLD vibe. See OnSegmentIndexed.
 
@@ -117,6 +120,10 @@ public sealed class DjQueueService : IDisposable
         // to play after that puts the DJ mix under someone else's panel.
         ct.ThrowIfCancellationRequested();
 
+        // Spread the seed so the opening minutes don't stack one artist (#51). The curator ordered
+        // it by fit; this only breaks ties between equally-fitting neighbours.
+        seedTracks = ArtistSpread.Spread(seedTracks, t => t.Artist);
+
         _local.SetQueue(seedTracks); // empty seed → cold start; Append below plays the first harvested song
 
         _harvest.SegmentIndexed += OnSegmentIndexed;
@@ -134,6 +141,7 @@ public sealed class DjQueueService : IDisposable
     {
         _harvest.SegmentIndexed -= OnSegmentIndexed;
         _local.TrackChanged -= OnLocalTrackChanged;
+        _deferred.Clear();
     }
 
     public void Dispose() => Stop();
@@ -174,8 +182,71 @@ public sealed class DjQueueService : IDisposable
             }
 
             if (!_seen.Add(DedupKey(song.Artist, song.Title))) return;
-            _local.Append([new LocalTrack(song.Path, song.Title, song.Artist, FormatFromExtension(song.Path))]);
+
+            var track = new LocalTrack(song.Path, song.Title, song.Artist, FormatFromExtension(song.Path));
+
+            // Two songs by one artist back to back reads as the mix running out of ideas (#51).
+            // Hold this one back instead — but only while there is something else to play, which is
+            // what keeps a single-artist prompt working without having to recognise one.
+            if (ArtistSpread.SameArtist(track.Artist, LastQueuedArtist()) && _deferred.Count < MaxDeferred)
+            {
+                _deferred.Add(track);
+                AppLog.Debug($"[DjQueue] holding \"{track.Artist} - {track.Title}\" back — "
+                             + "it would follow the same artist");
+                return;
+            }
+
+            _local.Append([track]);
+            ReleaseDeferred();
         });
+    }
+
+    /// <summary>
+    /// Songs held back because they would have followed the same artist. Capped: past this the mix
+    /// is clearly dominated by one act, and holding more would starve it rather than vary it.
+    /// </summary>
+    private readonly List<LocalTrack> _deferred = [];
+    private const int MaxDeferred = 4;
+
+    /// <summary>The artist at the end of the queue — what a newly appended track would follow.</summary>
+    private string? LastQueuedArtist()
+    {
+        var queue = _local.Queue;
+        return queue.Count == 0 ? null : queue[^1].Artist;
+    }
+
+    /// <summary>
+    /// Appends one held-back song if it no longer repeats. One at a time on purpose: releasing the
+    /// whole buffer would just rebuild the run it was holding apart.
+    /// </summary>
+    private void ReleaseDeferred()
+    {
+        if (_deferred.Count == 0)
+            return;
+
+        var last = LastQueuedArtist();
+        var at = _deferred.FindIndex(t => !ArtistSpread.SameArtist(t.Artist, last));
+        if (at < 0)
+            return;
+
+        var track = _deferred[at];
+        _deferred.RemoveAt(at);
+        _local.Append([track]);
+    }
+
+    /// <summary>
+    /// Lets everything held back through, in order. Called when the queue is short enough that
+    /// variety is no longer the problem — silence is. Nothing is ever dropped for being a repeat;
+    /// it is only ever postponed.
+    /// </summary>
+    private void FlushDeferred()
+    {
+        if (_deferred.Count == 0)
+            return;
+
+        AppLog.Debug($"[DjQueue] releasing {_deferred.Count} held-back song(s) — the queue is short");
+        _local.Append(ArtistSpread.Spread(_deferred, t => t.Artist, LastQueuedArtist()));
+        _deferred.Clear();
     }
 
     // Checked on every track change (auto-advance or crossfade) — cheap, and exactly the moment
@@ -185,7 +256,15 @@ public sealed class DjQueueService : IDisposable
     private void OnLocalTrackChanged(object? sender, (LocalTrack Track, int Index) e)
     {
         var remaining = _local.QueueCount - e.Index - 1;
-        if (remaining >= _lowWatermark || _topUpInFlight || _libraryExhausted || string.IsNullOrEmpty(_prompt))
+        if (remaining >= _lowWatermark)
+            return;
+
+        // Below the watermark, variety stops being the problem and silence starts being one, so
+        // anything held back for repeating an artist goes in now (#51). Before the library top-up,
+        // because these are already on disk and it is a network round trip.
+        FlushDeferred();
+
+        if (_topUpInFlight || _libraryExhausted || string.IsNullOrEmpty(_prompt))
             return;
         _ = TopUpFromLibraryAsync();
     }
@@ -209,7 +288,7 @@ public sealed class DjQueueService : IDisposable
                 fresh.Add(new LocalTrack(song.Path, song.Title, song.Artist, FormatFromExtension(song.Path), song.Reason));
             }
             if (fresh.Count > 0)
-                _local.Append(fresh);
+                _local.Append(ArtistSpread.Spread(fresh, t => t.Artist, LastQueuedArtist()));
             else
                 _libraryExhausted = true; // nothing new for this prompt — pause top-ups until the library grows
         }

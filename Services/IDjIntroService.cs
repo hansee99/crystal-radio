@@ -76,6 +76,20 @@ public interface IDjIntroService
     Task<DjPatter?> GetSessionPatterAsync(string? vibe, CancellationToken ct = default);
 
     /// <summary>
+    /// One line marking the listener changing their mind mid-session (#52), or null if it couldn't
+    /// be produced.
+    ///
+    /// <para>Deliberately not part of <see cref="GetSessionPatterAsync"/>'s pre-generated set: those
+    /// are written when a session starts, when the vibe it might change TO is unknown, so a
+    /// pre-generated line could only say something generic about change. This one is given both
+    /// vibes and can actually be about the turn — which is the whole point of remarking on it.</para>
+    ///
+    /// <para>One small call, and only when the listener does something rare and deliberate.</para>
+    /// </summary>
+    Task<string?> GetVibeChangeLineAsync(string? previousVibe, string newVibe,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Returns a short intro line for the track, or null if one couldn't be produced. Results are
     /// cached per session keyed by title+artist (a low-watermark library top-up can replay the
     /// same song within a session). Cancellable so a fast track change can abort an in-flight call.

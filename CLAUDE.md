@@ -580,7 +580,7 @@ popup). Separate from station *search* — it explains what's already playing.
   stripping). Two tiers: a Haiku-class model for one-shot translation/description/judging
   (interpreter, ranker, enrichment, song descriptions) and a Sonnet-class model for multi-step
   or listener-audible judgment (Pattern B agent loop, track briefings, song curation, **DJ intro
-  lines**). Verify current ids/pricing at https://docs.claude.com/en/api/overview when bumping.
+  lines**, and the vibe-change remark). Verify current ids/pricing at https://docs.claude.com/en/api/overview when bumping.
   *(DJ intro lines moved Haiku → Sonnet: they had been tiered by shape — a one-shot description —
   but the rule is about purpose, and a spoken-style line the listener reads on every track change
   is the most listener-audible prose in the app. One small call per song.)*

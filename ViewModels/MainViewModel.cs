@@ -2417,6 +2417,45 @@ public sealed class MainViewModel : ObservableObject
     /// screen, so this upgrades them when it lands and changes nothing if it never does. Also
     /// re-speaks the current moment, since the fallback is probably showing by the time it arrives.
     /// </summary>
+    /// <summary>
+    /// Puts a line about the change on the panel (#52). Shows a fallback at once so the panel never
+    /// sits on a remark about the vibe the listener has just abandoned, then replaces it when the
+    /// model answers — which is usually well inside the time sourcing takes.
+    /// </summary>
+    private void SpeakVibeChange(string? previousVibe, string newVibe)
+    {
+        // Clear the moment so the next genuine one still speaks: without this, SpeakMoment's
+        // no-op guard would suppress a repeat of whatever was showing before the change.
+        _currentMoment = null;
+        DjIntroLine = "Changing things up — finding stations for that now.";
+
+        if (!_djIntro.IsConfigured)
+            return;
+
+        var ct = _djStartCts?.Token ?? default;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var line = await _djIntro.GetVibeChangeLineAsync(previousVibe, newVibe, ct)
+                    .ConfigureAwait(true);
+                // Only if nothing has spoken since: a track can start, or the mix can bridge, while
+                // this is in flight, and overwriting that with an announcement about a change the
+                // listener has already heard about would be a step backwards.
+                if (!string.IsNullOrWhiteSpace(line) && !ct.IsCancellationRequested && _currentMoment is null)
+                    DjIntroLine = line;
+            }
+            catch (OperationCanceledException)
+            {
+                // Session stopped or vibe changed again — nothing to say about it.
+            }
+            catch (Exception ex)
+            {
+                AppLog.Debug($"[Dj] vibe-change line failed: {ex.Message}");
+            }
+        });
+    }
+
     private void LoadSessionPatterInBackground(string vibe, CancellationToken ct)
     {
         if (!_djIntro.IsConfigured)
@@ -2611,11 +2650,16 @@ public sealed class MainViewModel : ObservableObject
 
         IsChangingDjVibe = true;
         DjError = null;
+        var previousVibe = DjSessionVibe;
         try
         {
             // Immediate: the next library top-up should already follow the new vibe, even while
             // the pool is still being sourced.
             _djQueue.ChangeVibe(prompt);
+
+            // The DJ marks the turn while the new pool is being sourced — which takes five to
+            // thirty seconds, so the line is also what fills that wait (#52).
+            SpeakVibeChange(previousVibe, prompt);
 
             var swapped = await _djHarvest.ChangeVibeAsync(prompt, _djStartCts?.Token ?? default)
                 .ConfigureAwait(true);
@@ -2630,6 +2674,10 @@ public sealed class MainViewModel : ObservableObject
             DjSessionVibe = prompt;
             IsEditingDjVibe = false;    // the card goes back to showing the new vibe as text
             RefreshDjSessionMeta();
+
+            // The patter set was written for the OLD vibe, so without this the DJ spends the rest
+            // of the session describing music the listener has just moved on from.
+            LoadSessionPatterInBackground(prompt, _djStartCts?.Token ?? default);
         }
         catch (OperationCanceledException)
         {
