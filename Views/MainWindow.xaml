@@ -478,7 +478,7 @@
                                  and the progress line, so the two can't narrate in parallel. -->
                             <DockPanel DockPanel.Dock="Top" Margin="2,0,0,8">
                                 <!-- Regenerate: fetch a different set for the same prompt -->
-                                <Button DockPanel.Dock="Right" Style="{StaticResource AboutLinkButton}"
+                                <Button DockPanel.Dock="Right" Style="{StaticResource CardPillButton}"
                                         Content="Find six more" Command="{Binding RegenerateSearchCommand}"
                                         ToolTip="Fetch a fresh set of stations for this prompt"
                                         VerticalAlignment="Center" Margin="8,0,0,0"

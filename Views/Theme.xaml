@@ -589,14 +589,27 @@
                             Background="{StaticResource TealTint10}"
                             BorderBrush="{StaticResource TealBorder35}" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
-                            <Path Data="{TemplateBinding Tag}" Stretch="Uniform" Width="12" Height="12"
+                            <!-- The gap lives on the icon, not the label, so collapsing the icon
+                                 takes the spacing with it. -->
+                            <Path x:Name="icon" Data="{TemplateBinding Tag}" Stretch="Uniform"
+                                  Width="12" Height="12" Margin="0,0,6,0"
                                   Fill="#FF62D2C4" VerticalAlignment="Center"/>
-                            <TextBlock Text="{TemplateBinding Content}" Margin="6,0,0,0" FontSize="11.5"
+                            <TextBlock Text="{TemplateBinding Content}" FontSize="11.5"
                                        FontWeight="SemiBold" Foreground="{StaticResource TealText}"
                                        VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <!-- Tag="{x:Null}" gives a label-only pill. Used by Cancel: it needs to read
+                             as a button of the same family, but a sparkle would advertise it as an
+                             AI action, and every stroke-style geometry (CloseGeometry included)
+                             renders as nothing under Fill. Same reasoning as GhostPillButton's. -->
+                        <Trigger Property="Tag" Value="{x:Null}">
+                            <Setter TargetName="icon" Property="Visibility" Value="Collapsed"/>
+                            <!-- The 9/11 asymmetry exists to sit the icon closer to the left edge;
+                                 with no icon it just reads as an off-centre label. -->
+                            <Setter TargetName="b" Property="Padding" Value="11,4,11,5"/>
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="b" Property="Background" Value="{StaticResource TealTint16}"/>
                             <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Teal}"/>
@@ -954,9 +967,9 @@
             <StackPanel DockPanel.Dock="Top" Margin="2,4,2,0">
                 <ItemsControl ItemsSource="{Binding Stages}"
                               ItemTemplate="{StaticResource ProgressStageRow}"/>
-                <Button Style="{StaticResource AboutLinkButton}" Content="Cancel"
+                <Button Style="{StaticResource CardPillButton}" Content="Cancel" Tag="{x:Null}"
                         Command="{Binding CancelCommand}" HorizontalAlignment="Left"
-                        Margin="21,2,0,0"
+                        Margin="21,8,0,0"
                         Visibility="{Binding CanCancel, Converter={StaticResource BoolToVis}}"/>
             </StackPanel>
             <ContentControl DockPanel.Dock="Top" Template="{StaticResource SkeletonRows}"
