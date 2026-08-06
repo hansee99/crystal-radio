@@ -321,27 +321,13 @@ public sealed class EnrichmentStore : IDisposable
                 );
                 """);
 
-            var present = ExistingColumns();
-            foreach (var (column, ddl) in AddedColumns)
-                if (!present.Contains(column))
-                    Execute(ddl);
+            SqliteSchema.AddMissingColumns(_connection, "stations", AddedColumns);
 
             Execute($"PRAGMA user_version={SchemaVersion};");
         }
     }
 
     /// <summary>The column names the stations table actually has right now.</summary>
-    private HashSet<string> ExistingColumns()
-    {
-        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = "PRAGMA table_info(stations);";
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
-            columns.Add(reader.GetString(1));   // 1 = name
-        return columns;
-    }
-
     private void Execute(string sql)
     {
         using var cmd = _connection.CreateCommand();

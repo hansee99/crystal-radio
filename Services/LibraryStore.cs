@@ -254,39 +254,40 @@ public sealed class LibraryStore : IDisposable
         r.IsDBNull(7) ? null : r.GetString(7),
         Enum.Parse<SongSource>(r.GetString(8)));
 
+    /// <summary>
+    /// Columns added after v1, each with the ALTER that introduces it. Driven by what the database
+    /// actually has rather than by <c>user_version</c> — see <see cref="SqliteSchema"/> for why.
+    /// </summary>
+    private static readonly (string Column, string Ddl)[] AddedColumns =
+    [
+        // v1→v2: DJ-mode harvesting needs to tell apart songs the user explicitly saved from ones
+        // it indexed on its own, without touching any existing row's data — every pre-existing row
+        // is, by definition, something the user saved.
+        ("source", "ALTER TABLE songs ADD COLUMN source TEXT NOT NULL DEFAULT 'UserSaved';"),
+    ];
+
     private void EnsureSchema()
     {
         lock (_lock)
         {
-            var version = Convert.ToInt64(ExecuteScalar("PRAGMA user_version;"));
-            if (version >= SchemaVersion)
-                return;
+            // Only the ORIGINAL v1 shape — everything since is an ALTER below, so a fresh database
+            // and an upgraded one end up structurally identical.
+            Execute("""
+                CREATE TABLE IF NOT EXISTS songs (
+                    path            TEXT PRIMARY KEY NOT NULL,
+                    title           TEXT NOT NULL,
+                    artist          TEXT NOT NULL,
+                    station         TEXT,
+                    codec           TEXT NOT NULL,
+                    saved_at        TEXT NOT NULL,
+                    description     TEXT,        -- AI-derived song/artist profile
+                    facets          TEXT,        -- JSON: genres/moods/era
+                    embedding       BLOB,        -- L2-normalized float32 vector
+                    embedding_model TEXT         -- model id the vector came from
+                );
+                """);
 
-            if (version == 0)
-            {
-                Execute("""
-                    CREATE TABLE IF NOT EXISTS songs (
-                        path            TEXT PRIMARY KEY NOT NULL,
-                        title           TEXT NOT NULL,
-                        artist          TEXT NOT NULL,
-                        station         TEXT,
-                        codec           TEXT NOT NULL,
-                        saved_at        TEXT NOT NULL,
-                        description     TEXT,        -- AI-derived song/artist profile
-                        facets          TEXT,        -- JSON: genres/moods/era
-                        embedding       BLOB,        -- L2-normalized float32 vector
-                        embedding_model TEXT,        -- model id the vector came from
-                        source          TEXT NOT NULL DEFAULT 'UserSaved' -- UserSaved | Harvested
-                    );
-                    """);
-            }
-            else if (version == 1)
-            {
-                // v1→v2: DJ-mode harvesting needs to tell apart songs the user explicitly saved
-                // from ones it indexed on its own, without touching any existing row's data —
-                // every pre-existing row is, by definition, something the user saved.
-                Execute("ALTER TABLE songs ADD COLUMN source TEXT NOT NULL DEFAULT 'UserSaved';");
-            }
+            SqliteSchema.AddMissingColumns(_connection, "songs", AddedColumns);
             Execute($"PRAGMA user_version={SchemaVersion};");
         }
     }
