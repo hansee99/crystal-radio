@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using RadioPlayer.Services;
 using RadioPlayer.ViewModels;
 
@@ -103,7 +104,8 @@ public partial class MainWindow : Window
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new SongHistoryStore(), _recorder,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
-            semanticSearch, ranker, trackInfo, lyrics, notifications, songLibrary, _localEngine, curator, _djHarvest, _djIntro);
+            semanticSearch, ranker, trackInfo, lyrics, notifications, songLibrary, _localEngine, curator, _djHarvest, _djIntro,
+            new ConfirmDialogService(this));   // asks before a mode switch throws something away (#46)
         DataContext = _viewModel;
         _viewModel.DjNotificationsEnabled = _settingsStore.Load().DjNotificationsEnabled;
 
@@ -155,6 +157,32 @@ public partial class MainWindow : Window
         // active engine when the player mode changes.
         _viewModel.SetNowPlayingSink((title, artist) => _smtc.SetNowPlaying(title, artist));
         _viewModel.ActiveEngineChanged += engine => _smtc.SetActiveEngine(engine);
+
+        ShowWelcomeOnFirstRun();
+    }
+
+    /// <summary>
+    /// First run only (#50). Dispatched rather than shown inline: this runs during
+    /// OnSourceInitialized, before the window has painted, and a modal opening over a blank shell
+    /// looks like a crash dialog rather than a welcome.
+    /// </summary>
+    private void ShowWelcomeOnFirstRun()
+    {
+        if (_settingsStore.Load().HasSeenWelcome)
+            return;
+
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+        {
+            // Written before the dialog opens, not after: if anything here throws, or the app is
+            // closed from the welcome itself, the alternative is greeting them again every launch.
+            var settings = _settingsStore.Load();
+            settings.HasSeenWelcome = true;
+            _settingsStore.Save(settings);
+
+            var welcome = new WelcomeDialog { Owner = this };
+            if (ShowDialogSafely(() => welcome) == true && welcome.OpenOptions)
+                Options_Click(this, new RoutedEventArgs());
+        });
     }
 
     protected override void OnClosed(EventArgs e)

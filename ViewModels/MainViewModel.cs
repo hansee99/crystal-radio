@@ -28,6 +28,7 @@ public sealed class MainViewModel : ObservableObject
     }
 
     private readonly IStationDialog _stationDialog;
+    private readonly IConfirmDialog? _confirmDialog;
     private readonly IPromptInterpreter _interpreter;
     private readonly IStationSearchService _searchService;
     private readonly IAgenticSearchService _agenticSearch;
@@ -114,7 +115,10 @@ public sealed class MainViewModel : ObservableObject
         ISemanticSearchService semanticSearch, ISearchRanker ranker, ITrackInfoService trackInfoService,
         ILyricsService lyricsService, INotificationService notifications,
         ISongLibraryService songLibrary, LocalPlaybackEngine local, ISongCurator curator,
-        DjHarvestService djHarvest, IDjIntroService djIntro)
+        DjHarvestService djHarvest, IDjIntroService djIntro,
+        // Last and optional: every existing test constructs this by position, and a view model with
+        // no way to ask simply doesn't (see ConfirmLeavingMode).
+        IConfirmDialog? confirmDialog = null)
     {
         _dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
         _engine = engine;
@@ -123,6 +127,7 @@ public sealed class MainViewModel : ObservableObject
         _historyStore = historyStore;
         _recorder = recorder;
         _stationDialog = stationDialog;
+        _confirmDialog = confirmDialog;
         _interpreter = interpreter;
         _searchService = searchService;
         _agenticSearch = agenticSearch;
@@ -1893,6 +1898,57 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Asks before a mode switch throws something away (#46). True to go ahead.
+    ///
+    /// <para>The pills look like tabs and behave like a power switch: whatever is playing stops,
+    /// and a DJ session stops for good — its harvesters, its queue and everything it has collected
+    /// toward the next songs. Someone who has not learned that yet finds out by losing it.</para>
+    ///
+    /// <para>Nothing to lose, no prompt: silence, or a mode switch the listener can undo by
+    /// pressing the pill back and hitting play. And the whole thing is switchable off, because a
+    /// prompt on the app's most-used control is friction for anyone who already knows.</para>
+    /// </summary>
+    private bool ConfirmLeavingMode(PlayerMode target)
+    {
+        if (_confirmDialog is null || !_settingsStore.Load().ConfirmModeSwitch)
+            return true;
+
+        var endingSession = _mode == PlayerMode.Dj && IsDjRunning;
+        if (!endingSession && !IsPlaying)
+            return true;   // nothing would be interrupted
+
+        var request = endingSession
+            ? new ConfirmRequest(
+                "End the DJ session?",
+                $"Switching to {Describe(target)} ends this session. The mix stops and the stations "
+                + "it is collecting from are dropped — starting again means finding and connecting "
+                + "to them from scratch.",
+                "End session", "Keep listening", OfferToSuppress: true)
+            : new ConfirmRequest(
+                "Stop playback?",
+                $"Switching to {Describe(target)} stops what is playing.",
+                "Switch", "Keep listening", OfferToSuppress: true);
+
+        var result = _confirmDialog.Ask(request);
+        // Only on a yes: someone who backed out has said nothing about whether they want to be
+        // asked next time, and reading a "no" as "stop asking" would disable the guard by refusing it.
+        if (result.Confirmed && result.Suppress)
+        {
+            var settings = _settingsStore.Load();
+            settings.ConfirmModeSwitch = false;
+            _settingsStore.Save(settings);
+        }
+        return result.Confirmed;
+    }
+
+    private static string Describe(PlayerMode mode) => mode switch
+    {
+        PlayerMode.Radio => "Radio",
+        PlayerMode.Library => "Library",
+        _ => "DJ mode"
+    };
+
     public bool IsRadioMode => _mode == PlayerMode.Radio;
     public bool IsLibraryMode => _mode == PlayerMode.Library;
     public bool IsDjMode => _mode == PlayerMode.Dj;
@@ -1936,6 +1992,16 @@ public sealed class MainViewModel : ObservableObject
     private void SetMode(PlayerMode mode)
     {
         if (_mode == mode) return;
+
+        if (!ConfirmLeavingMode(mode))
+        {
+            // The pills are OneWay-bound but a RadioButton checks ITSELF on click, so the one they
+            // pressed is now lit for a mode we did not switch to. Re-raising puts it back.
+            OnPropertyChanged(nameof(IsRadioMode));
+            OnPropertyChanged(nameof(IsLibraryMode));
+            OnPropertyChanged(nameof(IsDjMode));
+            return;
+        }
 
         _searchCts?.Cancel(); // abandon any in-flight station search — its panel is going away
         if (_mode == PlayerMode.Dj) StopDj();

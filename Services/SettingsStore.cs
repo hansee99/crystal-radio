@@ -173,6 +173,22 @@ public sealed class AppSettings
     public bool DjNotificationsEnabled { get; set; } = true;
 
     /// <summary>
+    /// Whether to ask before a mode switch stops what is playing (#46).
+    ///
+    /// <para>On by default because the person it protects is the one who does not yet know that
+    /// the pills are exclusive — and off after they say so, because by then the dialog is pure
+    /// friction on the app's most-used control.</para>
+    /// </summary>
+    public bool ConfirmModeSwitch { get; set; } = true;
+
+    /// <summary>
+    /// Set once the welcome has been shown (#50). Deliberately not a version number: this is an
+    /// introduction for someone who has never seen the app, not release notes, and showing it
+    /// again after an upgrade would be showing it to the wrong person.
+    /// </summary>
+    public bool HasSeenWelcome { get; set; }
+
+    /// <summary>
     /// Bumped whenever a default changes in a way an existing settings file should adopt. Without
     /// it a new default only reaches new installs: every existing file already has the old value
     /// written out, so the change is invisible to exactly the people running the app.

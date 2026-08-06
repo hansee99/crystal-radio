@@ -1,0 +1,65 @@
+<ctl:AppDialog x:Class="RadioPlayer.WelcomeDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctl="clr-namespace:RadioPlayer.Controls"
+        Title="Welcome" SizeToContent="WidthAndHeight"
+        Icon="/Assets/app.ico"
+        FontFamily="{StaticResource UiFont}"
+        TextElement.Foreground="{StaticResource TextBody}">
+
+    <StackPanel Margin="24,4,24,24" Width="392">
+        <StackPanel Orientation="Horizontal">
+            <Image Source="/Assets/app-256.png" Width="48" Height="48" VerticalAlignment="Top"
+                   RenderOptions.BitmapScalingMode="HighQuality"/>
+            <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="Welcome to Crystal Radio" FontSize="20" FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimary}"/>
+                <TextBlock Text="Internet radio, with a little help" FontSize="12" Margin="0,2,0,0"
+                           Foreground="{StaticResource TextMuted}"/>
+            </StackPanel>
+        </StackPanel>
+
+        <TextBlock Margin="0,18,0,0" FontSize="13" TextWrapping="Wrap" LineHeight="19"
+                   Foreground="{StaticResource TextSecondary}"
+                   Text="Three modes, along the top. Radio plays stations. Library plays songs you've saved. DJ mode builds a continuous mix for a vibe you describe, recording songs off live radio as it goes."/>
+
+        <TextBlock Margin="0,14,0,0" FontSize="13" FontWeight="SemiBold"
+                   Foreground="{StaticResource TextPrimary}"
+                   Text="What the AI does"/>
+
+        <TextBlock Margin="0,6,0,0" FontSize="13" TextWrapping="Wrap" LineHeight="19"
+                   Foreground="{StaticResource TextSecondary}"
+                   Text="Describe what you want — &quot;mellow jazz for late-night coding&quot; — and it finds real, playable stations. It never invents a station: every result comes from a public directory, and the AI only translates what you asked for and judges what fits. It also writes the DJ's between-track lines and can tell you about the track you're hearing."/>
+
+        <Border Style="{StaticResource DialogNoteBlock}" Margin="0,16,0,0">
+            <StackPanel>
+                <TextBlock Style="{StaticResource DialogNoteText}" TextWrapping="Wrap"
+                           Text="Those features need an Anthropic API key. Radio playback, your library and the station list all work without one — but search, DJ mode and track info stay switched off until you add it."/>
+                <TextBlock Margin="0,10,0,0" FontSize="12.5" TextWrapping="Wrap" LineHeight="18"
+                           Foreground="{StaticResource TextSecondary}">
+                    <Run Text="1."/>
+                    <Run Text="Create a key at"/>
+                    <!-- Styled on the element rather than by an implicit Hyperlink style: WPF's
+                         default is system blue, which is the "landed like a different application"
+                         problem AppDialog exists to fix, and this is the app's only link. -->
+                    <Hyperlink NavigateUri="https://console.anthropic.com/settings/keys"
+                               RequestNavigate="OnNavigate"
+                               Foreground="{StaticResource Teal}" TextDecorations="Underline"
+                               Cursor="Hand">console.anthropic.com</Hyperlink>
+                    <LineBreak/>
+                    <Run Text="2. Paste it into Options → API key."/>
+                </TextBlock>
+                <TextBlock Margin="0,8,0,0" FontSize="11.5" TextWrapping="Wrap" LineHeight="17"
+                           Foreground="{StaticResource TextMuted}"
+                           Text="The key is stored encrypted on this machine and sent only to Anthropic. Usage is billed to your own account; ordinary listening costs very little."/>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+            <Button Content="Not now" Style="{StaticResource DialogGhostButton}"
+                    IsCancel="True" Click="OnClose"/>
+            <Button Content="Open Options" Style="{StaticResource DialogPrimaryButton}"
+                    IsDefault="True" Margin="10,0,0,0" Click="OnOpenOptions"/>
+        </StackPanel>
+    </StackPanel>
+</ctl:AppDialog>
