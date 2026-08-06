@@ -1563,18 +1563,53 @@ public sealed class MainViewModel : ObservableObject
     // queue for library/DJ (both share LocalPlaybackEngine's queue).
     private void Next()
     {
+        // While the DJ bridge is live the active engine is the radio one, so this used to fall
+        // through to the user's own saved stations and jump the listener to Radio Paradise
+        // mid-session (#49). Skipping here means "a different station from this vibe's pool".
+        if (_djWarmingUp) { BridgeToNextPoolStation(); return; }
         if (UsesLocalEngine) _local.Next();
         else NextStation();
     }
 
     private void Prev()
     {
+        // Deliberately the same direction: the pool has no meaningful order to walk backwards
+        // through — it is ranked, not sequenced — and "somewhere else in this vibe" is what both
+        // buttons can honestly offer while bridging.
+        if (_djWarmingUp) { BridgeToNextPoolStation(); return; }
         if (UsesLocalEngine) _local.Previous();
         else PrevStation();
     }
 
-    private bool CanGoNext() => UsesLocalEngine ? _local.HasQueue : Stations.Count > 0;
-    private bool CanGoPrev() => UsesLocalEngine ? _local.HasQueue : Stations.Count > 0;
+    private bool CanGoNext() =>
+        _djWarmingUp ? _djHarvest.ActiveStationCount > 1
+        : UsesLocalEngine ? _local.HasQueue
+        : Stations.Count > 0;
+
+    private bool CanGoPrev() =>
+        _djWarmingUp ? _djHarvest.ActiveStationCount > 1
+        : UsesLocalEngine ? _local.HasQueue
+        : Stations.Count > 0;
+
+    /// <summary>
+    /// Moves the live bridge to the next station in the harvest pool. Tears the current bridge down
+    /// without a fade — the listener asked for a change and a second and a half of the station they
+    /// just rejected is not a transition — then brings the next one up the usual way.
+    /// </summary>
+    private void BridgeToNextPoolStation()
+    {
+        var next = _djHarvest.NextPoolStation(_djBridgeStation);
+        if (next is null || string.Equals(next.Url, _djBridgeStation?.Url, StringComparison.OrdinalIgnoreCase))
+            return; // nothing else connected — leave what's playing alone
+
+        AppLog.Info($"[Dj] bridge skipped to {next.Name}");
+        _engine.StateChanged -= OnDjWarmupStateChanged;
+        _engine.MetadataChanged -= OnDjWarmupMetadataChanged;
+        _engine.Stop();
+        SetDjWarmingUp(false);      // BeginDjWarmupLivePlayback re-arms it, and re-subscribes
+        BeginDjWarmupLivePlayback(next);
+        RefreshDjSessionMeta();
+    }
 
     private void NextStation()
     {
@@ -1885,6 +1920,9 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasDuration));
         OnPropertyChanged(nameof(IsDjWarmingUp));
         RaiseDjIndicatorChanged();
+        // Skip means something different while bridging, and is disabled when the pool holds only
+        // the station already playing (#49).
+        RaiseTransportCanExecute();
         RefreshDjSessionMeta();
     }
 
@@ -2726,7 +2764,8 @@ public sealed class MainViewModel : ObservableObject
 
         if (_djWarmingUp)
         {
-            var station = _djHarvest.TopStation?.Name;
+            // What is actually playing, which skipping changes — not the pool's top pick.
+            var station = (_djBridgeStation ?? _djHarvest.TopStation)?.Name;
             var bridging = station is null ? "Bridging a live station" : $"Bridging {station}";
 
             // Say WHY, not just that it's bridging. These read identically to a normal cold start
@@ -2794,12 +2833,21 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private const int BridgeFadeMs = 1500;
 
-    private void BeginDjWarmupLivePlayback()
+    /// <summary>
+    /// The station the bridge is actually playing. Not the same thing as
+    /// <c>DjHarvestService.TopStation</c>, which is the pool's best-ranked one and does not move
+    /// when the listener skips — reading that for the status line is why the panel kept naming the
+    /// station it had started on (#49).
+    /// </summary>
+    private Station? _djBridgeStation;
+
+    private void BeginDjWarmupLivePlayback(Station? station = null)
     {
-        var topStation = _djHarvest.TopStation;
+        var topStation = station ?? _djHarvest.TopStation;
         if (topStation is null)
             return; // nothing rankable to play live — fall back to the existing silent warm-up
 
+        _djBridgeStation = topStation;
         SetDjWarmingUp(true);
         _engine.FadeInNextStream(BridgeFadeMs); // arm the ramp before Play creates the stream
         NowPlayingTitle = "Connecting...";
@@ -2855,6 +2903,7 @@ public sealed class MainViewModel : ObservableObject
         if (fade) _engine.FadeOutAndStop(BridgeFadeMs);
         else _engine.Stop();
 
+        _djBridgeStation = null;   // the bridge is over; the next one re-picks from the pool
         SetDjWarmingUp(false);
         // Repoint SMTC immediately rather than when the fade ends: the local engine is the one
         // playing the track the listener is now hearing, and the station is on its way out.

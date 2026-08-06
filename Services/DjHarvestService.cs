@@ -1121,6 +1121,56 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         return new SourcingResult(relevant, directoryDown);
     }
 
+    /// <summary>
+    /// The next station in the live harvest pool after <paramref name="current"/>, wrapping, or
+    /// null when nothing is connected.
+    ///
+    /// <para>For skipping during a live bridge (#49). The pool is the right list to move along
+    /// there: those are the stations chosen for this vibe, and one of them is what the listener is
+    /// hearing — whereas the transport's normal "next" walks the user's own saved stations, which
+    /// have nothing to do with the session and jump the listener somewhere unrelated.</para>
+    /// </summary>
+    public Station? NextPoolStation(Station? current)
+    {
+        lock (_activeLock)
+            return NextInPool(_active.Select(h => h.Station).ToList(), current);
+    }
+
+    /// <summary>
+    /// The cycling itself, pure so the wrap and the awkward cases can be tested without a live
+    /// pool — harvesters only exist while connected to real streams.
+    ///
+    /// <para>A <paramref name="current"/> that is not in the pool starts from the beginning rather
+    /// than returning nothing: a station can be retired out from under the bridge at any moment,
+    /// and "the station you were on is gone" is not a reason to refuse to move.</para>
+    /// </summary>
+    internal static Station? NextInPool(IReadOnlyList<Station> pool, Station? current)
+    {
+        if (pool is null || pool.Count == 0)
+            return null;
+
+        var at = -1;
+        if (current is not null)
+        {
+            for (var i = 0; i < pool.Count; i++)
+            {
+                if (string.Equals(pool[i].Url, current.Url, StringComparison.OrdinalIgnoreCase))
+                {
+                    at = i;
+                    break;
+                }
+            }
+        }
+        return pool[(at + 1) % pool.Count];
+    }
+
+    /// <summary>How many stations are connected right now — what makes "skip" meaningful while
+    /// bridging.</summary>
+    public int ActiveStationCount
+    {
+        get { lock (_activeLock) return _active.Count; }
+    }
+
     // --- Mid-session top-up (#41) ---------------------------------------------
 
     /// <summary>Starts (or restarts, on a vibe change) the bookkeeping a top-up needs: the prompt to

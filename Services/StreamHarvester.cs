@@ -126,10 +126,19 @@ public sealed class StreamHarvester : IDisposable
     /// DjHarvestService) — PoC testing found stations' true metadata lead is near zero, and the
     /// residual talk/next-song bleed this leaves is cleaned up downstream by
     /// SegmentQualityChecker's edge-trim rather than chased via a larger offset.</param>
+    /// <summary>
+    /// The station this harvester is listening to, as a playable <see cref="Station"/>. The harvest
+    /// connection is headless, but the same station can also be opened for real — DJ mode bridges
+    /// live to one of them when the mix runs dry, and skipping moves along this pool rather than
+    /// the user's own station list (#49).
+    /// </summary>
+    public Station Station { get; }
+
     public StreamHarvester(string label, string url, StreamFormat format, string cacheDir,
         double offsetSeconds, Dispatcher dispatcher)
     {
         Label = label;
+        Station = new Station(label, url, format);
         _url = url;
         _format = format;
         _dispatcher = dispatcher;
