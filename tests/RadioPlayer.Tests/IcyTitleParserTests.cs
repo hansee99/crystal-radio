@@ -134,4 +134,58 @@ public class IcyTitleParserTests
     {
         Assert.Null(IcyTitleParser.Split("Beethoven Symphony No. 5").Artist);
     }
+
+    // --- Tilde-delimited playout records ------------------------------------------------------
+    //
+    // Virgin Radio Rockstar sends a whole record where a title belongs. Two of its fields — a
+    // "now" timestamp and elapsed seconds — change on every metadata push, so treating the payload
+    // as the title made every push look like a new song: 39 cuts in ten minutes on 2026-08-06, 34
+    // of them rejected as too short, and not one completed song.
+
+    private const string Record =
+        "Not Now John~Pink Floyd~~1983~~287~2026-05-08T08:35:40~2026-05-08T08:35:43~United Music Pink Floyd~3.26~dcbd2283-b76d-4e6a-ab4c-c4cc92affafc";
+
+    private const string RecordLater =
+        "Not Now John~Pink Floyd~~1983~~287~2026-05-08T08:35:40~2026-05-08T08:36:13~United Music Pink Floyd~33.14~dcbd2283-b76d-4e6a-ab4c-c4cc92affafc";
+
+    [Fact]
+    public void ReadsTitleAndArtistFromATildeDelimitedRecord()
+    {
+        var (artist, title) = IcyTitleParser.Split(Record);
+
+        Assert.Equal("Pink Floyd", artist);
+        Assert.Equal("Not Now John", title);
+    }
+
+    /// <summary>
+    /// The whole point: the same song announced 30 seconds later must parse identically, or
+    /// boundary detection cuts a new segment every push.
+    /// </summary>
+    [Fact]
+    public void TheSameSongParsesIdenticallyAsItsVolatileFieldsChange()
+    {
+        Assert.NotEqual(Record, RecordLater);   // the payloads really do differ
+        Assert.Equal(IcyTitleParser.Split(Record), IcyTitleParser.Split(RecordLater));
+    }
+
+    /// <summary>A record whose second field is empty still yields a usable title and no invented
+    /// artist — inventing one is how an ident gets through as a song.</summary>
+    [Fact]
+    public void ARecordWithNoArtistFieldYieldsNoArtist()
+    {
+        var (artist, title) = IcyTitleParser.Split("Some Ident~~~~~~");
+
+        Assert.Null(artist);
+        Assert.Equal("Some Ident", title);
+    }
+
+    /// <summary>An ordinary title carrying a tilde or two is not a record, and must still split on
+    /// its real separator.</summary>
+    [Theory]
+    [InlineData("Alice Cooper - Wish You Were Here ~ live", "Alice Cooper", "Wish You Were Here ~ live")]
+    [InlineData("Some Artist - A ~ B ~ C", "Some Artist", "A ~ B ~ C")]
+    public void DoesNotTreatAnOccasionalTildeAsARecord(string raw, string artist, string title)
+    {
+        Assert.Equal((artist, title), IcyTitleParser.Split(raw));
+    }
 }

@@ -48,8 +48,30 @@ public class HarvesterRetirementTests
     [Fact]
     public void AStationThatStoppedProducing_IsDroppedEvenThoughItDeliveredEarlier()
     {
-        // Stalled stream that never raised an error.
-        Assert.True(Retire(titlesSeen: 12, connectedMinutesAgo: 60, lastSegmentMinutesAgo: 16, out var reason));
+        // Stalled stream that never raised an error. Past twice the limit, which is the patience a
+        // station earns by having delivered at all.
+        Assert.True(Retire(titlesSeen: 12, connectedMinutesAgo: 60, lastSegmentMinutesAgo: 31, out var reason));
+        Assert.Equal("stopped producing", reason);
+    }
+
+    /// <summary>
+    /// The art-rock case, from the session of 2026-08-06: Radio Caprice delivered a song and was
+    /// retired 10:12 later for "no songs" on a 10-minute limit. One prog track is that long, so a
+    /// station that has proved it produces must be given room for the next one.
+    /// </summary>
+    [Fact]
+    public void AStationThatDeliveredIsGivenLongerBeforeItsNextSong()
+    {
+        Assert.False(Retire(titlesSeen: 12, connectedMinutesAgo: 60, lastSegmentMinutesAgo: 16, out _));
+        Assert.False(Retire(titlesSeen: 12, connectedMinutesAgo: 60, lastSegmentMinutesAgo: 29, out _));
+    }
+
+    /// <summary>The extra patience is earned by delivering, not by merely being connected a while:
+    /// a station that has produced nothing still goes at the flat limit.</summary>
+    [Fact]
+    public void AStationThatNeverDeliveredGetsNoExtraPatience()
+    {
+        Assert.True(Retire(titlesSeen: 12, connectedMinutesAgo: 16, lastSegmentMinutesAgo: null, out var reason));
         Assert.Equal("no songs", reason);
     }
 

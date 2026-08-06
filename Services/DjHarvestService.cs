@@ -524,17 +524,39 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             return true;
         }
 
-        // Nothing produced yet? Measure from when we connected, not from MinValue.
-        var since = lastSegmentAt == default ? connectedAt : lastSegmentAt;
-        if (now - since > idleLimit)
+        // A station that has already delivered has answered the question this rule asks. Silence
+        // from it is far more likely to be one long track than a dead slot, so it gets longer —
+        // see ProvenIdleMultiplier.
+        var hasDelivered = lastSegmentAt != default;
+        var since = hasDelivered ? lastSegmentAt : connectedAt;
+        var limit = hasDelivered ? idleLimit * ProvenIdleMultiplier : idleLimit;
+
+        if (now - since > limit)
         {
-            reason = "no songs";
+            reason = hasDelivered ? "stopped producing" : "no songs";
             return true;
         }
 
         reason = "";
         return false;
     }
+
+    /// <summary>
+    /// How much longer a station that has already produced a segment may stay quiet before losing
+    /// its slot.
+    ///
+    /// <para>The flat limit is a reasonable question to ask a station that has produced
+    /// <i>nothing</i> — it may not announce titles at all, and the slot is better spent. It is the
+    /// wrong question for one that has already delivered: on 2026-08-06 an art-rock session set
+    /// <c>DjStationIdleMinutes</c> to 10, and Radio Caprice delivered a song and was then retired
+    /// 10:12 later for "no songs". In prog and art rock a single track <i>is</i> ten minutes of
+    /// silence. Three of the four slots churned that way inside half an hour, and since every
+    /// replacement loses its first partial song to "joined mid-song", the churn cost more than the
+    /// stations did.</para>
+    ///
+    /// A station that has stalled for good still goes, just at twice the patience.
+    /// </summary>
+    private const int ProvenIdleMultiplier = 2;
 
     /// <summary>
     /// Pushes each live harvester's ICY title count into the session log. Cheap, and it's the

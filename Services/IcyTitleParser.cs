@@ -52,6 +52,11 @@ public static class IcyTitleParser
         if (string.IsNullOrWhiteSpace(streamTitle))
             return (null, streamTitle ?? string.Empty);
 
+        // Checked first because it is a far more specific shape than any separator below, and its
+        // trailing fields can contain them.
+        if (SplitDelimitedRecord(streamTitle) is { } record)
+            return record;
+
         foreach (var sep in Separators)
         {
             var at = streamTitle.IndexOf(sep.Text, StringComparison.OrdinalIgnoreCase);
@@ -70,6 +75,44 @@ public static class IcyTitleParser
 
         return (null, streamTitle.Trim());
     }
+
+    /// <summary>
+    /// Some playout systems put a whole tilde-delimited record in <c>StreamTitle</c> instead of a
+    /// title. Virgin Radio Rockstar sends:
+    /// <code>
+    /// Not Now John~Pink Floyd~~1983~~287~2026-05-08T08:35:40~2026-05-08T08:35:43~United Music Pink Floyd~3.26~dcbd2283-…
+    /// title      ~artist    ~ ~year~ ~dur~started            ~now                ~station           ~elapsed~id
+    /// </code>
+    ///
+    /// <para>Two of those fields — "now" and elapsed seconds — change on <b>every</b> metadata push
+    /// while the song plays on. Treating the payload as the title therefore reads as a new song
+    /// every few seconds: in one 10-minute stretch on 2026-08-06 that produced 39 cuts, 34 of them
+    /// rejected as too short, not a single completed song, and the station was then retired for
+    /// producing nothing. Reading the first two fields makes the identity stable, which is what
+    /// boundary detection actually depends on.</para>
+    ///
+    /// <para>Four separators minimum, so an ordinary title that happens to contain a tilde is left
+    /// to the separator rules below.</para>
+    /// </summary>
+    private static (string? Artist, string Title)? SplitDelimitedRecord(string streamTitle)
+    {
+        var fields = streamTitle.Split(RecordSeparator);
+        if (fields.Length < MinRecordFields)
+            return null;
+
+        var title = fields[0].Trim();
+        if (title.Length == 0)
+            return null;   // leading empty field — not the shape we know
+
+        var artist = fields[1].Trim();
+        return (artist.Length == 0 ? null : artist, Unquote(title));
+    }
+
+    private const char RecordSeparator = '~';
+
+    /// <summary>Five fields — four separators — before a string is read as a record rather than a
+    /// title. Real titles do not carry four tildes; the observed payload carries ten.</summary>
+    private const int MinRecordFields = 5;
 
     /// <summary>Strips the quotes some stations wrap a title in — Radio Eins sends
     /// <c>"Departure" von Robin Kester</c>.</summary>

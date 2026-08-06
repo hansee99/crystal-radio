@@ -162,4 +162,32 @@ public class SongHistoryFilterTests
     {
         Assert.False(SongHistoryFilter.IsLikelySong("Livestream", "HITRADIO Ö3", "ORF Hitradio Ö3 (128k MP3)"));
     }
+
+    // --- Stations named after the artist they play --------------------------------------------
+    //
+    // exclusive.radio runs one station per artist, so the artist name sits inside the station name
+    // and the ident rule fired on every track. Measured 2026-08-06: four such stations harvested
+    // nothing at all, on a prompt ("artists like David Bowie & Lou Reed") that selects exactly
+    // them. What tells the two cases apart is how much of the station name the artist accounts for
+    // — an ident is the station saying its own name and little else.
+
+    [Theory]
+    [InlineData("Bryan Ferry", "Exclusively Bryan Ferry")]
+    [InlineData("Simple Minds", "Exclusively Simple Minds")]
+    [InlineData("Kate Bush", "Exclusively Kate Bush")]
+    [InlineData("The Moody Blues", "Exclusively Moody Blues")]
+    [InlineData("Pink Floyd", "Virgin Radio Rockstar: Pink Floyd")]
+    public void KeepsSongsOnAStationNamedAfterTheArtistItPlays(string artist, string station)
+    {
+        Assert.True(SongHistoryFilter.IsLikelySong("The Price Of Love", artist, station));
+    }
+
+    /// <summary>The ident protection this rule exists for still has to work — that is the whole
+    /// tension, and it is why coverage rather than containment is the test.</summary>
+    [Fact]
+    public void StillCatchesAStationIdentifyingItself()
+    {
+        Assert.False(SongHistoryFilter.IsLikelySong("Livestream", "HITRADIO Ö3", "ORF Hitradio Ö3"));
+        Assert.False(SongHistoryFilter.IsLikelySong("Nachrichten", "Radio Paradise", "Radio Paradise"));
+    }
 }

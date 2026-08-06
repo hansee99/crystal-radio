@@ -35,6 +35,14 @@ public sealed class PromptInterpreter : IPromptInterpreter
 
         Map moods and descriptions to concise genre tags (e.g. "music for late-night coding"
         -> ["ambient","chillout"]). Prefer broad, well-known tags over niche ones.
+
+        When the request names artists, read carefully what the artists are for:
+        - "artists LIKE X and Y", "in the style of X", "X-ish" — the artists are a description of a
+          SOUND, and the listener wants a range of artists in it. Translate them into the genre and
+          era tags that characterise them, and do NOT put an artist name in "name".
+          e.g. "from artists like David Bowie & Lou Reed" -> ["art rock","glam rock","proto-punk"]
+        - "music FROM X", "songs BY X", "a X station" — the listener wants that artist specifically.
+          Using the artist name here is correct.
         """;
 
     private readonly HttpClient _http;

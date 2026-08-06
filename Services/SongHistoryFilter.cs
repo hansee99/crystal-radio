@@ -46,6 +46,14 @@ public static partial class SongHistoryFilter
     /// </summary>
     private const int MinIdentLength = 6;
 
+    /// <summary>
+    /// How much of the station's normalized name the artist must account for before the artist is
+    /// read as the station identifying itself. Measured against both real cases: the ident this
+    /// rule exists for sits at ~0.77 ("hitradioö3" inside "orfhitradioö3"), while a station named
+    /// after the artist it plays sits at ~0.48 ("bryanferry" inside "exclusivelybryanferry").
+    /// </summary>
+    private const double MinIdentCoverage = 0.65;
+
     public static bool IsLikelySong(string? title, string? artist, string? stationName)
     {
         // Real songs arrive as "Artist - Title"; idents/slogans usually have no artist part.
@@ -97,18 +105,29 @@ public static partial class SongHistoryFilter
     /// Whether <paramref name="artist"/> is really the station naming itself, allowing for
     /// abbreviation and decoration on either side.
     ///
-    /// The length floor is what keeps this honest: without it any station whose name contains a
-    /// short artist name would swallow it. It does still mean an artist whose name is a long
-    /// substring of the station's gets dropped — a genre-named station is the plausible case. That
-    /// trade is deliberate. A wrongly dropped song costs one track and is recorded in the session
-    /// log as skipped/not-song-like; a wrongly kept news bulletin costs five minutes of speech in
-    /// a music mix, and nothing downstream can catch it.
+    /// <para>Containment alone is not enough, and the cost of assuming otherwise was measured on
+    /// 2026-08-06: exclusive.radio names each of its stations after the artist it plays, so
+    /// "exclusivelybryanferry" contains "bryanferry" and <b>every single track</b> on it was
+    /// rejected as an ident. A prompt like "artists like David Bowie &amp; Lou Reed" selects exactly
+    /// those stations, so four of them harvested nothing at all.</para>
+    ///
+    /// <para>What separates the two cases is how much of the station name the artist accounts for.
+    /// An ident is the station saying its own name and little else, so the overlap is nearly total —
+    /// "hitradioö3" is 77% of "orfhitradioö3". A station named <i>after</i> an artist carries real
+    /// extra words: "bryanferry" is 48% of "exclusivelybryanferry". The threshold sits between.</para>
+    ///
+    /// The length floor still guards against a couple of incidental characters matching.
+    /// A wrongly dropped song costs one track and is logged as skipped; a wrongly kept news
+    /// bulletin costs five minutes of speech in a music mix, which nothing downstream can catch.
     /// </summary>
     private static bool IsStationIdentifyingItself(string artist, string stationName)
     {
         var a = Normalize(artist);
         var s = Normalize(stationName);
-        return a.Length >= MinIdentLength && s.Length >= MinIdentLength && s.Contains(a);
+        if (a.Length < MinIdentLength || s.Length < MinIdentLength || !s.Contains(a))
+            return false;
+
+        return (double)a.Length / s.Length >= MinIdentCoverage;
     }
 
     /// <summary>The same identity key the harvest pool compares stations with — letters and digits

@@ -32,6 +32,16 @@ public sealed class LlmSearchRanker : ISearchRanker
         Be strict: a generic, unrelated, or only-loosely-related station scores low. Only
         include candidates that genuinely match (score >= 0.5).
 
+        Some stations play a single artist and nothing else — their name usually gives them away
+        ("Exclusively Kate Bush", "Virgin Radio Rockstar: Pink Floyd", "Radio Bob Dylan"). Judge
+        them by what the request actually asked for:
+        - "artists LIKE X", "in the style of X", or a genre/mood request: the listener wants a
+          RANGE of artists. A single-artist station scores low here however well that artist fits —
+          a handful of them between them would narrow the whole session to a few discographies.
+        - "music FROM X", "songs BY X", or the artist named as the subject: a station dedicated to
+          that artist is exactly right and should score high.
+        Even then, prefer VARIETY: do not return a set in which single-artist stations dominate.
+
         Use the origin country to honour the request's geographic intent:
         - If the request names or clearly implies a specific country, region, or language,
           prefer stations that fit it and penalise ones that don't.
