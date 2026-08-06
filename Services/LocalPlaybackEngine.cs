@@ -59,6 +59,9 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
 
     private SyncProcedure? _endSync;
     private SyncProcedure? _fadeTriggerSync;
+    // The running-dry warning for the final track (#47). Rooted for the same reason as the two
+    // above: BASS keeps a native pointer to it until the channel is freed.
+    private SyncProcedure? _runningDrySync;
     private int _generation;
 
     // The stream currently fading out (0 = none) — kept alive only long enough to finish its
@@ -192,6 +195,27 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     /// whenever harvesting hasn't kept up, and silence is never the right answer to it.
     /// </summary>
     public event EventHandler? QueueExhausted;
+
+    /// <summary>
+    /// Raised <see cref="RunningDrySeconds"/> before the LAST queued track ends — a warning, where
+    /// <see cref="QueueExhausted"/> is a report.
+    ///
+    /// <para>DJ mode bridges to live radio when the mix runs out, and connecting a stream takes
+    /// seconds. Discovering the problem only once the music has stopped therefore guarantees a
+    /// silent gap, which is what made the handover sound like a hard cut (#47). Given warning, the
+    /// bridge can be connecting and rising underneath the last song instead.</para>
+    ///
+    /// <para>Fires once per track, and only for the final one in the queue — a track with another
+    /// behind it is already covered by the crossfade.</para>
+    /// </summary>
+    public event EventHandler? QueueRunningDry;
+
+    /// <summary>
+    /// How much warning <see cref="QueueRunningDry"/> gives. Enough for a station to connect,
+    /// buffer and fade in — an ICY connect is routinely two or three seconds — without being so
+    /// early that two different pieces of music overlap for long enough to be muddle.
+    /// </summary>
+    private const double RunningDrySeconds = 6.0;
 
     /// <summary>Replace the queue and start playing from <paramref name="startIndex"/>.</summary>
     public void SetQueue(IReadOnlyList<LocalTrack> tracks, int startIndex = 0)
@@ -440,6 +464,9 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         // otherwise the residue at the end of the final song plays in full.
         if (_index + 1 >= _queue.Count || duration <= MinDurationForCrossfade)
         {
+            if (_index + 1 >= _queue.Count)
+                ArmRunningDryWarning(generation, end);
+
             if (end >= duration)
                 return; // no guard in play; the natural End sync handles it
             var endBytes = Bass.ChannelSeconds2Bytes(_stream, end);
@@ -452,6 +479,48 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         var triggerBytes = Bass.ChannelSeconds2Bytes(_stream, Math.Max(0, end - FadeSeconds));
         _fadeTriggerSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => BeginCrossfade(generation));
         Bass.ChannelSetSync(_stream, SyncFlags.Position, triggerBytes, _fadeTriggerSync);
+    }
+
+    /// <summary>
+    /// Arms the one-shot <see cref="QueueRunningDry"/> warning for the final track of the queue.
+    /// Skipped when the track is already inside the warning window — firing immediately would give
+    /// the bridge no more notice than the old exhausted-after-the-fact path did, and a short last
+    /// track is exactly when the mix is most likely to refill first anyway.
+    /// </summary>
+    private void ArmRunningDryWarning(int generation, double end)
+    {
+        if (_stream == 0)
+            return;
+        var at = end - RunningDrySeconds;
+        if (at <= PositionSeconds)
+            return;
+
+        _runningDrySync = (_, _, _, _) => _dispatcher.BeginInvoke(() =>
+        {
+            // Re-check on arrival: a track appended in the meantime means the queue is no longer
+            // about to run dry, and the crossfade will handle the handover instead.
+            if (generation != _generation || _index + 1 < _queue.Count)
+                return;
+            QueueRunningDry?.Invoke(this, EventArgs.Empty);
+        });
+        Bass.ChannelSetSync(_stream, SyncFlags.Position,
+            Bass.ChannelSeconds2Bytes(_stream, at), _runningDrySync);
+    }
+
+    /// <summary>
+    /// Fades the current track to silence over <paramref name="milliseconds"/> without stopping it —
+    /// the End sync still advances or ends the queue as usual.
+    ///
+    /// <para>For the bridge handover (#47): once the station is genuinely audible, the song recedes
+    /// into it instead of stopping dead. Deliberately driven by the caller rather than armed with
+    /// the warning above, because a station that fails to connect must not leave the listener with
+    /// a faded-out song and nothing underneath it.</para>
+    /// </summary>
+    public void FadeOutCurrent(int milliseconds)
+    {
+        if (_stream == 0 || _state != PlaybackState.Playing)
+            return;
+        Bass.ChannelSlideAttribute(_stream, ChannelAttribute.Volume, 0f, Math.Max(1, milliseconds));
     }
 
     /// <summary>Positions a freshly-created stream at <see cref="IntroSkipSeconds"/>.</summary>
@@ -494,7 +563,7 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
 
         var outgoing = _stream;
         _fadeOutStream = outgoing;
-        _fadeOutKeepAlive = [_endSync, _fadeTriggerSync];
+        _fadeOutKeepAlive = [_endSync, _fadeTriggerSync, _runningDrySync];
         _fadeOutSlidedSync = (_, _, _, _) => _dispatcher.BeginInvoke(FreeFadeOutStream);
         Bass.ChannelSetSync(outgoing, SyncFlags.Slided, 0, _fadeOutSlidedSync);
         Bass.ChannelSlideAttribute(outgoing, ChannelAttribute.Volume, 0f, FadeMs);

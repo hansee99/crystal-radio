@@ -261,6 +261,9 @@ public sealed class MainViewModel : ObservableObject
         // live radio rather than going quiet. The handover back happens on its own: appending a
         // song restarts local playback, whose TrackChanged ends the bridge.
         _local.QueueExhausted += (_, _) => BridgeIfDjMixRanDry();
+        // The warning shot: bridge under the last song rather than after it (#47). When this has
+        // done its job, QueueExhausted arrives to find _djWarmingUp already true and no-ops.
+        _local.QueueRunningDry += (_, _) => OnDjMixRunningDry();
 
         // The Mix panel is Loading only while a session is actually starting up; DjProgress is
         // reset once it has, after which an empty mix means "bridging" or "collecting".
@@ -2868,6 +2871,41 @@ public sealed class MainViewModel : ObservableObject
     /// declines to pad the queue with off-vibe filler, and whenever harvesting simply falls
     /// behind playback. Silence is never the right answer to any of them.
     /// </summary>
+    /// <summary>
+    /// True between the running-dry warning and the station actually playing. Distinguishes "the
+    /// bridge was started under a song that is still going" from an ordinary bridge, which is what
+    /// decides whether the song gets faded out.
+    /// </summary>
+    private bool _djBridgePrerolling;
+
+    /// <summary>
+    /// The mix is a few seconds from running out — start the bridge NOW, while the last song is
+    /// still playing (#47).
+    ///
+    /// <para>Waiting for the queue to actually empty guaranteed a silent gap, because connecting
+    /// and buffering an ICY stream takes seconds and none of them can start until the music has
+    /// already stopped. That gap is what made the handover sound like a hard cut. Starting early
+    /// means the station is rising underneath the song instead, and the song fades into it once the
+    /// station is genuinely audible — see OnDjWarmupStateChanged.</para>
+    ///
+    /// <para>The Now Playing panel does switch to the station for those last few seconds. That is a
+    /// fair description of what is happening — both are audible, and the station is what will still
+    /// be playing a moment later.</para>
+    /// </summary>
+    private void OnDjMixRunningDry()
+    {
+        if (!IsDjMode || !IsDjRunning || _djWarmingUp)
+            return;
+
+        AppLog.Info("[Dj] mix about to run dry — connecting the bridge under the last song");
+        _seedOutcome = CurationOutcome.Ok;
+        _djBridgePrerolling = true;
+        SpeakMoment(DjMoment.Bridging);
+        BeginDjWarmupLivePlayback();
+        if (!_djWarmingUp)
+            _djBridgePrerolling = false;   // nothing to bridge to; the exhausted path will report it
+    }
+
     private void BridgeIfDjMixRanDry()
     {
         if (!IsDjMode || !IsDjRunning || _djWarmingUp)
@@ -2903,7 +2941,8 @@ public sealed class MainViewModel : ObservableObject
         if (fade) _engine.FadeOutAndStop(BridgeFadeMs);
         else _engine.Stop();
 
-        _djBridgeStation = null;   // the bridge is over; the next one re-picks from the pool
+        _djBridgeStation = null;    // the bridge is over; the next one re-picks from the pool
+        _djBridgePrerolling = false; // never leave it armed to fade a track this bridge didn't cover
         SetDjWarmingUp(false);
         // Repoint SMTC immediately rather than when the fade ends: the local engine is the one
         // playing the track the listener is now hearing, and the station is on its way out.
@@ -2913,6 +2952,15 @@ public sealed class MainViewModel : ObservableObject
     private void OnDjWarmupStateChanged(object? sender, PlaybackState state)
     {
         if (!_djWarmingUp) return;
+
+        // The station has actually arrived, so the song can now recede into it rather than stopping
+        // dead (#47). Only here, never when the bridge was merely started: a station that fails to
+        // connect must not leave a faded-out song with nothing underneath it.
+        if (state == PlaybackState.Playing && _djBridgePrerolling)
+        {
+            _djBridgePrerolling = false;
+            _local.FadeOutCurrent(BridgeFadeMs);
+        }
 
         IsPlaying = state == PlaybackState.Playing;
         OnPropertyChanged(nameof(IsBusy));
