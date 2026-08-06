@@ -45,6 +45,10 @@ public partial class App : Application
         // appear, and toasts are attributed by it. See WindowsNotificationService.
         Services.WindowsNotificationService.ApplyAppIdentity();
 
+        // Before MainWindow, which opens the enrichment database in its constructor — once that
+        // file exists, seeding would (correctly) decline to touch it.
+        Services.CatalogSeed.EnsureSeeded();
+
         base.OnStartup(e);
         new MainWindow().Show();
     }

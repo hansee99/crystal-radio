@@ -31,3 +31,6 @@ MlAssets/*.onnx
 doc/design-review/screenshots/
 doc/design-review/composites/
 doc/design-review/audit-text.txt
+
+# Installer output (build-installer.ps1)
+build/
