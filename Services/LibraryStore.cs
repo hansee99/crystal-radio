@@ -106,6 +106,24 @@ public sealed class LibraryStore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Corrects a row's title and artist (#31). Only enrichment calls this, after a repair has been
+    /// verified against the surviving characters — the row's path is its identity, so renaming the
+    /// track does not disturb the file, the embedding, or anything holding a reference to it.
+    /// </summary>
+    public void SetTrackNames(string path, string title, string artist)
+    {
+        lock (_lock)
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "UPDATE songs SET title = $title, artist = $artist WHERE path = $path;";
+            cmd.Parameters.AddWithValue("$title", title);
+            cmd.Parameters.AddWithValue("$artist", artist);
+            cmd.Parameters.AddWithValue("$path", path);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
     /// <summary>Store an L2-normalized embedding (and the model it came from) for a song.</summary>
     public void SetEmbedding(string path, float[] vector, string model)
     {

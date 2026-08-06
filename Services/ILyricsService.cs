@@ -68,4 +68,16 @@ public interface ILyricsService
     /// </param>
     Task<TrackLyrics?> LookupAsync(string? artist, string? title,
         double? durationSeconds = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Search on the title alone and return the rows LRCLIB offers, best-first.
+    /// <para>
+    /// Exists for metadata repair (#31), where the artist is the damaged field and cannot be part of
+    /// the query: searching "M?tley Cr?e" + "Looks That Kill" returns <b>zero</b> rows, while the
+    /// title alone returns twenty with the real spelling among them. Callers are expected to pick
+    /// with <see cref="MetadataRepair.ChooseRepair"/> rather than trusting the order.
+    /// </para>
+    /// Never throws for a miss, a transport error or a rate limit — returns an empty list.
+    /// </summary>
+    Task<IReadOnlyList<TrackLyrics>> SearchByTitleAsync(string? title, CancellationToken ct = default);
 }

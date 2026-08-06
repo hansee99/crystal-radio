@@ -170,6 +170,17 @@ public sealed class SongLibraryRetirementTests : IDisposable
                 ? null
                 : new TrackLyrics(title ?? "", artist ?? "", Album, false, null, 0));
         }
+
+        /// <summary>Rows offered for a title-only search (#31 repair). Empty unless a test sets it.</summary>
+        public List<TrackLyrics> TitleSearchRows { get; } = [];
+
+        public int TitleSearches { get; private set; }
+
+        public Task<IReadOnlyList<TrackLyrics>> SearchByTitleAsync(string? title, CancellationToken ct = default)
+        {
+            TitleSearches++;
+            return Task.FromResult<IReadOnlyList<TrackLyrics>>(TitleSearchRows);
+        }
     }
 
     [Fact]
@@ -185,6 +196,75 @@ public sealed class SongLibraryRetirementTests : IDisposable
 
         Assert.True(await Settles(() => handler.CallCount > 0));
         Assert.Contains("Empire", handler.Requests[0]);
+    }
+
+    // --- #31: names the station broadcast already broken -----------------------------
+
+    /// <summary>
+    /// The end-to-end shape of the repair: LRCLIB's title-only search offers several artists, the
+    /// surviving characters pick the one that fits, and the corrected name lands in the row the UI
+    /// reads. No model call is needed for this path.
+    /// </summary>
+    [Fact]
+    public async Task ADamagedArtistIsRepairedFromTheTitleSearch()
+    {
+        var handler = new FakeHttpMessageHandler()
+            .RespondWithText("""{ "is_song": true, "description": "Progressive metal." }""");
+        var path = WriteAudioFile("damaged.mp3");
+        var lyrics = new StubLyrics { Album = "Empire" };
+        lyrics.TitleSearchRows.AddRange(
+        [
+            new TrackLyrics("Breaking the Silence", "GET IN THE RING", null, false, null, 0),
+            new TrackLyrics("Breaking the Silence", "Loreena McKennitt", null, false, null, 0),
+            new TrackLyrics("Breaking the Silence", "Queensrÿche", "Empire", false, null, 0),
+        ]);
+        var service = new SongLibraryService(new HttpClient(handler), _store, new NoEmbeddings(),
+            apiKey: "test-key", lyrics: lyrics);
+
+        service.AddAndEnrich(Song(path, "Breaking the Silence", "Queensr�che", SongSource.Harvested));
+
+        Assert.True(await Settles(() => _store.Get(path)?.Artist == "Queensrÿche"));
+        Assert.Equal(1, lyrics.TitleSearches);
+    }
+
+    /// <summary>A clean name must not trigger a lookup, let alone be rewritten.</summary>
+    [Fact]
+    public async Task AnUndamagedNameIsLeftAloneAndCostsNoSearch()
+    {
+        var handler = new FakeHttpMessageHandler()
+            .RespondWithText("""{ "is_song": true, "description": "Progressive metal." }""");
+        var path = WriteAudioFile("clean.mp3");
+        var lyrics = new StubLyrics { Album = "Empire" };
+        lyrics.TitleSearchRows.Add(new TrackLyrics("Silent Lucidity", "Somebody Else", null, false, null, 0));
+        var service = new SongLibraryService(new HttpClient(handler), _store, new NoEmbeddings(),
+            apiKey: "test-key", lyrics: lyrics);
+
+        service.AddAndEnrich(Song(path, "Silent Lucidity", "Queensrÿche", SongSource.Harvested));
+
+        Assert.True(await Settles(() => handler.CallCount > 0));
+        Assert.Equal("Queensrÿche", _store.Get(path)!.Artist);
+        Assert.Equal(0, lyrics.TitleSearches);
+    }
+
+    /// <summary>
+    /// When nothing offered fits the surviving characters, the damaged name stays. Writing one of
+    /// those rows would replace a visibly broken name with a confidently wrong one.
+    /// </summary>
+    [Fact]
+    public async Task AnUnrepairableNameIsLeftDamagedRatherThanGuessed()
+    {
+        var handler = new FakeHttpMessageHandler()
+            .RespondWithText("""{ "artist": "Loreena McKennitt", "title": "Breaking the Silence" }""");
+        var path = WriteAudioFile("unrepairable.mp3");
+        var lyrics = new StubLyrics();
+        lyrics.TitleSearchRows.Add(new TrackLyrics("Breaking the Silence", "Loreena McKennitt", null, false, null, 0));
+        var service = new SongLibraryService(new HttpClient(handler), _store, new NoEmbeddings(),
+            apiKey: "test-key", lyrics: lyrics);
+
+        service.AddAndEnrich(Song(path, "Breaking the Silence", "Queensr�che", SongSource.Harvested));
+
+        Assert.True(await Settles(() => handler.CallCount > 0));
+        Assert.Equal("Queensr�che", _store.Get(path)!.Artist);
     }
 
     /// <summary>The ±2s trap: a harvested segment is edge-trimmed, so its length is not the track's

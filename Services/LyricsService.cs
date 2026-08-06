@@ -89,6 +89,30 @@ public sealed class LyricsService : ILyricsService
         return found;
     }
 
+    public async Task<IReadOnlyList<TrackLyrics>> SearchByTitleAsync(string? title, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return [];
+
+        try
+        {
+            // Title only, deliberately: the caller is repairing a damaged artist name, and sending
+            // it would match nothing (measured — "M?tley Cr?e" + the title returns zero rows).
+            var (status, body) = await SendAsync(
+                $"/api/search?track_name={Uri.EscapeDataString(title)}", ct).ConfigureAwait(false);
+            if (status != HttpStatusCode.OK)
+                return [];
+
+            return (JsonNode.Parse(body!) as JsonArray)?
+                .Select(Parse).Where(r => r is not null).Select(r => r!).ToList() ?? [];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            AppLog.Debug($"[Lyrics] title search failed for \"{title}\": {ex.Message}");
+            return [];
+        }
+    }
+
     private async Task<TrackLyrics?> FetchAsync(string artist, string title,
         double? durationSeconds, CancellationToken ct)
     {

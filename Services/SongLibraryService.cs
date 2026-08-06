@@ -63,6 +63,27 @@ public sealed class SongLibraryService : ISongLibraryService
     private readonly SemaphoreSlim _gate = new(MaxConcurrent);
     private readonly ConcurrentDictionary<string, byte> _inFlight = new();
 
+    /// <summary>Repairs keyed by the damaged "artist title" (#31). A station plays the same artist
+    /// all session, and the correct spelling never changes, so one call covers all of them.</summary>
+    private readonly ConcurrentDictionary<string, (string Title, string Artist)> _repairCache = new();
+
+    private const string RepairSystemPrompt = """
+        A radio station's metadata lost characters in transcoding and replaced each one with U+FFFD
+        (the replacement character, shown as "?"). Restore the original artist and title.
+
+        Rules:
+        - Change ONLY the damaged positions. Every other character must stay exactly as given —
+          same spelling, same punctuation, same capitalisation, same spacing.
+        - Use your knowledge of real artists and songs. "Queensr?che" is Queensrÿche;
+          "M?tley Cr?e" is Mötley Crüe.
+        - If a field has no replacement character, return it unchanged.
+        - If you cannot identify the real name with confidence, return the field unchanged rather
+          than guessing. A wrong name is worse than a visibly broken one.
+
+        Respond with ONLY this JSON object — no prose, no code fences:
+        { "artist": "...", "title": "..." }
+        """;
+
     public SongLibraryService(HttpClient http, LibraryStore store, IEmbeddingProvider embeddings,
         ApiKeySource? apiKey, string model = DefaultModel, ILyricsService? lyrics = null)
     {
@@ -191,6 +212,11 @@ public sealed class SongLibraryService : ISongLibraryService
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                // Before anything looks this track up: some stations broadcast the replacement
+                // character itself, so the name may already be damaged (#31). Repairing first also
+                // rescues the album lookup below, which cannot match a mangled artist at all.
+                (title, artist) = await RepairNamesAsync(path, title, artist).ConfigureAwait(false);
+
                 // LRCLIB knows the album for roughly a third of harvested tracks, and the app has
                 // no other source for it — ICY metadata carries title and artist only. Deliberately
                 // no duration: a harvested segment is edge-trimmed, so its length is not the
@@ -233,6 +259,98 @@ public sealed class SongLibraryService : ISongLibraryService
                 _inFlight.TryRemove(path, out _);
             }
         });
+    }
+
+    /// <summary>
+    /// Repairs a title/artist the station broadcast already broken (#31), and persists the result.
+    /// Returns what the rest of enrichment should use — unchanged when there is nothing to fix,
+    /// which is the overwhelmingly common case and costs nothing.
+    ///
+    /// <para>LRCLIB first because it is free and authoritative about spelling; the model only when
+    /// that misses. Either way the answer must pass <see cref="MetadataRepair.IsPlausibleRepair"/>,
+    /// so a confident wrong suggestion is discarded rather than written over real metadata.</para>
+    /// </summary>
+    private async Task<(string Title, string Artist)> RepairNamesAsync(string path, string title, string artist)
+    {
+        if (!MetadataRepair.NeedsRepair(title) && !MetadataRepair.NeedsRepair(artist))
+            return (title, artist);
+
+        var (fixedTitle, fixedArtist) = (title, artist);
+
+        // The title is the only usable search key when the artist is the damaged field.
+        if (_lyrics is not null && !MetadataRepair.NeedsRepair(title))
+        {
+            var rows = await _lyrics.SearchByTitleAsync(title).ConfigureAwait(false);
+            fixedArtist = MetadataRepair.ChooseRepair(artist, rows.Select(r => r.Artist)) ?? artist;
+        }
+
+        if (MetadataRepair.NeedsRepair(fixedTitle) || MetadataRepair.NeedsRepair(fixedArtist))
+            (fixedTitle, fixedArtist) = await RepairWithModelAsync(fixedTitle, fixedArtist).ConfigureAwait(false);
+
+        if (fixedTitle == title && fixedArtist == artist)
+        {
+            AppLog.Debug($"[Library] could not repair \"{artist} - {title}\" — the station sent it broken");
+            return (title, artist);
+        }
+
+        _store.SetTrackNames(path, fixedTitle, fixedArtist);
+        AppLog.Info($"[Library] repaired \"{artist} - {title}\" to \"{fixedArtist} - {fixedTitle}\"");
+        return (fixedTitle, fixedArtist);
+    }
+
+    /// <summary>
+    /// One cheap call asking the model to restore the lost characters. Cached by the damaged pair,
+    /// because the same station keeps playing the same artist and the answer never changes.
+    /// </summary>
+    private async Task<(string Title, string Artist)> RepairWithModelAsync(string title, string artist)
+    {
+        if (!CanDistill)
+            return (title, artist);
+
+        var key = artist + " " + title;
+        if (_repairCache.TryGetValue(key, out var cached))
+            return cached;
+
+        var repaired = (Title: title, Artist: artist);
+        try
+        {
+            var body = new JsonObject
+            {
+                ["model"] = _model,
+                ["max_tokens"] = 200,
+                ["system"] = RepairSystemPrompt,
+                ["messages"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["role"] = "user",
+                        ["content"] = $"artist: {artist}\ntitle: {title}"
+                    }
+                }
+            };
+
+            using var request = AnthropicApi.CreateRequest(_apiKey.Current, body);
+            using var response = await _http.SendAsync(request).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                return (title, artist);
+
+            var text = AnthropicApi.ExtractText(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            var node = JsonNode.Parse(AnthropicApi.StripToJsonObject(text) ?? "{}");
+
+            var candidateArtist = AnthropicApi.Str(node?["artist"]);
+            var candidateTitle = AnthropicApi.Str(node?["title"]);
+            if (MetadataRepair.IsPlausibleRepair(artist, candidateArtist))
+                repaired.Artist = candidateArtist!;
+            if (MetadataRepair.IsPlausibleRepair(title, candidateTitle))
+                repaired.Title = candidateTitle!;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Debug($"[Library] repair call failed for \"{artist} - {title}\": {ex.Message}");
+        }
+
+        _repairCache[key] = repaired;
+        return repaired;
     }
 
     private void EmbedAndStore(string path, string description)
