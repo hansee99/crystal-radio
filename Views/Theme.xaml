@@ -722,8 +722,26 @@
             <Setter.Value><ScaleTransform/></Setter.Value>
         </Setter>
     </Style>
+    <!-- The bars mean "sound is coming out right now", so they answer to the player's actual state
+         and not just to which row is current (#56: pausing a DJ mix left the current song bouncing
+         away). Done here rather than at each of the seven usages: every list binds visibility to its
+         own IsCurrent, and this adds the other half of the condition once, for all of them.
+
+         AncestorType=Window rather than a named element — the template is used inside item
+         templates in four different lists, none of which share a closer common ancestor. -->
     <ControlTemplate x:Key="EqualizerTemplate">
         <StackPanel Orientation="Horizontal" Height="13" VerticalAlignment="Bottom">
+            <StackPanel.Style>
+                <Style TargetType="StackPanel">
+                    <Style.Triggers>
+                        <DataTrigger Value="False"
+                                     Binding="{Binding DataContext.IsPlaying,
+                                               RelativeSource={RelativeSource AncestorType=Window}}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </StackPanel.Style>
             <Rectangle Style="{StaticResource EqualizerBar}">
                 <Rectangle.Triggers>
                     <EventTrigger RoutedEvent="FrameworkElement.Loaded">

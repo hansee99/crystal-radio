@@ -766,9 +766,17 @@
                                                         <Style TargetType="Path">
                                                             <Setter Property="Visibility" Value="Visible"/>
                                                             <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                <!-- Both conditions: the note comes back when playback stops, or the row would show
+                                                                     an empty icon slot where the bars were (#56). -->
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsCurrent}" Value="True"/>
+                                                                        <Condition Value="True"
+                                                                                   Binding="{Binding DataContext.IsPlaying,
+                                                                                             RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                                                    </MultiDataTrigger.Conditions>
                                                                     <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </DataTrigger>
+                                                                </MultiDataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
                                                     </Path.Style>
@@ -834,9 +842,17 @@
                                                             <Style TargetType="Path">
                                                                 <Setter Property="Visibility" Value="Visible"/>
                                                                 <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                    <!-- Both conditions: the note comes back when playback stops, or the row would show
+                                                                         an empty icon slot where the bars were (#56). -->
+                                                                    <MultiDataTrigger>
+                                                                        <MultiDataTrigger.Conditions>
+                                                                            <Condition Binding="{Binding IsCurrent}" Value="True"/>
+                                                                            <Condition Value="True"
+                                                                                       Binding="{Binding DataContext.IsPlaying,
+                                                                                                 RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                                                        </MultiDataTrigger.Conditions>
                                                                         <Setter Property="Visibility" Value="Collapsed"/>
-                                                                    </DataTrigger>
+                                                                    </MultiDataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </Path.Style>
@@ -1153,9 +1169,17 @@
                                                             <Path.Style>
                                                                 <Style TargetType="Path">
                                                                     <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                        <!-- Both conditions: the note comes back when playback stops, or the row would show
+                                                                             an empty icon slot where the bars were (#56). -->
+                                                                        <MultiDataTrigger>
+                                                                            <MultiDataTrigger.Conditions>
+                                                                                <Condition Binding="{Binding IsCurrent}" Value="True"/>
+                                                                                <Condition Value="True"
+                                                                                           Binding="{Binding DataContext.IsPlaying,
+                                                                                                     RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                                                            </MultiDataTrigger.Conditions>
                                                                             <Setter Property="Visibility" Value="Collapsed"/>
-                                                                        </DataTrigger>
+                                                                        </MultiDataTrigger>
                                                                     </Style.Triggers>
                                                                 </Style>
                                                             </Path.Style>
