@@ -41,6 +41,13 @@ public sealed class DjIntroService : IDjIntroService
         dull fast. Say something about the music, the artist, or the moment first; reach for how it
         fits the request only when there's genuinely nothing better to say, and then lightly.
 
+
+        You may also get a line about when this is happening — time of day, the date, the season, a
+        holiday. Use it SPARINGLY and only when it genuinely adds something: a track that suits a
+        wet Tuesday morning, a late-night record at 1am. Most lines should not mention it at all.
+        Never state the time or date back as a fact ("it's 21:40 on a Thursday"); it is colour, not
+        a clock. Never force a seasonal reference onto a track that has nothing to do with it.
+
         {MOVE}
 
         Never invent biographical or factual claims. If you don't confidently recognize the track
@@ -65,6 +72,7 @@ public sealed class DjIntroService : IDjIntroService
         "This time: speak as if handing off from whatever was playing before, mid-flow.",
         "This time: an aside — a small, human, slightly offhand remark, then the track.",
         "This time: lead with the feeling the first few seconds will give the listener.",
+        "This time: place the track in the listener's day — the hour, the season, what this moment is for.",
     ];
 
     private static readonly Dictionary<DjPersonality, string> Personas = new()
@@ -97,6 +105,9 @@ public sealed class DjIntroService : IDjIntroService
         You are about to go and find stations for it, so a line that carries the listener over that
         wait is doing its job.
 
+        You may also get a line about when this is happening. Use it only if the turn and the
+        moment genuinely rhyme — an evening shift, a Friday. Otherwise ignore it.
+
         Never mention prompts, settings, sessions, AI, models, or anything about how the app works.
         No stage directions, no quotation marks around the whole line, no emoji. Just the line.
         """;
@@ -113,6 +124,10 @@ public sealed class DjIntroService : IDjIntroService
         - "waiting": you're listening to stations and haven't captured a song worth playing yet.
         - "bridging": the mix has run out, so live radio is covering while you gather more.
         - "signingOff": the session is ending.
+
+        You may also get a line about when this is happening — time of day, the date, the season,
+        a holiday. Let it colour a line or two where it fits ("a good hour for this", "a proper
+        winter mix"), and leave the rest alone. Never state the time or date back as a fact.
 
         Give THREE alternatives for each, so the same moment twice doesn't repeat itself. Each is
         ONE short sentence. Shape them around what the listener asked for without quoting their
@@ -131,6 +146,15 @@ public sealed class DjIntroService : IDjIntroService
     private readonly HttpClient _http;
     private readonly ApiKeySource _apiKey;
     private readonly string _model;
+
+    /// <summary>When "now" is, and what is known about it (#55). Injectable so a test can pin a
+    /// Tuesday in December rather than waiting for one.</summary>
+    private readonly Func<DateTimeOffset> _clock;
+    private readonly IReadOnlyList<IDjContextSource> _contextSources;
+
+    /// <summary>The ambient line for this moment, or null. Recomputed per call — a session can run
+    /// for hours and cross into the evening while it does.</summary>
+    private string? CurrentContext() => DjContext.Compose(_contextSources, _clock());
     // Rebuilt when Personality is set, not per call — the substitution is pure string work and
     // the voice changes about as often as someone opens the options dialog. Volatile because a
     // generation already in flight on a background thread may read them mid-swap.
@@ -148,11 +172,15 @@ public sealed class DjIntroService : IDjIntroService
     private readonly ConcurrentQueue<string> _cacheOrder = new();
 
     public DjIntroService(HttpClient http, ApiKeySource? apiKey,
-        DjPersonality personality = DjPersonality.Warm, string model = DefaultModel)
+        DjPersonality personality = DjPersonality.Warm, string model = DefaultModel,
+        Func<DateTimeOffset>? clock = null, IReadOnlyList<IDjContextSource>? contextSources = null)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _apiKey = apiKey ?? new ApiKeySource();
         _model = model;
+        // Local time, deliberately: "late night" is about the listener's clock, not UTC.
+        _clock = clock ?? (() => DateTimeOffset.Now);
+        _contextSources = contextSources ?? DjContext.Default;
         Personality = personality;
     }
 
@@ -189,9 +217,9 @@ public sealed class DjIntroService : IDjIntroService
                 new JsonObject
                 {
                     ["role"] = "user",
-                    ["content"] = string.IsNullOrWhiteSpace(vibe)
+                    ["content"] = WithContext(string.IsNullOrWhiteSpace(vibe)
                         ? "The listener didn't say what they wanted — keep it open."
-                        : $"The listener asked for: \"{vibe}\""
+                        : $"The listener asked for: \"{vibe}\"")
                 }
             }
         };
@@ -230,6 +258,7 @@ public sealed class DjIntroService : IDjIntroService
         if (!string.IsNullOrWhiteSpace(previousVibe))
             sb.Append("They had asked for: \"").Append(previousVibe).Append("\".\n");
         sb.Append("They have just changed it to: \"").Append(newVibe).Append("\".");
+        AppendContext(sb);
 
         var body = new JsonObject
         {
@@ -343,6 +372,7 @@ public sealed class DjIntroService : IDjIntroService
         if (!string.IsNullOrWhiteSpace(lyricExcerpt))
             sb.Append(".\nHow the lyrics open: \"").Append(lyricExcerpt).Append('"');
         sb.Append('.');
+        AppendContext(sb);
 
         // Cycle the move. Interlocked because two tracks can land close together and the counter
         // is the only thing keeping consecutive lines from sharing a shape.
@@ -408,6 +438,16 @@ public sealed class DjIntroService : IDjIntroService
 
     private static string CacheKey(string title, string? artist) =>
         $"{artist?.Trim().ToLowerInvariant()}|{title.Trim().ToLowerInvariant()}";
+
+    /// <summary>Appends what is known about right now, if anything, on its own line (#55).</summary>
+    private void AppendContext(StringBuilder sb)
+    {
+        if (CurrentContext() is { } context)
+            sb.Append("\nRight now: ").Append(context).Append('.');
+    }
+
+    private string WithContext(string content) =>
+        CurrentContext() is { } context ? $"{content}\nRight now: {context}." : content;
 
     private static string Clean(string? s)
     {

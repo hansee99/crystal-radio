@@ -581,6 +581,12 @@ popup). Separate from station *search* — it explains what's already playing.
   (interpreter, ranker, enrichment, song descriptions) and a Sonnet-class model for multi-step
   or listener-audible judgment (Pattern B agent loop, track briefings, song curation, **DJ intro
   lines**, and the vibe-change remark). Verify current ids/pricing at https://docs.claude.com/en/api/overview when bumping.
+  *(Ambient context — time of day, date, season, holiday — is composed by `DjContext` from a list of
+  `IDjContextSource`s and appended to all three DJ prompts as one "Right now:" line. Adding a source
+  (weather, location, #55's own examples) changes no prompt: they all take the same sentence. Season
+  is derived from the month and therefore assumes the northern hemisphere — the class comment says
+  so, and a location source is what would fix it.)*
+
   *(DJ intro lines moved Haiku → Sonnet: they had been tiered by shape — a one-shot description —
   but the rule is about purpose, and a spoken-style line the listener reads on every track change
   is the most listener-audible prose in the app. One small call per song.)*
