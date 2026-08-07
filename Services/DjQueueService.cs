@@ -298,6 +298,31 @@ public sealed class DjQueueService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Records a track the listener has already heard live, so its harvested copy never reaches the
+    /// queue (#54).
+    ///
+    /// <para>The station covering a bridge is one of the pool's own, and its harvester keeps
+    /// recording throughout — so a song heard during the bridge was captured at the same time and
+    /// would be queued minutes later, playing the same track twice. From the listener's side it was
+    /// already part of the mix.</para>
+    ///
+    /// <para>Handled here rather than by taking the bridging station out of the pool, which would
+    /// cost a harvester exactly when the mix is starving. The song is still captured, described and
+    /// added to the library — it just doesn't play again this session, which is what the existing
+    /// <see cref="_seen"/> set already means.</para>
+    /// </summary>
+    public void NoteHeardLive(string? artist, string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return;   // a station name or an empty announce, not a track
+
+        var key = DedupKey(artist ?? "", title);
+        if (_seen.Add(key))
+            AppLog.Debug($"[DjQueue] heard live during the bridge: \"{artist} - {title}\" — "
+                         + "its harvested copy will be skipped");
+    }
+
     private static string DedupKey(string artist, string title) => $"{artist}|{title}";
 
     private static StreamFormat FormatFromExtension(string path) =>

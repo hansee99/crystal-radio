@@ -3096,6 +3096,13 @@ public sealed class MainViewModel : ObservableObject
         NowPlayingArtist = meta.Artist ?? string.Empty;
         NowPlayingStation = meta.StationName ?? string.Empty;
         HasTrackInfo = !string.IsNullOrWhiteSpace(NowPlayingTitle);
+
+        // The bridging station is one of the pool's own and its harvester is still recording, so
+        // this very track would otherwise arrive in the queue minutes from now and play a second
+        // time (#54). Told from the live metadata rather than from the recording, so it covers the
+        // song only if the listener actually heard it announced.
+        if (!string.IsNullOrWhiteSpace(meta.Title))
+            _djQueue.NoteHeardLive(meta.Artist, meta.Title);
     }
 
     private void PlayQueueItem(CuratedQueueItem? item)
