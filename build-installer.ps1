@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Builds crystal-radio-setup-<version>.exe (#43).
 
@@ -101,7 +101,12 @@ Step 'Publishing (self-contained, x64)'
 if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $staging, $dist | Out-Null
 
-& dotnet publish $project -c Release -r win-x64 --self-contained true -o $staging --nologo
+# ReadyToRun: precompiled to native, so a cold first run isn't spent JIT-compiling WPF and the
+# app on the target's CPU. That is most of the minute #53 reported on an older laptop — the rest
+# is reading the 86 MB model off its disk, which no build flag can help with. Costs payload size,
+# which matters less here than anywhere: the installer already downloads a model twice its size.
+& dotnet publish $project -c Release -r win-x64 --self-contained true `
+    -p:PublishReadyToRun=true -o $staging --nologo
 if ($LASTEXITCODE -ne 0) { Fail 'Publish failed.' }
 if (-not (Test-Path (Join-Path $staging 'crystal-radio.exe'))) { Fail 'Publish produced no crystal-radio.exe.' }
 

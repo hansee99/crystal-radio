@@ -45,12 +45,32 @@ public partial class App : Application
         // appear, and toasts are attributed by it. See WindowsNotificationService.
         Services.WindowsNotificationService.ApplyAppIdentity();
 
+        // Up before anything slow, and on its own UI thread so it keeps animating while this one is
+        // busy building the window (#53): a cold start on an older laptop was measured at about a
+        // minute with nothing on screen at all.
+        var splash = SplashHost.Show();
+        splash.SetStatus("Starting up");
+
         // Before MainWindow, which opens the enrichment database in its constructor — once that
         // file exists, seeding would (correctly) decline to touch it.
+        splash.SetStatus("Preparing your station catalog");
         Services.CatalogSeed.EnsureSeeded();
 
         base.OnStartup(e);
-        new MainWindow().Show();
+
+        try
+        {
+            var window = new MainWindow(splash);
+            window.Show();
+            // After Show(), so the splash never disappears before there is a window to replace it.
+            window.Activate();
+        }
+        finally
+        {
+            // finally: a startup that throws is going to surface a crash dialog, and an
+            // always-on-top splash sitting over it would hide the only useful thing on screen.
+            splash.Close();
+        }
     }
 
     /// <summary>

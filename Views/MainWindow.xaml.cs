@@ -29,15 +29,30 @@ public partial class MainWindow : Window
     private readonly ApiKeySource _apiKeys;
     private SmtcController? _smtc;
 
-    public MainWindow()
+    public MainWindow() : this(null) { }
+
+    /// <param name="splash">Optional progress sink for the startup splash (#53). Every stage below
+    /// is genuinely slow on a cold machine — the embedding model most of all — so the report names
+    /// what is happening rather than counting steps.</param>
+    public MainWindow(SplashHost? splash)
     {
+        var startedAt = System.Diagnostics.Stopwatch.StartNew();
+        void Stage(string text)
+        {
+            AppLog.Debug($"[Startup] {startedAt.ElapsedMilliseconds,6} ms · {text}");
+            splash?.SetStatus(text);
+        }
+
+        Stage("Preparing the window");
         InitializeComponent();
         Loaded       += (_, _) => UpdateShellClip();
         SizeChanged  += (_, _) => UpdateShellClip();
         StateChanged += (_, _) => UpdateShellClip();
 
+        Stage("Reading your settings");
         _settingsStore = new SettingsStore();
         _recorder = new StreamRecorder(_settingsStore.Load().CaptureBoundaryOffsetSeconds);
+        Stage("Starting the audio engine");
         _engine = new RadioEngine(_recorder);
         _localEngine = new LocalPlaybackEngine();
         // Edge guards for imperfect boundary cuts; 0 = off. Engine-wide, so they apply to saved
@@ -56,8 +71,11 @@ public partial class MainWindow : Window
         var interpreter = new PromptInterpreter(new HttpClient(), apiKey);              // Pattern A
 
         // Phase 1 enrichment (SQLite cache) + Phase 2 local embeddings (offline ONNX).
+        Stage("Opening your station catalog");
         _enrichmentStore = new EnrichmentStore();
         var mlDir = Path.Combine(AppContext.BaseDirectory, "MlAssets");
+        // The long one on a cold start: an 86 MB model off disk plus session init.
+        Stage("Loading the language model");
         _embeddingProvider = new MiniLmEmbeddingProvider(
             Path.Combine(mlDir, "all-MiniLM-L6-v2.onnx"), Path.Combine(mlDir, "vocab.txt"));
 
@@ -75,6 +93,7 @@ public partial class MainWindow : Window
         _djIntro = new DjIntroService(new HttpClient(), apiKey, _settingsStore.Load().ResolveDjPersonality());
 
         // Phase C: local song-library index (metadata + AI description + local embedding on save).
+        Stage("Opening your song library");
         _libraryStore = new LibraryStore();
         var songLibrary = new SongLibraryService(new HttpClient(), _libraryStore, _embeddingProvider,
             apiKey, lyrics: lyrics);
@@ -101,6 +120,7 @@ public partial class MainWindow : Window
             // So a session can still start off the local catalog when the mirrors are down (#26).
             semanticSearch: semanticSearch);
 
+        Stage("Almost there");
         _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
             new SongHistoryStore(), _recorder,
             new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
