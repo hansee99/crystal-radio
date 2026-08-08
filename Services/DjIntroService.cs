@@ -43,10 +43,19 @@ public sealed class DjIntroService : IDjIntroService
 
 
         You may also get a line about when this is happening — time of day, the date, the season, a
-        holiday. Use it SPARINGLY and only when it genuinely adds something: a track that suits a
-        wet Tuesday morning, a late-night record at 1am. Most lines should not mention it at all.
-        Never state the time or date back as a fact ("it's 21:40 on a Thursday"); it is colour, not
-        a clock. Never force a seasonal reference onto a track that has nothing to do with it.
+        holiday. Reach for it RARELY: roughly one line in five, and only when the moment and the
+        track genuinely meet. Four in five should not mention it at all, and a line is not worse
+        for ignoring it. Never state the time or date back as a fact ("it's 21:40 on a Thursday");
+        it is colour, not a clock, and naming the wrong day is worse than naming none. Never force
+        a seasonal reference onto a track that has nothing to do with it.
+
+        Some vibes come with an obvious cliché: morning suggests coffee, night suggests neon or
+        whisky, rain suggests melancholy. Those are the first thing anyone would write, so they are
+        the fastest way to sound like a machine. Reach past them.
+
+        You may also be shown the lines you have JUST used. Do not reuse their imagery, their
+        opening words, or their sentence shape — a listener reads these one after another, and
+        two of the same in a row is what makes a mix feel automated.
 
         {MOVE}
 
@@ -72,7 +81,6 @@ public sealed class DjIntroService : IDjIntroService
         "This time: speak as if handing off from whatever was playing before, mid-flow.",
         "This time: an aside — a small, human, slightly offhand remark, then the track.",
         "This time: lead with the feeling the first few seconds will give the listener.",
-        "This time: place the track in the listener's day — the hour, the season, what this moment is for.",
     ];
 
     private static readonly Dictionary<DjPersonality, string> Personas = new()
@@ -125,10 +133,6 @@ public sealed class DjIntroService : IDjIntroService
         - "bridging": the mix has run out, so live radio is covering while you gather more.
         - "signingOff": the session is ending.
 
-        You may also get a line about when this is happening — time of day, the date, the season,
-        a holiday. Let it colour a line or two where it fits ("a good hour for this", "a proper
-        winter mix"), and leave the rest alone. Never state the time or date back as a fact.
-
         Give THREE alternatives for each, so the same moment twice doesn't repeat itself. Each is
         ONE short sentence. Shape them around what the listener asked for without quoting their
         words back at them. Be honest about what's happening — these describe a real state, so
@@ -170,6 +174,18 @@ public sealed class DjIntroService : IDjIntroService
     // background-thread continuation may read/write while the UI thread queues another request.
     private readonly ConcurrentDictionary<string, string> _cache = new();
     private readonly ConcurrentQueue<string> _cacheOrder = new();
+
+    /// <summary>
+    /// The last few lines actually shown, fed back into the next prompt so it can avoid
+    /// repeating itself (#58). A model asked for a morning line reaches for coffee every time
+    /// unless it can see that it just did.
+    ///
+    /// <para>Deliberately short. Five is enough to catch the repetition a listener notices —
+    /// two or three tracks apart — while keeping the prompt small, and an older line is no longer
+    /// in mind by the time it scrolls away.</para>
+    /// </summary>
+    private readonly ConcurrentQueue<string> _recentLines = new();
+    private const int RecentLinesRemembered = 5;
 
     public DjIntroService(HttpClient http, ApiKeySource? apiKey,
         DjPersonality personality = DjPersonality.Warm, string model = DefaultModel,
@@ -217,9 +233,14 @@ public sealed class DjIntroService : IDjIntroService
                 new JsonObject
                 {
                     ["role"] = "user",
-                    ["content"] = WithContext(string.IsNullOrWhiteSpace(vibe)
+                    // Deliberately NO ambient context here (#58). This set is generated once per
+                    // session and replayed for hours, so a line that mentions the day or the hour
+                    // is wrong as soon as either moves on - which is exactly how a Friday remark
+                    // came to be shown on a Saturday. Only the per-track and vibe-change lines,
+                    // which are generated fresh each time, carry it.
+                    ["content"] = string.IsNullOrWhiteSpace(vibe)
                         ? "The listener didn't say what they wanted — keep it open."
-                        : $"The listener asked for: \"{vibe}\"")
+                        : $"The listener asked for: \"{vibe}\""
                 }
             }
         };
@@ -352,7 +373,10 @@ public sealed class DjIntroService : IDjIntroService
         var line = await GenerateAsync(title, artist, vibe, curatorNote, album, lyricExcerpt, ct)
             .ConfigureAwait(false);
         if (line is not null)
+        {
             StoreInCache(key, line);
+            Remember(line);
+        }
         return line;
     }
 
@@ -373,6 +397,7 @@ public sealed class DjIntroService : IDjIntroService
             sb.Append(".\nHow the lyrics open: \"").Append(lyricExcerpt).Append('"');
         sb.Append('.');
         AppendContext(sb);
+        AppendRecentLines(sb);
 
         // Cycle the move. Interlocked because two tracks can land close together and the counter
         // is the only thing keeping consecutive lines from sharing a shape.
@@ -446,8 +471,24 @@ public sealed class DjIntroService : IDjIntroService
             sb.Append("\nRight now: ").Append(context).Append('.');
     }
 
-    private string WithContext(string content) =>
-        CurrentContext() is { } context ? $"{content}\nRight now: {context}." : content;
+    /// <summary>Records a line as recently said, keeping only the last few.</summary>
+    private void Remember(string line)
+    {
+        _recentLines.Enqueue(line);
+        while (_recentLines.Count > RecentLinesRemembered)
+            _recentLines.TryDequeue(out _);
+    }
+
+    /// <summary>Appends what was just said, so the next line can steer around it.</summary>
+    private void AppendRecentLines(StringBuilder sb)
+    {
+        var recent = _recentLines.ToArray();
+        if (recent.Length == 0)
+            return;
+        sb.Append("\nLines you have just used, in order — do not echo these:");
+        foreach (var line in recent)
+            sb.Append("\n- ").Append(line);
+    }
 
     private static string Clean(string? s)
     {
