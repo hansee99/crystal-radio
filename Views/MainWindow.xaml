@@ -1550,7 +1550,7 @@
                 <!-- Negative top margin lifts the header up to align with the left-panel tabs
                      (which sit higher than this column's top padding). -->
                 <Grid Grid.Row="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                      Margin="0,-18,0,22"
+                      Margin="0,-18,0,8"
                       Visibility="{Binding ShowOverlay, Converter={StaticResource BoolToVis}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -1830,15 +1830,42 @@
                      boundary around, while SpreadMethod=Pad holds the solid tone everywhere below
                      62px whatever the height. The top padding matches the fade so no control ever
                      sits in the ramp. -->
-                <Border Grid.Row="1" Margin="-44,0,-44,-30" Padding="44,62,44,30">
-                    <Border.Background>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,62"
-                                             MappingMode="Absolute" SpreadMethod="Pad">
-                            <GradientStop Offset="0" Color="#00040B0A"/>
-                            <GradientStop Offset="0.55" Color="#78040B0A"/>
-                            <GradientStop Offset="1" Color="#B8040B0A"/>
-                        </LinearGradientBrush>
-                    </Border.Background>
+                <!-- The 62px ramp is generous because it sits under artwork. While the reading view
+                     is open it sits under TEXT instead, and this row is Auto in a star row above —
+                     so every pixel of it is a pixel the reading view doesn't get (#59). Compact
+                     while reading: the padding and the fade shrink together, because the rule above
+                     is that no control may sit inside the ramp. -->
+                <Border Grid.Row="1" Margin="-44,0,-44,-30">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Padding" Value="44,62,44,30"/>
+                            <Setter Property="Background">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,62"
+                                                         MappingMode="Absolute" SpreadMethod="Pad">
+                                        <GradientStop Offset="0" Color="#00040B0A"/>
+                                        <GradientStop Offset="0.55" Color="#78040B0A"/>
+                                        <GradientStop Offset="1" Color="#B8040B0A"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowOverlay}" Value="True">
+                                    <Setter Property="Padding" Value="44,20,44,30"/>
+                                    <Setter Property="Background">
+                                        <Setter.Value>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,20"
+                                                                 MappingMode="Absolute" SpreadMethod="Pad">
+                                                <GradientStop Offset="0" Color="#00040B0A"/>
+                                                <GradientStop Offset="0.55" Color="#78040B0A"/>
+                                                <GradientStop Offset="1" Color="#B8040B0A"/>
+                                            </LinearGradientBrush>
+                                        </Setter.Value>
+                                    </Setter>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                 <StackPanel>
                     <!-- Seek bar (library mode only; radio streams have no timeline) -->
                     <Grid Margin="0,0,0,18" Width="440" HorizontalAlignment="Left"
