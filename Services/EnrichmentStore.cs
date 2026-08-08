@@ -20,25 +20,51 @@ public sealed class EnrichmentStore : IDisposable
     private static readonly TimeSpan StaleAfter = TimeSpan.FromDays(30);
 
     private readonly object _lock = new();
-    private readonly SqliteConnection _connection;
+    private readonly SqliteConnection? _connection;
+
+    /// <summary>
+    /// False when the database could not be opened at all, in which case every operation here is a
+    /// no-op and reads come back empty.
+    ///
+    /// <para>Not a theoretical case (#57): on a machine with Windows Smart App Control enforcing,
+    /// the SQLite provider assembly was blocked from loading and the type initializer threw — which,
+    /// from an unguarded constructor, killed the app on startup with a crash dialog. CLAUDE.md
+    /// already holds that enrichment must never break search or playback; a machine where SQLite
+    /// cannot load is exactly that case, so search degrades to the directory and the player is
+    /// untouched.</para>
+    /// </summary>
+    public bool IsAvailable => _connection is not null;
 
     public EnrichmentStore(string? databasePath = null)
     {
         var path = databasePath ?? DefaultDatabasePath();
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
-        _connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        try
         {
-            DataSource = path,
-            Mode = SqliteOpenMode.ReadWriteCreate
-        }.ToString());
-        _connection.Open();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
-        Execute("PRAGMA busy_timeout=3000;");
-        // WAL lets the seed tool and a running app write the same DB without "database is
-        // locked" (each process still uses its own single connection + lock internally).
-        Execute("PRAGMA journal_mode=WAL;");
-        EnsureSchema();
+            _connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = path,
+                Mode = SqliteOpenMode.ReadWriteCreate
+            }.ToString());
+            _connection.Open();
+
+            Execute("PRAGMA busy_timeout=3000;");
+            // WAL lets the seed tool and a running app write the same DB without "database is
+            // locked" (each process still uses its own single connection + lock internally).
+            Execute("PRAGMA journal_mode=WAL;");
+            EnsureSchema();
+        }
+        catch (Exception ex)
+        {
+            // Caught broadly on purpose: the failures worth surviving here are the ones that are
+            // nothing to do with us — a blocked assembly, a locked or corrupt file, a profile with
+            // no write access. Losing the catalog costs search quality; throwing costs the app.
+            _connection = null;
+            AppLog.Error($"[Enrich] station catalog unavailable ({path}) — "
+                         + "continuing without it; search falls back to the directory", ex);
+        }
     }
 
     public static string DefaultDatabasePath() => Path.Combine(
@@ -47,11 +73,11 @@ public sealed class EnrichmentStore : IDisposable
 
     public EnrichmentRecord? Get(string stationUuid)
     {
-        if (string.IsNullOrWhiteSpace(stationUuid)) return null;
+        if (_connection is null || string.IsNullOrWhiteSpace(stationUuid)) return null;
 
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = """
                 SELECT description, facets, source, enriched_at
                 FROM stations WHERE stationuuid = $uuid;
@@ -74,10 +100,11 @@ public sealed class EnrichmentStore : IDisposable
     public void Upsert(EnrichmentRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
+        if (_connection is null) return;
 
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             // embedding / embedding_model are written separately by SetEmbedding.
             //
             // COALESCE on the playable fields, not plain assignment: a re-enrichment that only has a
@@ -133,14 +160,14 @@ public sealed class EnrichmentStore : IDisposable
     public void TopUpPlayableFields(string stationUuid, string? name, string? url,
         string? codec, int bitrate, string? country)
     {
-        if (string.IsNullOrWhiteSpace(stationUuid))
+        if (_connection is null || string.IsNullOrWhiteSpace(stationUuid))
             return;
         if (name is null && url is null && codec is null && bitrate <= 0 && country is null)
             return;
 
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = """
                 UPDATE stations SET
                     name    = COALESCE($name,    name),
@@ -170,12 +197,13 @@ public sealed class EnrichmentStore : IDisposable
     public void SetEmbedding(string stationUuid, float[] vector, string model)
     {
         ArgumentNullException.ThrowIfNull(vector);
+        if (_connection is null) return;
         var blob = new byte[vector.Length * sizeof(float)];
         Buffer.BlockCopy(vector, 0, blob, 0, blob.Length);
 
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = """
                 UPDATE stations SET embedding = $emb, embedding_model = $model
                 WHERE stationuuid = $uuid;
@@ -190,9 +218,10 @@ public sealed class EnrichmentStore : IDisposable
     /// <summary>Enriched rows that have a description but no embedding for <paramref name="model"/> (backfill input).</summary>
     public IReadOnlyList<StationDescriptionRow> GetRowsNeedingEmbedding(string model)
     {
+        if (_connection is null) return [];
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = """
                 SELECT stationuuid, description FROM stations
                 WHERE description <> ''
@@ -211,9 +240,10 @@ public sealed class EnrichmentStore : IDisposable
     /// <summary>Load all rows embedded with <paramref name="model"/> for in-memory cosine search.</summary>
     public IReadOnlyList<EmbeddedStationRow> GetEmbeddedRows(string model)
     {
+        if (_connection is null) return [];
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = """
                 SELECT stationuuid, description, embedding FROM stations
                 WHERE embedding IS NOT NULL AND embedding_model = $model;
@@ -243,9 +273,10 @@ public sealed class EnrichmentStore : IDisposable
     /// </summary>
     public IReadOnlyList<PlayableStationRow> GetPlayableRows(string model)
     {
+        if (_connection is null) return [];
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = """
                 SELECT stationuuid, description, embedding, name, url, codec, bitrate, country
                 FROM stations
@@ -321,7 +352,8 @@ public sealed class EnrichmentStore : IDisposable
                 );
                 """);
 
-            SqliteSchema.AddMissingColumns(_connection, "stations", AddedColumns);
+            // Only ever called from the constructor's try, where the connection is open.
+            SqliteSchema.AddMissingColumns(_connection!, "stations", AddedColumns);
 
             Execute($"PRAGMA user_version={SchemaVersion};");
         }
@@ -330,14 +362,14 @@ public sealed class EnrichmentStore : IDisposable
     /// <summary>The column names the stations table actually has right now.</summary>
     private void Execute(string sql)
     {
-        using var cmd = _connection.CreateCommand();
+        using var cmd = _connection!.CreateCommand();
         cmd.CommandText = sql;
         cmd.ExecuteNonQuery();
     }
 
     private object? ExecuteScalar(string sql)
     {
-        using var cmd = _connection.CreateCommand();
+        using var cmd = _connection!.CreateCommand();
         cmd.CommandText = sql;
         return cmd.ExecuteScalar();
     }
@@ -356,5 +388,5 @@ public sealed class EnrichmentStore : IDisposable
         _ => EnrichmentSource.TagsOnly
     };
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose() => _connection?.Dispose();
 }

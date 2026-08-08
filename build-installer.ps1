@@ -201,13 +201,22 @@ try {
         if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
         New-Item -ItemType Directory -Force -Path $staging, $dist | Out-Null
 
-        # ReadyToRun: precompiled to native, so a cold first run isn't spent JIT-compiling WPF and
-        # the app on the target's CPU. That is most of the minute #53 reported on an older laptop -
-        # the rest is reading the 86 MB model off its disk, which no build flag can help with.
-        # Costs payload size, which matters less here than anywhere: the installer already
-        # downloads a model twice its size.
+        # NO ReadyToRun here, and it must stay that way (#57).
+        #
+        # It was added for #53's cold-start time, on the assumption it would precompile WPF. It
+        # does not: a self-contained publish already ships the framework R2R-compiled AND
+        # Microsoft-signed from the runtime pack. The flag only rewrote our own assembly plus 12
+        # small third-party ones - and rewriting is the problem. Windows Smart App Control runs
+        # unsigned binaries on reputation, and a locally recompiled DLL is a file that exists
+        # nowhere else on earth, so it has none. An install was blocked dead on
+        # SQLitePCLRaw.provider.e_sqlite3.dll, and any of the 13 could have been the one.
+        #
+        # Measured on this build: turning it off gives 7 of those files their publisher's
+        # Authenticode signature back (Google, Microsoft, ONNX ship them signed; R2R stripped it),
+        # taking the payload from 241 valid signatures to 248, and produces byte-identical output
+        # to a plain build - the copy with a clean history on the machine that was blocked.
         & dotnet publish $project -c Release -r win-x64 --self-contained true `
-            -p:PublishReadyToRun=true -o $staging --nologo
+            -o $staging --nologo
         if ($LASTEXITCODE -ne 0) { Fail 'Publish failed.' }
         if (-not (Test-Path (Join-Path $staging 'crystal-radio.exe'))) {
             Fail 'Publish produced no crystal-radio.exe.'

@@ -37,23 +37,44 @@ public sealed class LibraryStore : IDisposable
     private const int SchemaVersion = 2;
 
     private readonly object _lock = new();
-    private readonly SqliteConnection _connection;
+    private readonly SqliteConnection? _connection;
+
+    /// <summary>
+    /// False when the database could not be opened, in which case the index is inert: nothing is
+    /// recorded and every read comes back empty.
+    ///
+    /// <para>Same reason as EnrichmentStore's (#57) — a blocked SQLite provider assembly threw from
+    /// an unguarded constructor and took the app's startup with it. The saved FILES are untouched
+    /// either way; what is lost is the index over them, so the library list is empty and curation
+    /// has nothing to draw on until the database works again.</para>
+    /// </summary>
+    public bool IsAvailable => _connection is not null;
 
     public LibraryStore(string? databasePath = null)
     {
         var path = databasePath ?? DefaultDatabasePath();
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
-        _connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        try
         {
-            DataSource = path,
-            Mode = SqliteOpenMode.ReadWriteCreate
-        }.ToString());
-        _connection.Open();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
-        Execute("PRAGMA busy_timeout=3000;");
-        Execute("PRAGMA journal_mode=WAL;");
-        EnsureSchema();
+            _connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = path,
+                Mode = SqliteOpenMode.ReadWriteCreate
+            }.ToString());
+            _connection.Open();
+
+            Execute("PRAGMA busy_timeout=3000;");
+            Execute("PRAGMA journal_mode=WAL;");
+            EnsureSchema();
+        }
+        catch (Exception ex)
+        {
+            _connection = null;
+            AppLog.Error($"[Library] song index unavailable ({path}) — continuing without it; "
+                         + "saved files are untouched, but they will not be listed or curated", ex);
+        }
     }
 
     public static string DefaultDatabasePath() => Path.Combine(
@@ -65,10 +86,11 @@ public sealed class LibraryStore : IDisposable
     public void Upsert(SavedSong song)
     {
         ArgumentNullException.ThrowIfNull(song);
+        if (_connection is null) return;
 
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = """
                 INSERT INTO songs (path, title, artist, station, codec, saved_at, description, facets, source)
                 VALUES ($path, $title, $artist, $station, $codec, $at, $desc, $facets, $source)
@@ -95,9 +117,10 @@ public sealed class LibraryStore : IDisposable
     /// <summary>Store the AI-derived description + facets for a song (leaves the embedding alone).</summary>
     public void SetEnrichment(string path, string description, string? facetsJson)
     {
+        if (_connection is null) return;
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "UPDATE songs SET description = $desc, facets = $facets WHERE path = $path;";
             cmd.Parameters.AddWithValue("$desc", description);
             cmd.Parameters.AddWithValue("$facets", (object?)facetsJson ?? DBNull.Value);
@@ -113,9 +136,10 @@ public sealed class LibraryStore : IDisposable
     /// </summary>
     public void SetTrackNames(string path, string title, string artist)
     {
+        if (_connection is null) return;
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "UPDATE songs SET title = $title, artist = $artist WHERE path = $path;";
             cmd.Parameters.AddWithValue("$title", title);
             cmd.Parameters.AddWithValue("$artist", artist);
@@ -128,12 +152,13 @@ public sealed class LibraryStore : IDisposable
     public void SetEmbedding(string path, float[] vector, string model)
     {
         ArgumentNullException.ThrowIfNull(vector);
+        if (_connection is null) return;
         var blob = new byte[vector.Length * sizeof(float)];
         Buffer.BlockCopy(vector, 0, blob, 0, blob.Length);
 
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "UPDATE songs SET embedding = $emb, embedding_model = $model WHERE path = $path;";
             cmd.Parameters.AddWithValue("$emb", blob);
             cmd.Parameters.AddWithValue("$model", model);
@@ -144,9 +169,10 @@ public sealed class LibraryStore : IDisposable
 
     public SavedSong? Get(string path)
     {
+        if (_connection is null) return null;
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = """
                 SELECT path, title, artist, station, codec, saved_at, description, facets, source
                 FROM songs WHERE path = $path;
@@ -164,9 +190,10 @@ public sealed class LibraryStore : IDisposable
     /// harvested songs don't clutter it.</summary>
     public IReadOnlyList<SavedSong> GetAll(SongSource? source = null)
     {
+        if (_connection is null) return [];
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = source is null
                 ? """
                   SELECT path, title, artist, station, codec, saved_at, description, facets, source
@@ -188,9 +215,10 @@ public sealed class LibraryStore : IDisposable
 
     public void Remove(string path)
     {
+        if (_connection is null) return;
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = "DELETE FROM songs WHERE path = $path;";
             cmd.Parameters.AddWithValue("$path", path);
             cmd.ExecuteNonQuery();
@@ -200,9 +228,10 @@ public sealed class LibraryStore : IDisposable
     /// <summary>Rows with a description but no current-model embedding yet (backfill input).</summary>
     public IReadOnlyList<(string Path, string Description)> GetRowsNeedingEmbedding(string model)
     {
+        if (_connection is null) return [];
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = """
                 SELECT path, description FROM songs
                 WHERE description IS NOT NULL AND description <> ''
@@ -221,9 +250,10 @@ public sealed class LibraryStore : IDisposable
     /// <summary>Load all rows embedded with <paramref name="model"/> for in-memory cosine search (Phase D).</summary>
     public IReadOnlyList<SavedSongVector> GetEmbeddedRows(string model)
     {
+        if (_connection is null) return [];
         lock (_lock)
         {
-            using var cmd = _connection.CreateCommand();
+            using var cmd = _connection!.CreateCommand();
             cmd.CommandText = """
                 SELECT path, title, artist, description, embedding FROM songs
                 WHERE embedding IS NOT NULL AND embedding_model = $model;
@@ -287,24 +317,25 @@ public sealed class LibraryStore : IDisposable
                 );
                 """);
 
-            SqliteSchema.AddMissingColumns(_connection, "songs", AddedColumns);
+            // Only ever called from the constructor's try, where the connection is open.
+            SqliteSchema.AddMissingColumns(_connection!, "songs", AddedColumns);
             Execute($"PRAGMA user_version={SchemaVersion};");
         }
     }
 
     private void Execute(string sql)
     {
-        using var cmd = _connection.CreateCommand();
+        using var cmd = _connection!.CreateCommand();
         cmd.CommandText = sql;
         cmd.ExecuteNonQuery();
     }
 
     private object? ExecuteScalar(string sql)
     {
-        using var cmd = _connection.CreateCommand();
+        using var cmd = _connection!.CreateCommand();
         cmd.CommandText = sql;
         return cmd.ExecuteScalar();
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose() => _connection?.Dispose();
 }
