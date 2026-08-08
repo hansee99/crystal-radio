@@ -30,6 +30,8 @@
 #define ModelUrl       "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
 ; Verified against the file this project has been running with all along.
 #define ModelSha256    "6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452"
+; Its exact size, so a reinstall can tell "already there" from "half a download" without hashing.
+#define ModelBytes     "90405214"
 
 [Setup]
 ; Never change AppId — it is what makes the next release an upgrade rather than a second copy.
@@ -106,10 +108,45 @@ begin
     @OnDownloadProgress);
 end;
 
+{
+  True when this machine already has the model, at its full size.
+
+  Reinstalling over an existing install is the normal way to update (build-installer.ps1 -Install
+  after a git pull), and re-fetching 86 MB every time to write the same bytes is most of the wait
+  for a change of a few kilobytes. Size rather than hash: a hash of 86 MB costs seconds on the kind
+  of machine this exists for, and the failure it would catch - a corrupt model - already degrades
+  gracefully, because the embedding provider reports itself unavailable and search carries on
+  without it. A truncated download is what size catches, and that is the realistic one.
+}
+function ModelAlreadyInstalled: Boolean;
+var
+  path: String;
+  size: Int64;
+begin
+  Result := False;
+  path := ExpandConstant('{app}\MlAssets\{#ModelFile}');
+  if not FileExists(path) then
+    Exit;
+  if not FileSize64(path, size) then
+    Exit;
+  Result := size = {#ModelBytes};
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   if CurPageID <> wpReady then
   begin
+    Result := True;
+    Exit;
+  end;
+
+  if ModelAlreadyInstalled then
+  begin
+    // Nothing to fetch. The Files entry sources from the temp folder, so skipifsourcedoesntexist
+    // leaves the installed copy exactly where it is.
+    // (Line comments on purpose: a brace comment would end at the first closing brace, and an
+    //  Inno constant written inline would be one - which is what broke this the first time.)
+    Log('Language model already present at full size - skipping the download.');
     Result := True;
     Exit;
   end;

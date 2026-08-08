@@ -48,10 +48,27 @@
     Answer no to the "remove Inno Setup again?" prompt, leaving an install this script made. Only
     meaningful when the script installed it.
 
+.PARAMETER Install
+    Run the installer it just built, silently, to update this machine's installed copy. This is the
+    git-pull-then-update loop: build, then let Inno upgrade in place.
+
+    Deliberately the INSTALLER and not a file copy. build-release.ps1 mirrors a build into its own
+    folder with robocopy /MIR, which is right for what that script is, but pointed at a
+    setup-managed install it would delete unins000.exe and the uninstall log along with anything
+    else it did not produce. Even without that, Windows would still believe the old version is
+    installed: Add/Remove Programs and the uninstaller's file list are Inno's to maintain. Running
+    the installer keeps all of it correct - same AppId means an in-place upgrade, the registered
+    version moves, the uninstaller keeps working, and the Start Menu shortcut keeps its
+    AppUserModelID.
+
+    Needs elevation, since the installer writes to Program Files; UAC prompts if this shell is not
+    already elevated. The 86 MB model is not re-downloaded when it is already there at full size.
+
 .EXAMPLE
     .\build-installer.ps1
     .\build-installer.ps1 -FullSeed -SeedCount 800
     .\build-installer.ps1 -InstallInnoSetup          # unattended: borrow it, then put it back
+    git pull; .\build-installer.ps1 -Install         # update this machine to the new build
 #>
 [CmdletBinding()]
 param(
@@ -60,7 +77,8 @@ param(
     [switch] $FullSeed,
     [switch] $SkipSeed,
     [switch] $InstallInnoSetup,
-    [switch] $KeepInnoSetup
+    [switch] $KeepInnoSetup,
+    [switch] $Install
 )
 
 $ErrorActionPreference = 'Stop'
@@ -144,6 +162,55 @@ function Uninstall-InnoSetup {
         return
     }
     Write-Host '  Removed.' -ForegroundColor DarkGray
+}
+
+<#
+    Upgrades this machine's installed copy by running the setup we just built.
+
+    /VERYSILENT with no /DIR: Inno finds the existing install from the AppId and upgrades it where
+    it already is, rather than second-guessing the location. A first-time install lands in the
+    default Program Files folder.
+
+    Elevation is the installer's own business (PrivilegesRequired=admin): started with -Verb RunAs
+    it raises UAC when this shell is not elevated, and simply proceeds when it is.
+#>
+function Install-Build([string] $setupPath) {
+    Step 'Updating the installed copy'
+
+    if (Get-Process -Name 'crystal-radio' -ErrorAction SilentlyContinue) {
+        # The installer's CloseApplications would offer to do this, but not while it is silent.
+        Fail ('Crystal Radio is running - close it first, then re-run with -Install.' + "`n" +
+              "The installer is built either way: $setupPath")
+    }
+
+    $proc = Start-Process -FilePath $setupPath `
+        -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' `
+        -Verb RunAs -Wait -PassThru
+    if ($proc.ExitCode -ne 0) {
+        Fail "Setup returned $($proc.ExitCode). The installer is built: $setupPath"
+    }
+
+    # Most uninstall keys have no DisplayName at all, and under Set-StrictMode reading a property
+    # that is not there is an error rather than $null - so test for it before comparing.
+    $installed = Get-ItemProperty `
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+        -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.PSObject.Properties.Name -contains 'DisplayName' -and $_.DisplayName -like 'Crystal Radio*'
+        } | Select-Object -First 1
+
+    if ($installed) {
+        $version = if ($installed.PSObject.Properties.Name -contains 'DisplayVersion') { $installed.DisplayVersion } else { '?' }
+        $where = if ($installed.PSObject.Properties.Name -contains 'InstallLocation') { $installed.InstallLocation } else { '' }
+        Write-Host "  Installed: $($installed.DisplayName) $version" -ForegroundColor Green
+        if ($where) { Write-Host "  $where" -ForegroundColor DarkGray }
+    } else {
+        # Not fatal - setup said it succeeded - but worth saying, because it means the version
+        # Windows reports is not the one just built.
+        Write-Host '  Setup succeeded but no Add/Remove Programs entry was found.' -ForegroundColor Yellow
+    }
+    Write-Host ''
 }
 
 try {
@@ -261,6 +328,9 @@ try {
         Write-Host ("  {0} MB - the 86 MB model is downloaded during install, not carried." -f `
             [math]::Round($setup.Length / 1MB, 1)) -ForegroundColor DarkGray
         Write-Host ''
+
+        # --- Update this machine ---------------------------------------------------------------
+        if ($Install) { Install-Build $setup.FullName }
     }
     finally {
         # finally, not "after a successful build": a build that failed is no reason to leave
