@@ -45,6 +45,11 @@ public partial class App : Application
         // appear, and toasts are attributed by it. See WindowsNotificationService.
         Services.WindowsNotificationService.ApplyAppIdentity();
 
+        // The other half of that identity: the ID above is only useful if a shortcut in THIS
+        // user's Start Menu carries it. Without one the taskbar shows a generic icon and toasts
+        // never appear. Cheap, and a no-op once a good shortcut exists.
+        Services.StartMenuShortcut.Ensure();
+
         // Up before anything slow, and on its own UI thread so it keeps animating while this one is
         // busy building the window (#53): a cold start on an older laptop was measured at about a
         // minute with nothing on screen at all.

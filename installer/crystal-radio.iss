@@ -9,6 +9,9 @@
 ;   1. Sets AppUserModelID on the Start Menu shortcut. Toast notifications from an unpackaged app
 ;      are attributed by that ID, and Windows reads it from the shortcut — without it the app can
 ;      raise toasts that never appear. It must match WindowsNotificationService.Aumid exactly.
+;      Note this shortcut alone is NOT enough: the lookup is per-user and these go to the all-users
+;      Start Menu, so the app writes its own copy at startup (Services/StartMenuShortcut.cs). This
+;      one is what makes Crystal Radio findable in Start for every user of the machine.
 ;   2. Downloads the 86 MB ONNX embedding model at install time rather than carrying it. It is a
 ;      third-party artifact under its own licence, it is git-ignored in this repo for the same
 ;      reason, and bundling it would triple the installer.
@@ -76,6 +79,8 @@ Source: "{tmp}\{#ModelFile}"; DestDir: "{app}\MlAssets"; Flags: external ignorev
 
 [Icons]
 ; AppUserModelID is what makes toast notifications work for an unpackaged app — see the header.
+; Per-machine, so it reaches every user; the per-user copy the shell actually resolves against is
+; written by the app itself.
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AumId}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AumId}"; Tasks: desktopicon
 

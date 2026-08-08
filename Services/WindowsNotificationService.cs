@@ -13,10 +13,14 @@ namespace RadioPlayer.Services;
 /// <list type="number">
 /// <item><see cref="ApplyAppIdentity"/> must run before any window exists, setting the process's
 /// AppUserModelID.</item>
-/// <item>A Start Menu shortcut must carry the <b>same</b> ID in its
-/// <c>System.AppUserModel.ID</c> property. <c>scripts/build-release.ps1</c> and the installer
-/// both write it.</item>
+/// <item>A Start Menu shortcut <b>in the current user's profile</b> must carry the <b>same</b> ID
+/// in its <c>System.AppUserModel.ID</c> property. <see cref="StartMenuShortcut.Ensure"/> writes
+/// one at startup; <c>scripts/build-release.ps1</c> and the installer also write theirs.</item>
 /// </list>
+///
+/// <para>Per-user is not a detail. The installer's shortcut is per-machine (<c>%ProgramData%</c>),
+/// and the lookup does not see it — which is why installed copies showed a generic taskbar icon
+/// and no toasts until the app started writing its own.</para>
 ///
 /// <para>Both were established by experiment, because the API gives no useful signal: with the
 /// AUMID alone <c>CreateToastNotifier</c> succeeds, <c>Setting</c> reports <c>Enabled</c>,
