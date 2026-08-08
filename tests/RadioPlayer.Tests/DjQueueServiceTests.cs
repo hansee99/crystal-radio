@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Windows.Threading;
 using RadioPlayer.Services;
@@ -20,6 +21,15 @@ namespace RadioPlayer.Tests;
 /// the same class of async-continuation pitfall found and fixed in tools/DjQueue's PoC earlier —
 /// see that tool's README.)
 /// </summary>
+[SuppressMessage("Usage", "xUnit1031:Test methods should not use blocking task operations",
+    Justification =
+        "Deliberate, and the async form would break these tests — see the threading note above. " +
+        "The rule guards against blocking on a task whose continuation needs the thread that is " +
+        "blocked; here every awaited task is already completed (FakeSongCurator returns " +
+        "Task.FromResult), so nothing is ever waited on. Awaiting instead would let the test " +
+        "resume on another thread, and PumpDispatcher would then pump a dispatcher that is not " +
+        "the one DjQueueService captured, silently flushing nothing. Scoped to this class on " +
+        "purpose: other test files should still get the warning.")]
 public sealed class DjQueueServiceTests : IDisposable
 {
     private readonly List<string> _tempFiles = new();
