@@ -45,7 +45,7 @@ $ErrorActionPreference = 'Stop'
 # the running process and this shortcut; a mismatch fails silently in both directions.
 $AppUserModelId = 'HansSeebacher.CrystalRadio'
 
-$repo    = $PSScriptRoot
+$repo    = Split-Path $PSScriptRoot -Parent
 $project = Join-Path $repo 'crystal-radio.csproj'
 $tests   = Join-Path $repo 'tests\RadioPlayer.Tests\RadioPlayer.Tests.csproj'
 $staging = Join-Path $env:TEMP ('crystal-radio-publish-' + [Guid]::NewGuid().ToString('n').Substring(0, 8))
@@ -166,7 +166,7 @@ function Step($message) {
     Write-Host "==> $message" -ForegroundColor Cyan
 }
 
-if (-not (Test-Path $project)) { Fail "No crystal-radio.csproj next to this script ($repo)." }
+if (-not (Test-Path $project)) { Fail "No crystal-radio.csproj in the repo root ($repo)." }
 
 # --- Can we actually write there? --------------------------------------------------------------
 # Checked up front rather than after a 30-second publish: Program Files needs elevation, and

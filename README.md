@@ -64,14 +64,26 @@ The core player works with no extra setup. AI search needs an API key — see
 
 ### Installing a build to test with
 
-`build-release.ps1` publishes Release into `C:\Program Files\crystal-radio` — one fixed
-folder, no version in the name, overwritten each time, so a shortcut to it keeps working.
-Run it from an elevated terminal:
+Build scripts live in [`scripts/`](scripts/README.md), which has the short version of all
+of this.
+
+To produce a setup package — and, with `-Install`, upgrade this machine's installed copy:
 
 ```powershell
-.uild-release.ps1                                    # test, publish, install
-.uild-release.ps1 -SkipTests -Force                  # skip tests, stop a running instance
-.uild-release.ps1 -Destination C:\Temp\cr -SkipTests # a throwaway install, no elevation
+.\scripts\build-installer.ps1                      # -> build\dist\crystal-radio-setup-<version>.exe
+git pull; .\scripts\build-installer.ps1 -Install   # update this machine after pulling
+```
+
+`scripts\build-release.ps1` is the other route: it publishes Release into
+`C:\Program Files\crystal-radio` — one fixed folder, no version in the name, overwritten
+each time, so a shortcut to it keeps working. A plain folder copy with no uninstaller,
+kept deliberately separate from the setup-managed install. Run it from an elevated
+terminal:
+
+```powershell
+.\scripts\build-release.ps1                                    # test, publish, install
+.\scripts\build-release.ps1 -SkipTests -Force                  # skip tests, stop a running instance
+.\scripts\build-release.ps1 -Destination C:\Temp\cr -SkipTests # a throwaway install, no elevation
 ```
 
 It refuses rather than half-installing: no elevation, failing tests, or the installed

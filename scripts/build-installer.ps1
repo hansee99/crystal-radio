@@ -84,7 +84,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$repo     = $PSScriptRoot
+$repo     = Split-Path $PSScriptRoot -Parent
 $project  = Join-Path $repo 'crystal-radio.csproj'
 $script   = Join-Path $repo 'installer\crystal-radio.iss'
 $build    = Join-Path $repo 'build'
@@ -214,7 +214,7 @@ function Install-Build([string] $setupPath) {
 }
 
 try {
-    if (-not (Test-Path $project)) { Fail "No crystal-radio.csproj next to this script ($repo)." }
+    if (-not (Test-Path $project)) { Fail "No crystal-radio.csproj in the repo root ($repo)." }
     if (-not (Test-Path $script))  { Fail "No installer script at $script." }
 
     # --- The Inno Setup compiler ---------------------------------------------------------------

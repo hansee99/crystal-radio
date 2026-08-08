@@ -14,7 +14,8 @@ namespace RadioPlayer.Services;
 /// <item><see cref="ApplyAppIdentity"/> must run before any window exists, setting the process's
 /// AppUserModelID.</item>
 /// <item>A Start Menu shortcut must carry the <b>same</b> ID in its
-/// <c>System.AppUserModel.ID</c> property. <c>build-release.ps1</c> writes it.</item>
+/// <c>System.AppUserModel.ID</c> property. <c>scripts/build-release.ps1</c> and the installer
+/// both write it.</item>
 /// </list>
 ///
 /// <para>Both were established by experiment, because the API gives no useful signal: with the
@@ -32,7 +33,8 @@ namespace RadioPlayer.Services;
 public sealed class WindowsNotificationService : INotificationService
 {
     /// <summary>
-    /// Must match the shortcut written by <c>build-release.ps1</c> exactly — the string IS the
+    /// Must match the shortcut written by <c>scripts/build-release.ps1</c> and the installer
+    /// exactly — the string IS the
     /// pairing between process and shortcut, and a mismatch fails silently in both directions.
     /// </summary>
     public const string AppUserModelId = "HansSeebacher.CrystalRadio";

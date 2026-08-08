@@ -1,6 +1,6 @@
 ﻿; Crystal Radio — Windows installer (#43)
 ;
-; Built by build-installer.ps1, which publishes a self-contained x64 build into a staging folder
+; Built by scripts/build-installer.ps1, which publishes a self-contained x64 build into a staging folder
 ; and passes it in as /DStagingDir. Compiling this file directly will fail on purpose: the payload
 ; has to be a fresh publish, not whatever happens to be lying in bin/.
 ;
@@ -16,7 +16,7 @@
 ;      (see CatalogSeed). Per-user, so it cannot be a plain install-time file copy.
 
 #ifndef StagingDir
-  #error Build this with build-installer.ps1 — it needs /DStagingDir=<published output>
+  #error Build this with scripts/build-installer.ps1 — it needs /DStagingDir=<published output>
 #endif
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -111,7 +111,7 @@ end;
 {
   True when this machine already has the model, at its full size.
 
-  Reinstalling over an existing install is the normal way to update (build-installer.ps1 -Install
+  Reinstalling over an existing install is the normal way to update (scripts/build-installer.ps1 -Install
   after a git pull), and re-fetching 86 MB every time to write the same bytes is most of the wait
   for a change of a few kilobytes. Size rather than hash: a hash of 86 MB costs seconds on the kind
   of machine this exists for, and the failure it would catch - a corrupt model - already degrades
