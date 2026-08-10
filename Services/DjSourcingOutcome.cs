@@ -25,5 +25,16 @@ public enum DjSourcingOutcome
     /// to judge relevance with. Deliberately refused rather than starting a session on unranked
     /// cosine hits — an empty answer is the correct one here.
     /// </summary>
-    OfflineUnranked
+    OfflineUnranked,
+
+    /// <summary>
+    /// The directory was unreachable and there was no local index to fall back ON — the embedding
+    /// provider is missing or the catalog has no vectors, so the offline path never ran at all.
+    ///
+    /// <para>Distinct from <see cref="OfflineNoMatch"/> on purpose, and the distinction is the
+    /// whole point: that one means the catalog was searched and came up short, which "try a
+    /// broader prompt" is fair advice for. This one means nothing was searched, and no wording of
+    /// the prompt can change the answer (#60).</para>
+    /// </summary>
+    OfflineNoCatalog
 }

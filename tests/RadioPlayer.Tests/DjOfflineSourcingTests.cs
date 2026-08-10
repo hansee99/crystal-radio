@@ -91,6 +91,35 @@ public sealed class DjOfflineSourcingTests : IDisposable
     }
 
     /// <summary>
+    /// Offline with nothing to BE offline with — no embedding provider, or a catalog with no
+    /// vectors — is a different answer from "the catalog was searched and came up short" (#60).
+    /// Nothing was searched, so the wording that follows must not send the listener rewording a
+    /// prompt that was never consulted.
+    ///
+    /// <para>The bug this pins is a silent one: the empty pool returns from
+    /// <c>SourceFromLocalCatalogAsync</c>, <c>RankRelevantAsync</c> exits on <c>pool.Count == 0</c>
+    /// before it can record anything, and the caller's fallback then labels it OfflineNoMatch.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(true)]    // an index exists but reports itself unusable (missing ONNX model)
+    [InlineData(false)]   // no semantic search wired in at all
+    public async Task AnOutageWithNoLocalCatalogSaysSoRatherThanBlamingThePrompt(bool wired)
+    {
+        DirectoryIsDown();
+        _semantic.IsAvailable = false;
+
+        using var harvest = wired
+            ? Build()
+            : new DjHarvestService(_directory, _interpreter, _web, _ranker, _enrichment, _library,
+                _harvestDir, harvesterCount: 2, reserveCount: 3, semanticSearch: null);
+        await harvest.StartAsync("ambient music for coding");
+
+        Assert.False(harvest.IsRunning);
+        Assert.Equal(DjSourcingOutcome.OfflineNoCatalog, harvest.LastSourcingOutcome);
+        Assert.Equal(0, _semantic.OfflineCalls);   // nothing was searched, hence the distinction
+    }
+
+    /// <summary>
     /// The case that must not degrade to "play the least-bad cosine hits": offline AND no ranker.
     /// Without a relevance judge there is nothing between a thin catalog and a whole session of
     /// unrelated stations, so sourcing refuses.
@@ -177,21 +206,6 @@ public sealed class DjOfflineSourcingTests : IDisposable
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => harvest.StartAsync("ambient music for coding", ct: cts.Token));
 
-        Assert.Equal(0, _semantic.OfflineCalls);
-    }
-
-    /// <summary>An outage with no local index at all (a fresh install) is still an honest empty.</summary>
-    [Fact]
-    public async Task AnOutageWithNoLocalIndexReportsNoMatchRatherThanThrowing()
-    {
-        DirectoryIsDown();
-        _semantic.IsAvailable = false;
-
-        using var harvest = Build();
-        await harvest.StartAsync("ambient music for coding");
-
-        Assert.False(harvest.IsRunning);
-        Assert.Equal(DjSourcingOutcome.OfflineNoMatch, harvest.LastSourcingOutcome);
         Assert.Equal(0, _semantic.OfflineCalls);
     }
 }

@@ -1108,9 +1108,12 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
 
         if (relevant.Count == 0)
         {
-            // OfflineUnranked is set by RankRelevantAsync and outranks everything else here: it
-            // means we refused to answer, not that there was no answer.
-            if (LastSourcingOutcome != DjSourcingOutcome.OfflineUnranked)
+            // Anything already recorded upstream outranks the generic conclusion here, because it
+            // is more specific: OfflineUnranked (RankRelevantAsync refused to answer) and
+            // OfflineNoCatalog (there was nothing to search) both describe why no judgment could be
+            // made, not that the judgment came back negative. Testing for Ok rather than listing
+            // them keeps a future outcome from silently losing its wording.
+            if (LastSourcingOutcome is DjSourcingOutcome.Ok)
                 LastSourcingOutcome = directoryDown
                     ? DjSourcingOutcome.OfflineNoMatch
                     : DjSourcingOutcome.NothingRelevant;
@@ -1381,6 +1384,11 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         if (_semanticSearch is null || !_semanticSearch.IsAvailable)
         {
             AppLog.Warn("[Dj] no local semantic index available — nothing to fall back on");
+            // Say WHICH nothing this is. An empty pool from here reaches RankRelevantAsync, which
+            // returns early on pool.Count == 0 and so never gets to record anything itself — the
+            // caller would then default to OfflineNoMatch and advise broadening a prompt that was
+            // never the problem (#60).
+            LastSourcingOutcome = DjSourcingOutcome.OfflineNoCatalog;
             return [];
         }
 
