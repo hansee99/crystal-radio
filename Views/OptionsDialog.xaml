@@ -63,7 +63,14 @@
                      DataTemplate's contents can't be reached by x:Name, and this dialog's load and
                      save are named-control code-behind. Four cheap panels keep that intact and look
                      identical on screen. -->
-                <Grid Grid.Column="1" Margin="22,20">
+                <!-- The pane scrolls as a LAST RESORT, and normally shows no scrollbar at all: the
+                     sections are laid out to fit the fixed body and pair their fields to keep it
+                     that way. It exists because the failure mode without it is silent — a field
+                     added past the bottom edge is simply clipped, with no error and no way to
+                     reach it, which is exactly how #61 hid the notifications checkbox. -->
+                <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                <Grid Margin="22,20">
 
                     <!-- ===== 1. AI-assisted search ===== -->
                     <StackPanel x:Name="AiSection">
@@ -110,17 +117,32 @@
                         <TextBlock Style="{StaticResource DialogSectionHeader}" Text="DJ mode"
                                    Margin="0,0,0,14"/>
 
-                        <TextBlock Style="{StaticResource FieldLabel}" Text="DJ voice"/>
-                        <ComboBox x:Name="DjVoiceBox" Style="{StaticResource DialogComboBox}"
-                                  DisplayMemberPath="Label" SelectedValuePath="Value"/>
-                        <TextBlock Style="{StaticResource DialogHint}" Margin="0,6,0,16"
-                                   Text="How the DJ introduces tracks and fills the gaps between them."/>
+                        <!-- The two dropdowns pair for the same reason the numbers below do — see
+                             that comment. Stacking this one full-width is what pushed the
+                             notifications checkbox off the bottom of a fixed-height pane. -->
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
 
-                        <TextBlock Style="{StaticResource FieldLabel}" Text="Remark size"/>
-                        <ComboBox x:Name="DjRemarkSizeBox" Style="{StaticResource DialogComboBox}"
-                                  DisplayMemberPath="Label" SelectedValuePath="Value"/>
-                        <TextBlock Style="{StaticResource DialogHint}" Margin="0,6,0,16"
-                                   Text="How large the DJ's remark reads while a track plays. Larger sizes widen the card too, for reading from across the desk."/>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="DJ voice"/>
+                                <ComboBox x:Name="DjVoiceBox" Style="{StaticResource DialogComboBox}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Value"/>
+                                <TextBlock Style="{StaticResource DialogHint}" Margin="0,6,0,0"
+                                           Text="How the DJ introduces tracks and fills the gaps."/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Remark size"/>
+                                <ComboBox x:Name="DjRemarkSizeBox" Style="{StaticResource DialogComboBox}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Value"/>
+                                <TextBlock Style="{StaticResource DialogHint}" Margin="0,6,0,0"
+                                           Text="How large the remark reads; larger widens its card too."/>
+                            </StackPanel>
+                        </Grid>
 
                         <!-- Numbers pair into two columns. A box holding "4" never needed the full
                              width, and pairing them is what keeps the frame fixed when #22 adds
@@ -185,6 +207,7 @@
                         </Grid>
                     </StackPanel>
                 </Grid>
+                </ScrollViewer>
             </Grid>
         </Border>
     </DockPanel>
