@@ -127,7 +127,9 @@ public partial class MainWindow : Window
             semanticSearch, ranker, trackInfo, lyrics, notifications, songLibrary, _localEngine, curator, _djHarvest, _djIntro,
             new ConfirmDialogService(this));   // asks before a mode switch throws something away (#46)
         DataContext = _viewModel;
-        _viewModel.DjNotificationsEnabled = _settingsStore.Load().DjNotificationsEnabled;
+        var startupSettings = _settingsStore.Load();
+        _viewModel.DjNotificationsEnabled = startupSettings.DjNotificationsEnabled;
+        _viewModel.DjRemarkSize = startupSettings.ResolveDjRemarkSize();
 
         // Reset the About reading view to the top whenever fresh content loads (a new briefing
         // or a regenerate), so the previous track's scroll offset isn't carried over.
@@ -269,6 +271,7 @@ public partial class MainWindow : Window
         _apiKeys.Current = ResolveApiKey();
         _viewModel.LibraryFolder = settings.ResolveLibraryFolder();
         _djIntro.Personality = settings.ResolveDjPersonality();
+        _viewModel.DjRemarkSize = settings.ResolveDjRemarkSize();   // live, mid-session included
 
         // Read per track, so whatever is playing keeps the guards it started with.
         _localEngine.IntroSkipSeconds = settings.IntroSkipSeconds;

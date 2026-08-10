@@ -1290,7 +1290,10 @@
                      top edge, overflow can only spill downward, and the last child (the recent
                      list) is what gets cut instead of the header. Short titles still centre exactly
                      as before. -->
-                <Grid Grid.Row="0" MaxWidth="440" HorizontalAlignment="Left"
+                <!-- MaxWidth is bound because this block CONTAINS the DJ remark card, and a child's
+                     MaxWidth cannot take it past its parent (#61). Stays at the 440 everything here
+                     was laid out around for every size that doesn't need more. -->
+                <Grid Grid.Row="0" MaxWidth="{Binding NowPlayingMaxWidth}" HorizontalAlignment="Left"
                       Visibility="{Binding ShowNowPlaying, Converter={StaticResource BoolToVis}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
@@ -1365,7 +1368,8 @@
                          muted italic floating on artwork. Now 15px Secondary on a solid surface,
                          attributed so it's clear who's talking. -->
                     <Border HorizontalAlignment="Left" Margin="0,20,0,0" CornerRadius="10"
-                            Padding="14,12" MaxWidth="430" Background="#B8071614"
+                            Padding="14,12" MaxWidth="{Binding DjRemarkMaxWidth}"
+                            Background="#B8071614"
                             BorderBrush="#2E56C7BA" BorderThickness="1"
                             Visibility="{Binding ShowDjIntro, Converter={StaticResource BoolToVis}}">
                         <StackPanel>
@@ -1377,9 +1381,13 @@
                                            FontWeight="SemiBold" Foreground="{StaticResource TealText}"
                                            VerticalAlignment="Center"/>
                             </StackPanel>
-                            <TextBlock Text="{Binding DjIntroLine}" FontSize="15" FontStyle="Italic"
+                            <!-- Size is user-set (#61): the remark is often read from a side
+                                 monitor and 15px did not survive that. See DjRemarkMetrics. -->
+                            <TextBlock Text="{Binding DjIntroLine}" FontStyle="Italic"
+                                       FontSize="{Binding DjRemarkFontSize}"
+                                       LineHeight="{Binding DjRemarkLineHeight}"
                                        Foreground="{StaticResource TextSecondary}"
-                                       TextWrapping="Wrap" LineHeight="22"/>
+                                       TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
 

@@ -2383,6 +2383,33 @@ public sealed class MainViewModel : ObservableObject
 
     public bool ShowDjIntro => IsDjMode && !string.IsNullOrWhiteSpace(DjIntroLine);
 
+    private DjRemarkSize _djRemarkSize = DjRemarkSize.Medium;
+    /// <summary>
+    /// How large the DJ's remark reads (#61). Applied live from the options dialog, like the rest
+    /// — see <c>MainWindow.ApplySettings</c>. The four derived values below are what the view
+    /// binds; see <see cref="DjRemarkMetrics"/> for why they move together.
+    /// </summary>
+    public DjRemarkSize DjRemarkSize
+    {
+        get => _djRemarkSize;
+        set
+        {
+            if (!SetProperty(ref _djRemarkSize, value)) return;
+            OnPropertyChanged(nameof(DjRemarkFontSize));
+            OnPropertyChanged(nameof(DjRemarkLineHeight));
+            OnPropertyChanged(nameof(DjRemarkMaxWidth));
+            OnPropertyChanged(nameof(NowPlayingMaxWidth));
+        }
+    }
+
+    public double DjRemarkFontSize => DjRemarkMetrics.FontSize(DjRemarkSize);
+    public double DjRemarkLineHeight => DjRemarkMetrics.LineHeight(DjRemarkSize);
+    public double DjRemarkMaxWidth => DjRemarkMetrics.CardMaxWidth(DjRemarkSize);
+
+    /// <summary>The Now Playing block's cap. It contains the remark card, so it has to make room
+    /// for it — a card MaxWidth alone can't grow past its parent.</summary>
+    public double NowPlayingMaxWidth => DjRemarkMetrics.ContainerMaxWidth(DjRemarkSize);
+
     private CancellationTokenSource? _djIntroCts;
 
     // --- The DJ's voice between tracks ------------------------------------------------------

@@ -20,6 +20,24 @@ public enum DjPersonality
 }
 
 /// <summary>
+/// How large the "YOUR DJ" remark reads (#61). The remark is the mode's signature and is often
+/// read from across a desk on a side monitor, which the original 15px did not survive.
+///
+/// <para>The size scales the card's width along with the type, deliberately: growing the font
+/// alone would re-wrap the same sentence into more lines in the same box, which makes it taller
+/// without making it easier to read at a distance.</para>
+/// </summary>
+public enum DjRemarkSize
+{
+    /// <summary>The original 15px card — for anyone who wants the DJ to stay out of the way.</summary>
+    Small,
+    /// <summary>The default. Bigger than what shipped, because what shipped was too small.</summary>
+    Medium,
+    /// <summary>Readable across a room.</summary>
+    Large
+}
+
+/// <summary>
 /// Generates a short (1-2 sentence), tongue-in-cheek DJ-style intro line for the currently
 /// playing DJ Mode track — the kind of on-air patter a real radio DJ might give before spinning
 /// a song. Purely creative/tone-matching, not a facts lookup, so no web search is involved.

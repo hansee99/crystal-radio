@@ -31,17 +31,25 @@ public partial class OptionsDialog : AppDialog
     private readonly SettingsStore _store;
 
     /// <summary>
-    /// A voice as the dropdown shows it. <see cref="DjPersonality"/>'s member names are what goes
-    /// in the settings file; "LateNight" is not something to show a listener.
+    /// An enum member as a dropdown shows it. The member NAMES are what goes in the settings file;
+    /// "LateNight" is not something to show a listener.
     ///
     /// <para>ToString is overridden because DialogComboBox's template renders the CLOSED box
     /// through a plain ContentPresenter. DisplayMemberPath styles the open list but leaves the box
     /// falling back to ToString — which for a record is its whole shape,
-    /// "VoiceOption { Value = Warm, Label = Warm }". Seen in a render check.</para>
+    /// "EnumOption { Value = Warm, Label = Warm }". Seen in a render check.</para>
     /// </summary>
-    private sealed record VoiceOption(DjPersonality Value, string Label)
+    private sealed record EnumOption(object Value, string Label)
     {
         public override string ToString() => Label;
+    }
+
+    /// <summary>Fills a dropdown with an enum's members, labelled for reading and keyed by the
+    /// member itself so <c>SelectedValue</c> round-trips as the enum.</summary>
+    private static void Bind<T>(System.Windows.Controls.ComboBox box, T selected) where T : struct, Enum
+    {
+        box.ItemsSource = Enum.GetValues<T>().Select(v => new EnumOption(v, DisplayName(v))).ToArray();
+        box.SelectedValue = selected;
     }
 
     public OptionsDialog(SettingsStore store)
@@ -54,10 +62,8 @@ public partial class OptionsDialog : AppDialog
         ApiKeyBox.Text = store.GetApiKey() ?? string.Empty;
         LibraryFolderBox.Text = settings.ResolveLibraryFolder();
 
-        DjVoiceBox.ItemsSource = Enum.GetValues<DjPersonality>()
-            .Select(v => new VoiceOption(v, DisplayName(v)))
-            .ToArray();
-        DjVoiceBox.SelectedValue = settings.ResolveDjPersonality();
+        Bind(DjVoiceBox, settings.ResolveDjPersonality());
+        Bind(DjRemarkSizeBox, settings.ResolveDjRemarkSize());
 
         DjNotificationsBox.IsChecked = settings.DjNotificationsEnabled;
         HarvesterCountBox.Text = settings.DjHarvesterCount.ToString(CultureInfo.CurrentCulture);
@@ -78,11 +84,11 @@ public partial class OptionsDialog : AppDialog
     }
 
     /// <summary>
-    /// Splits a personality's member name for display: "LateNight" → "Late night". Done by rule
-    /// rather than a lookup table so a personality added to the enum reads correctly without
+    /// Splits an enum member's name for display: "LateNight" → "Late night". Done by rule
+    /// rather than a lookup table so a member added to the enum reads correctly without
     /// anyone remembering to add it here too.
     /// </summary>
-    internal static string DisplayName(DjPersonality value)
+    internal static string DisplayName(Enum value)
     {
         var name = value.ToString();
         var text = new StringBuilder(name.Length + 4);
@@ -162,6 +168,8 @@ public partial class OptionsDialog : AppDialog
 
         if (DjVoiceBox.SelectedValue is DjPersonality voice)
             settings.DjPersonality = voice.ToString();
+        if (DjRemarkSizeBox.SelectedValue is DjRemarkSize remarkSize)
+            settings.DjRemarkSize = remarkSize.ToString();
 
         // Unparseable input keeps the current value rather than resetting to a default — a typo
         // shouldn't silently change a setting the user wasn't editing.

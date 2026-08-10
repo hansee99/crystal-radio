@@ -116,6 +116,12 @@
                         <TextBlock Style="{StaticResource DialogHint}" Margin="0,6,0,16"
                                    Text="How the DJ introduces tracks and fills the gaps between them."/>
 
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Remark size"/>
+                        <ComboBox x:Name="DjRemarkSizeBox" Style="{StaticResource DialogComboBox}"
+                                  DisplayMemberPath="Label" SelectedValuePath="Value"/>
+                        <TextBlock Style="{StaticResource DialogHint}" Margin="0,6,0,16"
+                                   Text="How large the DJ's remark reads while a track plays. Larger sizes widen the card too, for reading from across the desk."/>
+
                         <!-- Numbers pair into two columns. A box holding "4" never needed the full
                              width, and pairing them is what keeps the frame fixed when #22 adds
                              fields instead of making the dialog taller. -->
