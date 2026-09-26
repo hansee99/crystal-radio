@@ -71,7 +71,10 @@ works on Linux/arm64 with the AAC add-on. Retire that risk before paying for any
 **The target Pi (verified 2026-09-26).** `hans@ras4` — Raspberry Pi 4 Model B (2 GB), Debian 13
 "trixie" 64-bit, headless (no PipeWire/PulseAudio; BASS talks to ALSA directly, and ALSA's
 `default` is the headphone jack). `libasound2t64`, `libicu76` and `libssl3t64` are already
-installed, and `hans` has passwordless sudo. Commands below use `hans@ras4`.
+installed. **`hans` does NOT have passwordless sudo** — an earlier `sudo -n true` check passed only
+because the user's own recent sudo was still cached; don't trust that check. `ufw` is active. Since
+Step 6, `hans` may run `systemctl stop|start|restart crystal-radio.service` without a password and
+nothing else. Commands below use `hans@ras4`.
 
 **SSH from this Windows box — two gotchas.**
 
@@ -1297,6 +1300,37 @@ by itself. Then update the docs:
 - `THIRD-PARTY-NOTICES.md`: the Linux BASS libraries, same licence.
 
 **Commit.** `Publish the web head to a Raspberry Pi as a systemd service`
+
+### Step 6 — as implemented (differences from the text above)
+
+`deploy/pi/README.md` is the user-facing guide now; this records what differs from the plan above.
+
+- **Root work is split out into `setup.sh`, run once by a person** (`ssh -t hans@ras4 sudo bash
+  ~/crystal-radio/deploy/setup.sh`) — there is no passwordless sudo on the Pi. It installs and
+  enables the unit, opens **ufw** port 5000 for the LAN subnet only, and adds
+  `/etc/sudoers.d/crystal-radio` allowing `systemctl stop|start|restart crystal-radio.service`
+  without a password. Updates (`install.sh`) then need no password at all.
+- **`scripts/publish-pi.ps1 -Deploy` publishes and deploys in one step.** One tar stream (app as
+  `pi/` + `install.sh`, `setup.sh`, the unit) goes to `~/crystal-radio.new`, and `install.sh` swaps
+  it in. Exit code 10 from `install.sh` means "first install: run setup.sh". Pitfalls hit while
+  writing it: the `tar | ssh` pipe must run through `cmd.exe` (Windows PowerShell corrupts binary
+  data piped between native programs); `$deploy` collided with the `-Deploy` switch (PowerShell
+  variable names are case-insensitive); and the file needs a BOM *and* ASCII-only text.
+- **`.gitattributes` forces LF** for `deploy/pi/*.sh` and `*.service` — this repo checks out CRLF
+  (`core.autocrlf=true`), which breaks bash and systemd.
+- **Bug found on the Pi: `GetFolderPath` returned `""`.** `~/.local` didn't exist on a fresh image,
+  and without `SpecialFolderOption.Create` .NET returns an empty string for a missing folder, so
+  `enrichment.db`, `library.db` and the logs were written *relative to the working directory* —
+  inside `~/crystal-radio`, which every update deletes. All 10 calls in Core now pass `Create`
+  (identical on Windows, where the folders exist), and `SpecialFolderUsageTests` scans Core's source
+  and fails on any call without it (verified: it lists the offenders when the fix is reverted).
+- **Verified on ras4:** runs directly in ~4 s; SIGTERM gives "Application is shutting down…" and
+  exit 0 (so `systemctl stop` is clean); data under `~/.config` and `~/.local/share`; the service
+  restarts through the sudo rule in ~4 s; `http://ras4:5000` answers from Windows across the LAN;
+  searching and playing a station works on the Pi (confirmed by ear). The unit adds
+  `TimeoutStopSec=20` so the DJ harvest has time to stop on shutdown.
+- Testing trap: `pgrep -f`/`pkill -f` with the app's path match the ssh command running them —
+  signal the PID instead (`$!`).
 
 ---
 

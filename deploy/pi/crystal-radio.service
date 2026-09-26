@@ -1,0 +1,25 @@
+# Crystal Radio's web head as a system service on a Raspberry Pi.
+# Installed to /etc/systemd/system by install.sh. Written for user "hans" on ras4 — change User=
+# and the two /home paths for another user.
+[Unit]
+Description=Crystal Radio
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+User=hans
+WorkingDirectory=/home/hans/crystal-radio
+ExecStart=/home/hans/crystal-radio/RadioPlayer.Web
+# 0.0.0.0: reachable from the LAN. There is no login — keep the port off the internet.
+Environment=ASPNETCORE_URLS=http://0.0.0.0:5000
+# Workstation GC: a small, single-purpose box doesn't want a heap per core.
+Environment=DOTNET_gcServer=0
+# Optional; otherwise set the key once on the web UI's Settings page.
+# Environment=ANTHROPIC_API_KEY=...
+Restart=on-failure
+RestartSec=5
+# Enough time for the player to stop the DJ harvest and free the audio device on SIGTERM.
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

@@ -96,7 +96,7 @@ public static class AppLog
         try
         {
             var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create),
                 "RadioPlayer", "logs");
             Directory.CreateDirectory(dir);
             Prune(dir);

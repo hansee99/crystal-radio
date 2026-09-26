@@ -49,7 +49,7 @@ public sealed class DjSessionLog
         try
         {
             var dir = directory ?? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create),
                 "RadioPlayer", "dj-sessions");
             Directory.CreateDirectory(dir);
             Prune(dir);

@@ -99,7 +99,7 @@ public sealed class AppServices : IDisposable
         // recorder above.
         var djSettings = settingsStore.Load();
         var harvestDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadioPlayer", "harvest");
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create), "RadioPlayer", "harvest");
         var djHarvest = new DjHarvestService(searchService, interpreter, agenticSearch, ranker, enrichment, songLibrary, harvestDir,
             harvesterCount: djSettings.DjHarvesterCount, reserveCount: djSettings.DjHarvestReserveCount,
             offsetSeconds: 0.0, trimEdges: true,

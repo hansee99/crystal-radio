@@ -53,8 +53,19 @@ own copy, deliberately separate from the setup-managed install at `C:\Program Fi
 **Do not point it at the setup-managed folder:** it mirrors, so it would delete the uninstaller.
 Use `build-installer.ps1 -Install` to update that one.
 
+## Deploy to the Raspberry Pi
+
+```powershell
+.\scripts\publish-pi.ps1 -Deploy                 # -Target user@host, default hans@ras4
+```
+
+Tests, publishes the web head self-contained for linux-arm64 into `build\pi`, uploads it and runs
+`deploy\pi\install.sh` on the Pi, which swaps the app folder and restarts the service. Without
+`-Deploy` it only publishes. The first install ends by printing a one-time `setup.sh` command that
+needs the Pi's sudo password; see `deploy\pi\README.md`.
+
 ## Notes
 
-- Both scripts are ASCII-only with a BOM. PowerShell 5.1 reads a BOM-less file as ANSI, and one
+- All scripts are ASCII-only with a BOM. PowerShell 5.1 reads a BOM-less file as ANSI, and one
   em-dash in a string is enough to break parsing — it has happened twice.
 - `build\` is output only and is git-ignored.

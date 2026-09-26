@@ -196,7 +196,7 @@ public sealed class AppSettings
     /// <summary>Resolved library folder (the stored value or the default).</summary>
     public string ResolveLibraryFolder() =>
         string.IsNullOrWhiteSpace(LibraryFolder)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "Crystal Radio")
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic, Environment.SpecialFolderOption.Create), "Crystal Radio")
             : LibraryFolder;
 }
 
@@ -208,7 +208,7 @@ public sealed class AppSettings
 public sealed class SettingsStore
 {
     private static readonly string Dir =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RadioPlayer");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.Create), "RadioPlayer");
     private static readonly string FilePath = Path.Combine(Dir, "settings.json");
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };

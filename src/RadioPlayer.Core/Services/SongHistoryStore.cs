@@ -12,7 +12,7 @@ namespace RadioPlayer.Services;
 public sealed class SongHistoryStore
 {
     private static readonly string Dir =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RadioPlayer");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.Create), "RadioPlayer");
     private static readonly string FilePath = Path.Combine(Dir, "history.json");
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };

@@ -78,7 +78,7 @@ public sealed class LibraryStore : IDisposable
     }
 
     public static string DefaultDatabasePath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create),
         "RadioPlayer", "library.db");
 
     /// <summary>Insert (or refresh core fields of) a saved song. Description/facets/embedding

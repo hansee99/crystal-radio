@@ -27,6 +27,9 @@ enhancement layered over the core player — the player must work fully without 
   `TaskbarItemInfo.ThumbButtonInfos` (WinUI 3 has no built-in equivalent).
 - **Audio engine:** BASS (un4seen) via **ManagedBass** + **ManagedBass.Aac**
 - **OS media integration:** SMTC via WinRT interop (`ISystemMediaTransportControlsInterop`)
+- **Second head:** `src/RadioPlayer.Web`, Blazor Server, published self-contained for
+  `linux-arm64` and run as a systemd service on a Raspberry Pi (`deploy/pi/`,
+  `scripts/publish-pi.ps1`). Same `RadioPlayer.Core`; the Pi plays audio, browsers only control it.
 - **Target framework:** `net10.0-windows10.0.19041.0`
   (the Windows SDK version in the TFM is required to project the WinRT/SMTC types).
   This dev machine only has the .NET 10 SDK/runtime; net8.0 would build but not run
@@ -140,6 +143,11 @@ native DLLs are resolved.
 
 6. **TFM must include the Windows SDK version** (`net10.0-windows10.0.19041.0`) or the
    WinRT `Windows.Media.*` types won't be available.
+
+7. **`Environment.GetFolderPath` needs `SpecialFolderOption.Create` in Core.** Without it the call
+   returns `""` when the folder doesn't exist — never on Windows, but on a fresh Pi `~/.local/share`
+   didn't, so the databases landed in the app folder that every update deletes.
+   `SpecialFolderUsageTests` fails the build on a call without it.
 
 ## AI-assisted station search
 

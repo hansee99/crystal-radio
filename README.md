@@ -111,6 +111,21 @@ curl -L -o MlAssets/all-MiniLM-L6-v2.onnx \
 Without it, fuzzy search falls back gracefully to Pattern B (web discovery). The core
 player and all other AI search layers still work.
 
+### Raspberry Pi (web remote)
+
+A second front end, `src/RadioPlayer.Web`, runs the same player on a Raspberry Pi 4/5 (64-bit OS)
+as a service: the Pi plays through its own audio output and any phone or browser on the home
+network controls it at `http://<pi>:5000`. One command publishes and deploys it:
+
+```powershell
+.\scripts\publish-pi.ps1 -Deploy
+```
+
+The first install needs one extra step with the Pi's sudo password; see
+[deploy/pi/README.md](deploy/pi/README.md). To try the web UI on Windows first:
+`dotnet run --project src/RadioPlayer.Web` (plays through this PC; close the desktop app first,
+they share data).
+
 ## Enabling AI search
 
 AI search is disabled until an Anthropic API key is provided. Either:

@@ -64,7 +64,7 @@ public sealed class StreamRecorder : IDisposable
     /// concurrent instances (N harvesters, or a harvester alongside this live recorder) never
     /// write into the same folder.</summary>
     public static readonly string CacheDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create),
         "RadioPlayer", "cache");
 
     private readonly string _cacheDir;

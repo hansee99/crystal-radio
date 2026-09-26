@@ -68,7 +68,7 @@ public sealed class EnrichmentStore : IDisposable
     }
 
     public static string DefaultDatabasePath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create),
         "RadioPlayer", "enrichment.db");
 
     public EnrichmentRecord? Get(string stationUuid)
