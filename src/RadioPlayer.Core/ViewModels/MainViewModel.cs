@@ -3181,11 +3181,22 @@ public sealed class MainViewModel : ObservableObject
         var index = CuratedQueue.IndexOf(item);
         if (index < 0) return;
 
-        // Ensure the engine's queue matches what's shown, then jump to the clicked track.
-        if (!_local.HasQueue)
-            _local.SetQueue(CuratedQueue.Select(ToLocalTrack).ToList(), index);
-        else
+        // Jump by position only when the engine is actually playing THIS playlist. It used to check
+        // merely that some queue existed — but playing from the Songs tab replaces the queue with
+        // the whole library (and Stop keeps whatever queue there was), so a playlist tap then played
+        // that position of the library instead.
+        if (IsSameQueue(_local.Queue.Select(t => t.Path), CuratedQueue.Select(q => q.Path)))
             _local.PlayAt(index);
+        else
+            _local.SetQueue(CuratedQueue.Select(ToLocalTrack).ToList(), index);
+    }
+
+    /// <summary>The same files in the same order. An empty queue never matches, so a first tap
+    /// always loads the playlist.</summary>
+    internal static bool IsSameQueue(IEnumerable<string> playing, IEnumerable<string> shown)
+    {
+        var a = playing.ToList();
+        return a.Count > 0 && a.SequenceEqual(shown, StringComparer.Ordinal);
     }
 
     private static LocalTrack ToLocalTrack(CuratedQueueItem item)
