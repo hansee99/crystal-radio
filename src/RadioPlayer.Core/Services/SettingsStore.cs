@@ -116,6 +116,25 @@ public sealed class AppSettings
     public string DjPersonality { get; set; } = nameof(Services.DjPersonality.Warm);
 
     /// <summary>
+    /// How large the DJ's remark reads: <c>Small</c>, <c>Medium</c> (default), <c>Large</c>.
+    /// Text for the same reason as <see cref="DjPersonality"/> — an unrecognised value costs one
+    /// setting instead of resetting the whole file.
+    /// </summary>
+    public string DjRemarkSize { get; set; } = nameof(Services.DjRemarkSize.Medium);
+
+    /// <summary>The parsed form of <see cref="DjRemarkSize"/>, or Medium if it isn't recognised.
+    /// Name-matched rather than <c>Enum.TryParse</c>, for the reason given on
+    /// <see cref="ResolveDjPersonality"/>.</summary>
+    public DjRemarkSize ResolveDjRemarkSize()
+    {
+        var wanted = DjRemarkSize?.Trim();
+        foreach (var name in Enum.GetNames<DjRemarkSize>())
+            if (string.Equals(name, wanted, StringComparison.OrdinalIgnoreCase))
+                return Enum.Parse<DjRemarkSize>(name);
+        return Services.DjRemarkSize.Medium;
+    }
+
+    /// <summary>
     /// The parsed form of <see cref="DjPersonality"/>, or Warm if it isn't recognised.
     ///
     /// Matched against the member NAMES rather than via a bare <c>Enum.TryParse</c>, which also

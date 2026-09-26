@@ -614,26 +614,30 @@ public sealed class MainViewModel : ObservableObject
         : PanelState.Empty;
 
     /// <summary>
-    /// What the Mix tab says when it has no songs. Three genuinely different situations, and
+    /// What the Mix tab says when it has no songs. Four genuinely different situations, and
     /// telling someone to "describe a vibe above" while their session is running and bridging
-    /// live radio is the one thing it must not do.
+    /// live radio is the one thing it must not do — as is saying it after a start attempt that
+    /// just failed, which is what <see cref="DjSourcingFailure"/> is for.
     /// </summary>
-    public string DjMixEmptyMessage
+    public string DjMixEmptyMessage => DescribeEmptyMix(
+        IsDjRunning, DjSourcingFailure, _djWarmingUp, _djHarvest.TopStation?.Name);
+
+    /// <summary>
+    /// The wording itself, pure so all four branches can be pinned — the view model needs a whole
+    /// player to construct, and the branch that shipped wrong is invisible from the outside.
+    /// </summary>
+    internal static string DescribeEmptyMix(
+        bool isRunning, string? sourcingFailure, bool warmingUp, string? bridgeStation)
     {
-        get
-        {
-            if (!IsDjRunning)
-                return "No mix yet — describe a vibe above and the DJ builds one from live radio, "
-                       + "playing as it collects.";
-            if (_djWarmingUp)
-            {
-                var station = _djHarvest.TopStation?.Name;
-                return station is null
-                    ? "Building the mix — playing live radio until the first songs are ready."
-                    : $"Building the mix — {station} is playing live until the first songs are ready.";
-            }
-            return "Collecting songs — the mix starts as soon as the first one lands.";
-        }
+        if (!isRunning)
+            return sourcingFailure
+                   ?? "No mix yet — describe a vibe above and the DJ builds one from live radio, "
+                   + "playing as it collects.";
+        if (warmingUp)
+            return bridgeStation is null
+                ? "Building the mix — playing live radio until the first songs are ready."
+                : $"Building the mix — {bridgeStation} is playing live until the first songs are ready.";
+        return "Collecting songs — the mix starts as soon as the first one lands.";
     }
 
     private string? _searchError;
@@ -692,15 +696,30 @@ public sealed class MainViewModel : ObservableObject
         private set => SetProperty(ref _curateEmptyMessage, value);
     }
 
-    private string _djSourcesEmptyMessage = DefaultDjSourcesEmptyMessage;
     private const string DefaultDjSourcesEmptyMessage =
         "No session yet — describe a vibe above to start one.";
 
-    public string DjSourcesEmptyMessage
+    private string? _djSourcingFailure;
+    /// <summary>
+    /// Why the last start attempt produced no session, or null when the last thing that happened
+    /// wasn't a failed start. Both DJ tabs read it, which is the fix for #60: the explanation used
+    /// to be written only to the Sources tab while the Mix tab — the one selected by default —
+    /// reset to its "describe a vibe above" invitation, so a failed start was indistinguishable
+    /// from never having pressed Start.
+    /// </summary>
+    private string? DjSourcingFailure
     {
-        get => _djSourcesEmptyMessage;
-        private set => SetProperty(ref _djSourcesEmptyMessage, value);
+        get => _djSourcingFailure;
+        set
+        {
+            if (_djSourcingFailure == value) return;
+            _djSourcingFailure = value;
+            OnPropertyChanged(nameof(DjSourcesEmptyMessage));
+            OnPropertyChanged(nameof(DjMixEmptyMessage));
+        }
     }
+
+    public string DjSourcesEmptyMessage => DjSourcingFailure ?? DefaultDjSourcesEmptyMessage;
 
     // ===== Staged progress for the long AI waits (UX audit) =====
     //
@@ -2365,6 +2384,33 @@ public sealed class MainViewModel : ObservableObject
 
     public bool ShowDjIntro => IsDjMode && !string.IsNullOrWhiteSpace(DjIntroLine);
 
+    private DjRemarkSize _djRemarkSize = DjRemarkSize.Medium;
+    /// <summary>
+    /// How large the DJ's remark reads (#61). Applied live from the options dialog, like the rest
+    /// — see <c>MainWindow.ApplySettings</c>. The four derived values below are what the view
+    /// binds; see <see cref="DjRemarkMetrics"/> for why they move together.
+    /// </summary>
+    public DjRemarkSize DjRemarkSize
+    {
+        get => _djRemarkSize;
+        set
+        {
+            if (!SetProperty(ref _djRemarkSize, value)) return;
+            OnPropertyChanged(nameof(DjRemarkFontSize));
+            OnPropertyChanged(nameof(DjRemarkLineHeight));
+            OnPropertyChanged(nameof(DjRemarkMaxWidth));
+            OnPropertyChanged(nameof(NowPlayingMaxWidth));
+        }
+    }
+
+    public double DjRemarkFontSize => DjRemarkMetrics.FontSize(DjRemarkSize);
+    public double DjRemarkLineHeight => DjRemarkMetrics.LineHeight(DjRemarkSize);
+    public double DjRemarkMaxWidth => DjRemarkMetrics.CardMaxWidth(DjRemarkSize);
+
+    /// <summary>The Now Playing block's cap. It contains the remark card, so it has to make room
+    /// for it — a card MaxWidth alone can't grow past its parent.</summary>
+    public double NowPlayingMaxWidth => DjRemarkMetrics.ContainerMaxWidth(DjRemarkSize);
+
     private CancellationTokenSource? _djIntroCts;
 
     // --- The DJ's voice between tracks ------------------------------------------------------
@@ -2499,7 +2545,7 @@ public sealed class MainViewModel : ObservableObject
         DjMix.Clear();
         DjIntroLine = null;
         DjError = null; // a new attempt clears the previous failure
-        DjSourcesEmptyMessage = DefaultDjSourcesEmptyMessage;
+        DjSourcingFailure = null; // a new attempt clears the previous one, like DjError above
         DjProgress.Begin(DjStageFind, DjStageConnect, DjStageRecord);
         _djLastStatus = null;
 
@@ -2540,7 +2586,7 @@ public sealed class MainViewModel : ObservableObject
             if (!_djHarvest.IsRunning)
             {
                 // No matching stations is Empty, not Error — the panel invites another try.
-                DjSourcesEmptyMessage = DescribeEmptySourcing(_djHarvest.LastSourcingOutcome);
+                DjSourcingFailure = DescribeEmptySourcing(_djHarvest.LastSourcingOutcome);
                 DjStatus = string.Empty;
                 EndDjSessionLog(); // never started harvesting, so the service won't close it
                 IsDjRunning = false;
@@ -2564,7 +2610,7 @@ public sealed class MainViewModel : ObservableObject
             _djQueue.Stop();
             _djHarvest.Stop();
             DjStatus = string.Empty;
-            DjSourcesEmptyMessage = DefaultDjSourcesEmptyMessage;
+            DjSourcingFailure = null; // cancelled on purpose — nothing failed, so explain nothing
             EndDjSessionLog();
             IsDjRunning = false;
         }
@@ -2601,7 +2647,7 @@ public sealed class MainViewModel : ObservableObject
     /// The offline wordings are deliberately explicit that the directory is the thing that's down —
     /// "try a different prompt" would send someone rewording a perfectly good vibe.
     /// </summary>
-    private static string DescribeEmptySourcing(DjSourcingOutcome outcome) => outcome switch
+    internal static string DescribeEmptySourcing(DjSourcingOutcome outcome) => outcome switch
     {
         DjSourcingOutcome.OfflineNoMatch =>
             "The station directory is unreachable, and nothing in your offline catalog matches that "
@@ -2609,6 +2655,12 @@ public sealed class MainViewModel : ObservableObject
         DjSourcingOutcome.OfflineUnranked =>
             "The station directory is unreachable and the vibe matching is offline too, so there's "
             + "no way to tell a good match from a bad one right now. Try again in a few minutes.",
+        // Nothing was searched, so nothing about the prompt can change the answer — the one
+        // wording that must never suggest rephrasing it.
+        DjSourcingOutcome.OfflineNoCatalog =>
+            "The station directory is unreachable, and there's no offline catalog on this machine "
+            + "to fall back on yet. Try again in a few minutes — once the directory is back, "
+            + "sessions build the catalog as they go.",
         _ => "Nothing out there matched that vibe — try a different prompt."
     };
 

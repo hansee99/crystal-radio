@@ -117,7 +117,9 @@ public sealed class AppServices : IDisposable
             hooks.StationDialog, interpreter, searchService, agenticSearch, enrichment,
             semanticSearch, ranker, trackInfo, lyrics, hooks.Notifications, songLibrary, localEngine, curator, djHarvest, djIntro,
             hooks.ConfirmDialog);   // asks before a mode switch throws something away (#46)
-        viewModel.DjNotificationsEnabled = settingsStore.Load().DjNotificationsEnabled;
+        var startupSettings = settingsStore.Load();
+        viewModel.DjNotificationsEnabled = startupSettings.DjNotificationsEnabled;
+        viewModel.DjRemarkSize = startupSettings.ResolveDjRemarkSize();
 
         // One-time/background: embed any enriched rows lacking a current-model vector.
         enrichment.BackfillEmbeddingsInBackground();
@@ -158,6 +160,7 @@ public sealed class AppServices : IDisposable
         ApiKeys.Current = ResolveApiKey(Settings);
         ViewModel.LibraryFolder = settings.ResolveLibraryFolder();
         DjIntro.Personality = settings.ResolveDjPersonality();
+        ViewModel.DjRemarkSize = settings.ResolveDjRemarkSize();   // live, mid-session included
 
         // Read per track, so whatever is playing keeps the guards it started with.
         LocalEngine.IntroSkipSeconds = settings.IntroSkipSeconds;
