@@ -1379,6 +1379,17 @@ by itself. Then update the docs:
 - **Desktop bug found and fixed on the way:** tapping a curated-playlist track after playing from
   the Songs tab played that *position of the whole library* (`PlayQueueItem` checked only that
   some queue existed). Now `MainViewModel.IsSameQueue`, with tests.
+- **4 — MPRIS deferred (decided 2026-09-26).** On this headless Pi nothing would consume it: no
+  desktop session, no KDE Connect, Bluetooth off with nothing paired, and a system service has no
+  user session bus. Worth building only alongside Bluetooth audio (AVRCP buttons via `mpris-proxy`),
+  which the ALSA-direct setup doesn't do today.
+- **6 — done (branch `pi-web-look`).** The desktop's Crystal tokens in `wwwroot/app.css`; icons are
+  the Theme.xaml geometries as inline SVG (`Components/Icon.razor`), never emoji; sparkle on AI
+  actions only. Gotchas: static assets *linked* into `wwwroot` are registered but served empty in
+  development — copy them (the fonts are copies of `Fonts/static`); put the page background on
+  `html`, not `body`, or it paints over the fixed artwork layer only as far as the content goes;
+  grid columns holding no-wrap ellipsis text need `minmax(0, 1fr)`. Headless Edge screenshots can't
+  go below ~500 px wide (it lays out wider and crops), so check real phone width on a phone.
 - **DJ on the Pi 4 (2 GB), measured:** steady state harvesting 4 stations while playing is 5–8 % of
   one core; session start peaks ~70 % for ~30 s; finishing a song (QC + enrichment + embedding)
   peaks ~60–75 % briefly. Temperature ≤ 54.5 °C, never throttled, 0 errors. **Memory is a
