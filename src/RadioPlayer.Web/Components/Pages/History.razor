@@ -1,0 +1,50 @@
+@page "/history"
+@inherits PlayerView<History.Snapshot>
+
+<PageTitle>History · Crystal Radio</PageTitle>
+
+<section class="card">
+    <h1>History</h1>
+    @if (Snap is not { } s)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (s.Rows.Count == 0)
+    {
+        <p class="muted">Songs you hear on your stations will appear here.</p>
+    }
+    else
+    {
+        <ul class="list">
+            @foreach (var r in s.Rows)
+            {
+                <li class="row @(r.IsCurrent ? "current" : "")">
+                    <div class="row-main">
+                        <span class="row-title">@r.Title</span>
+                        <span class="row-sub">@r.Subtitle</span>
+                    </div>
+                    @if (r.IsCurrent) { <span class="badge">Now</span> }
+                    else if (r.IsSaved) { <span class="badge" title="Saved to your library">Saved</span> }
+                </li>
+            }
+        </ul>
+        @if (s.Total > s.Rows.Count)
+        {
+            <p class="muted">Showing the latest @s.Rows.Count of @s.Total.</p>
+        }
+    }
+</section>
+
+@code {
+    /// <summary>History can run to thousands of rows; a phone doesn't need them all at once.</summary>
+    private const int MaxRows = 200;
+
+    public sealed record Row(string Title, string Subtitle, bool IsCurrent, bool IsSaved);
+    public sealed record Snapshot(IReadOnlyList<Row> Rows, int Total);
+
+    // Newest first, as the view model keeps it. Subtitle is the desktop's own "artist · station · time".
+    protected override Snapshot Read(AppServices a) => new(
+        a.ViewModel.History.Take(MaxRows)
+            .Select(e => new Row(e.Title, e.Subtitle, e.IsCurrent, e.IsSaved)).ToList(),
+        a.ViewModel.History.Count);
+}

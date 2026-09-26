@@ -95,6 +95,8 @@ public sealed class PlayerHost : IHostedService
         vm.PropertyChanged += (_, _) => RaiseChanged();
         WatchCollection(vm.Stations);
         WatchCollection(vm.SearchResults);
+        WatchCollection(vm.History);
+        WatchCollection(vm.LibrarySongs);
         vm.SearchProgress.PropertyChanged += (_, _) => RaiseChanged();
         WatchCollection(vm.SearchProgress.Stages);
     }

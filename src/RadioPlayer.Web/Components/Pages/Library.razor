@@ -1,0 +1,46 @@
+@page "/library"
+@inherits PlayerView<Library.Snapshot>
+
+<PageTitle>Library · Crystal Radio</PageTitle>
+
+<section class="card">
+    <h1>Library</h1>
+    @if (Snap is not { } s)
+    {
+        <p class="muted">Loading…</p>
+    }
+    else if (s.Rows.Count == 0)
+    {
+        <p class="muted">Songs you save from the radio will appear here.</p>
+    }
+    else
+    {
+        <p class="muted">@s.Rows.Count @(s.Rows.Count == 1 ? "song" : "songs")</p>
+        <ul class="list">
+            @foreach (var r in s.Rows)
+            {
+                <li class="row @(r.IsCurrent ? "current" : "")">
+                    <div class="row-main" title="@r.Description">
+                        <span class="row-title">@r.Title</span>
+                        @if (!string.IsNullOrEmpty(r.Subtitle)) { <span class="row-sub">@r.Subtitle</span> }
+                    </div>
+                    @if (r.IsCurrent) { <span class="badge">Now</span> }
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    public sealed record Row(string Title, string Subtitle, string? Description, bool IsCurrent);
+    public sealed record Snapshot(IReadOnlyList<Row> Rows);
+
+    // LibrarySongs is the user's own saves only (SongSource.UserSaved): DJ-harvested songs share the
+    // index but are kept out of this list on purpose, as on the desktop's Songs tab.
+    // Subtitle is the desktop's own "artist · description" line; the full description rides along
+    // as the row's tooltip, as it does there. Read-only for now — playing from the library needs a
+    // mode switch, which is the next follow-up (doc/PI-PORT-PLAN.md, Step 7).
+    protected override Snapshot Read(AppServices a) => new(
+        a.ViewModel.LibrarySongs
+            .Select(s => new Row(s.Title, s.Subtitle, s.Description, s.IsCurrent)).ToList());
+}
