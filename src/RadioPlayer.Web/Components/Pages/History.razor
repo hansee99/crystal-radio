@@ -23,8 +23,22 @@
                         <span class="row-title">@r.Title</span>
                         <span class="row-sub">@r.Subtitle</span>
                     </div>
-                    @if (r.IsCurrent) { <span class="badge">Now</span> }
-                    else if (r.IsSaved) { <span class="badge" title="Saved to your library">Saved</span> }
+                    @if (r.IsSaved)
+                    {
+                        <span class="badge" title="Saved to your library">Saved</span>
+                    }
+                    else if (r.MarkedForSave)
+                    {
+                        <span class="badge" title="Saved as soon as the song ends">Will save</span>
+                    }
+                    else if (r.CanSave)
+                    {
+                        <button class="ghost small" @onclick="@(() => Save(r.Key))">@(r.IsCurrent ? "Save when it ends" : "Save")</button>
+                    }
+                    else if (r.IsCurrent)
+                    {
+                        <span class="badge">Now</span>
+                    }
                 </li>
             }
         </ul>
@@ -39,12 +53,28 @@
     /// <summary>History can run to thousands of rows; a phone doesn't need them all at once.</summary>
     private const int MaxRows = 200;
 
-    public sealed record Row(string Title, string Subtitle, bool IsCurrent, bool IsSaved);
+    public sealed record Row(string Key, string Title, string Subtitle, bool IsCurrent, bool IsSaved,
+        bool MarkedForSave, bool CanSave);
     public sealed record Snapshot(IReadOnlyList<Row> Rows, int Total);
+
+    // Rows are addressed by key, not index: a new song is inserted at the top, which would shift
+    // every index between rendering the list and the tap.
+    private static string KeyOf(SongHistoryEntry e) => $"{e.PlayedAt.Ticks}|{e.Title}";
 
     // Newest first, as the view model keeps it. Subtitle is the desktop's own "artist · station · time".
     protected override Snapshot Read(AppServices a) => new(
         a.ViewModel.History.Take(MaxRows)
-            .Select(e => new Row(e.Title, e.Subtitle, e.IsCurrent, e.IsSaved)).ToList(),
+            .Select(e => new Row(KeyOf(e), e.Title, e.Subtitle, e.IsCurrent, e.IsSaved,
+                e.MarkedForSave, e.CanSaveOrMark)).ToList(),
         a.ViewModel.History.Count);
+
+    // SaveSongCommand saves a finished song into the library folder, or marks the playing one to be
+    // saved when it ends — the desktop's row button, same command.
+    private Task Save(string key) => Do(a =>
+    {
+        var vm = a.ViewModel;
+        var entry = vm.History.FirstOrDefault(e => KeyOf(e) == key);
+        if (entry is not null && vm.SaveSongCommand.CanExecute(entry))
+            vm.SaveSongCommand.Execute(entry);
+    });
 }

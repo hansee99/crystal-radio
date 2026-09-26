@@ -1931,24 +1931,12 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     private bool ConfirmLeavingMode(PlayerMode target)
     {
-        if (_confirmDialog is null || !_settingsStore.Load().ConfirmModeSwitch)
+        if (_confirmDialog is null)
             return true;
 
-        var endingSession = _mode == PlayerMode.Dj && IsDjRunning;
-        if (!endingSession && !IsPlaying)
-            return true;   // nothing would be interrupted
-
-        var request = endingSession
-            ? new ConfirmRequest(
-                "End the DJ session?",
-                $"Switching to {Describe(target)} ends this session. The mix stops and the stations "
-                + "it is collecting from are dropped — starting again means finding and connecting "
-                + "to them from scratch.",
-                "End session", "Keep listening", OfferToSuppress: true)
-            : new ConfirmRequest(
-                "Stop playback?",
-                $"Switching to {Describe(target)} stops what is playing.",
-                "Switch", "Keep listening", OfferToSuppress: true);
+        var request = ModeSwitchConfirmation(target);
+        if (request is null)
+            return true;
 
         var result = _confirmDialog.Ask(request);
         // Only on a yes: someone who backed out has said nothing about whether they want to be
@@ -1960,6 +1948,34 @@ public sealed class MainViewModel : ObservableObject
             _settingsStore.Save(settings);
         }
         return result.Confirmed;
+    }
+
+    /// <summary>
+    /// What switching to <paramref name="target"/> would have to ask first, or null when it
+    /// wouldn't ask (the user turned the prompt off, or nothing would be interrupted). Public so a
+    /// head that can't answer <see cref="IConfirmDialog"/> synchronously — the web one — can ask
+    /// the same question itself before invoking the switch.
+    /// </summary>
+    public ConfirmRequest? ModeSwitchConfirmation(PlayerMode target)
+    {
+        if (!_settingsStore.Load().ConfirmModeSwitch)
+            return null;
+
+        var endingSession = _mode == PlayerMode.Dj && IsDjRunning;
+        if (!endingSession && !IsPlaying)
+            return null;   // nothing would be interrupted
+
+        return endingSession
+            ? new ConfirmRequest(
+                "End the DJ session?",
+                $"Switching to {Describe(target)} ends this session. The mix stops and the stations "
+                + "it is collecting from are dropped — starting again means finding and connecting "
+                + "to them from scratch.",
+                "End session", "Keep listening", OfferToSuppress: true)
+            : new ConfirmRequest(
+                "Stop playback?",
+                $"Switching to {Describe(target)} stops what is playing.",
+                "Switch", "Keep listening", OfferToSuppress: true);
     }
 
     private static string Describe(PlayerMode mode) => mode switch

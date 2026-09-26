@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 using RadioPlayer.Services;
+using RadioPlayer.ViewModels;
 using RadioPlayer.Web.Hosting;
 
 namespace RadioPlayer.Web.Components;
@@ -32,6 +34,38 @@ public abstract class PlayerView<TSnapshot> : ComponentBase, IDisposable where T
     /// <summary>Runs <paramref name="act"/> on the player thread. The resulting change arrives
     /// through the normal change notification; no manual refresh needed.</summary>
     protected Task Do(Action<AppServices> act) => Player.DoAsync(act);
+
+    [Inject] protected IJSRuntime JS { get; set; } = default!;
+
+    /// <summary>
+    /// Switches the player to <paramref name="target"/> if it isn't there already, asking in the
+    /// browser first when the switch would interrupt something — the same question, from the same
+    /// place (<see cref="ViewModels.MainViewModel.ModeSwitchConfirmation"/>), the desktop asks in a
+    /// dialog. False when the person said no. The view model's own confirmation is pre-answered
+    /// yes on this head (AlwaysConfirmDialog), so it doesn't ask twice.
+    /// </summary>
+    protected async Task<bool> EnsureModeAsync(PlayerMode target)
+    {
+        var request = await Player.ReadAsync(a =>
+            a.ViewModel.Mode == target ? null : a.ViewModel.ModeSwitchConfirmation(target));
+        if (request is not null
+            && !await JS.InvokeAsync<bool>("confirm", $"{request.Title}\n\n{request.Message}"))
+            return false;
+
+        await Do(a =>
+        {
+            var vm = a.ViewModel;
+            if (vm.Mode == target) return;
+            var command = target switch
+            {
+                PlayerMode.Radio => vm.SwitchToRadioCommand,
+                PlayerMode.Library => vm.SwitchToLibraryCommand,
+                _ => vm.SwitchToDjCommand,
+            };
+            command.Execute(null);
+        });
+        return true;
+    }
 
     private void OnPlayerChanged(object? sender, EventArgs e)
     {

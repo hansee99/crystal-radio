@@ -1,11 +1,15 @@
 @page "/"
 @inherits PlayerView<Home.Snapshot>
-@inject IJSRuntime JS
 
 <PageTitle>Crystal Radio</PageTitle>
 
 @if (Snap is { } s)
 {
+    <nav class="modes" aria-label="Player mode">
+        <button class="@(s.Mode == PlayerMode.Radio ? "on" : "")" aria-pressed="@(s.Mode == PlayerMode.Radio ? "true" : "false")" @onclick="@(() => EnsureModeAsync(PlayerMode.Radio))">Radio</button>
+        <button class="@(s.Mode == PlayerMode.Library ? "on" : "")" aria-pressed="@(s.Mode == PlayerMode.Library ? "true" : "false")" @onclick="@(() => EnsureModeAsync(PlayerMode.Library))">Library</button>
+    </nav>
+
     <section class="card now-playing" aria-live="polite">
         <div class="np-station">@(string.IsNullOrEmpty(s.Station) ? "Crystal Radio" : s.Station)</div>
         <h1 class="np-title @(s.IsIdle ? "idle" : "")">@s.Title</h1>
@@ -19,11 +23,24 @@
         </div>
 
         <div class="transport">
-            <button class="icon" title="Previous station" disabled="@(!s.CanPrev)" @onclick="@(() => Do(a => a.ViewModel.PrevStationCommand.Execute(null)))">⏮</button>
+            <button class="icon" title="@(s.Mode == PlayerMode.Radio ? "Previous station" : "Previous track")" disabled="@(!s.CanPrev)" @onclick="@(() => Do(a => a.ViewModel.PrevStationCommand.Execute(null)))">⏮</button>
             <button class="icon primary" title="@s.PlayPauseLabel" disabled="@(!s.CanPlayPause)" @onclick="@(() => Do(a => a.ViewModel.PlayPauseCommand.Execute(null)))">@(s.IsPlaying ? "⏸" : "▶")</button>
             <button class="icon" title="Stop" disabled="@(!s.CanStop)" @onclick="@(() => Do(a => a.ViewModel.StopCommand.Execute(null)))">⏹</button>
-            <button class="icon" title="Next station" disabled="@(!s.CanNext)" @onclick="@(() => Do(a => a.ViewModel.NextStationCommand.Execute(null)))">⏭</button>
+            <button class="icon" title="@(s.Mode == PlayerMode.Radio ? "Next station" : "Next track")" disabled="@(!s.CanNext)" @onclick="@(() => Do(a => a.ViewModel.NextStationCommand.Execute(null)))">⏭</button>
         </div>
+
+        @if (s.HasDuration)
+        {
+            <label class="seek">
+                <span>@(_seeking ? FormatTime(_seekValue) : s.PositionText)</span>
+                <input type="range" min="0" max="@((int)s.DurationSeconds)" step="1"
+                       value="@((int)(_seeking ? _seekValue : s.PositionSeconds))"
+                       @onpointerdown="@(() => { _seeking = true; _seekValue = s.PositionSeconds; })"
+                       @oninput="@(e => _seekValue = ParseSeconds(e.Value))"
+                       @onchange="Seek" aria-label="Position" />
+                <span>@s.DurationText</span>
+            </label>
+        }
 
         <label class="volume">
             <span>Volume</span>
@@ -32,91 +49,101 @@
         </label>
     </section>
 
-    <section class="card">
-        <h2>Find stations</h2>
-        <form class="search-row" @onsubmit="Search">
-            <input type="search" placeholder="e.g. mellow jazz for late-night coding" @bind="_prompt" aria-label="Describe what you want to hear" />
-            <button type="submit" class="primary" disabled="@(s.SearchState == PanelState.Loading || string.IsNullOrWhiteSpace(_prompt))">Search</button>
-        </form>
-        @if (!s.HasApiKey)
-        {
-            <p class="hint">AI search needs an Anthropic API key — add one in <a href="settings">Settings</a>.</p>
-        }
+    @if (s.Mode == PlayerMode.Radio)
+    {
+        <section class="card">
+            <h2>Find stations</h2>
+            <form class="search-row" @onsubmit="Search">
+                <input type="search" placeholder="e.g. mellow jazz for late-night coding" @bind="_prompt" aria-label="Describe what you want to hear" />
+                <button type="submit" class="primary" disabled="@(s.SearchState == PanelState.Loading || string.IsNullOrWhiteSpace(_prompt))">Search</button>
+            </form>
+            @if (!s.HasApiKey)
+            {
+                <p class="hint">AI search needs an Anthropic API key — add one in <a href="settings">Settings</a>.</p>
+            }
 
-        @switch (s.SearchState)
-        {
-            case PanelState.Loading:
-                <ul class="stages">
-                    @foreach (var stage in s.Stages)
-                    {
-                        <li class="stage @stage.Status.ToString().ToLowerInvariant()">@stage.Label</li>
-                    }
-                </ul>
-                @if (!string.IsNullOrEmpty(s.SearchStatus)) { <p class="muted">@s.SearchStatus</p> }
-                break;
-            case PanelState.Error:
-                <p class="error">@s.SearchError</p>
-                break;
-            case PanelState.Empty:
-                <p class="muted">@s.SearchEmptyMessage</p>
-                break;
-            default:
+            @switch (s.SearchState)
+            {
+                case PanelState.Loading:
+                    <ul class="stages">
+                        @foreach (var stage in s.Stages)
+                        {
+                            <li class="stage @stage.Status.ToString().ToLowerInvariant()">@stage.Label</li>
+                        }
+                    </ul>
+                    @if (!string.IsNullOrEmpty(s.SearchStatus)) { <p class="muted">@s.SearchStatus</p> }
+                    break;
+                case PanelState.Error:
+                    <p class="error">@s.SearchError</p>
+                    break;
+                case PanelState.Empty:
+                    <p class="muted">@s.SearchEmptyMessage</p>
+                    break;
+                default:
+                    <ul class="list">
+                        @foreach (var r in s.Results)
+                        {
+                            <li class="row @(r.Url == s.CurrentUrl ? "current" : "")">
+                                <button class="row-main" @onclick="@(() => PlayResult(r.Url))">
+                                    <span class="row-title">@r.Name</span>
+                                    @if (!string.IsNullOrEmpty(r.Detail)) { <span class="row-sub">@r.Detail</span> }
+                                </button>
+                                <button class="icon small" title="@(r.IsAdded ? "In your stations" : "Add to your stations")" disabled="@r.IsAdded" @onclick="@(() => AddResult(r.Url))">@(r.IsAdded ? "✓" : "+")</button>
+                            </li>
+                        }
+                    </ul>
+                    break;
+            }
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h2>Your stations</h2>
+                <button class="ghost" @onclick="@(() => _adding = !_adding)">@(_adding ? "Cancel" : "Add")</button>
+            </div>
+
+            @if (_adding)
+            {
+                <form class="add-form" @onsubmit="AddStation">
+                    <input placeholder="Name" @bind="_newName" aria-label="Station name" />
+                    <input placeholder="Stream URL (http://…)" @bind="_newUrl" aria-label="Stream URL" />
+                    <select @bind="_newFormat" aria-label="Stream format">
+                        <option value="@StreamFormat.Aac">AAC</option>
+                        <option value="@StreamFormat.Mp3">MP3</option>
+                        <option value="@StreamFormat.Other">Other</option>
+                    </select>
+                    <button type="submit" class="primary" disabled="@(string.IsNullOrWhiteSpace(_newName) || string.IsNullOrWhiteSpace(_newUrl))">Save</button>
+                </form>
+            }
+
+            @if (s.Stations.Count == 0)
+            {
+                <p class="muted">No stations yet. Search above, or add one by URL.</p>
+            }
+            else
+            {
                 <ul class="list">
-                    @foreach (var r in s.Results)
+                    @foreach (var st in s.Stations)
                     {
-                        <li class="row @(r.Url == s.CurrentUrl ? "current" : "")">
-                            <button class="row-main" @onclick="@(() => PlayResult(r.Url))">
-                                <span class="row-title">@r.Name</span>
-                                @if (!string.IsNullOrEmpty(r.Detail)) { <span class="row-sub">@r.Detail</span> }
+                        <li class="row @(st.Url == s.CurrentUrl ? "current" : "")">
+                            <button class="row-main" @onclick="@(() => PlayStation(st.Url))">
+                                <span class="row-title">@st.Name</span>
+                                @if (!string.IsNullOrEmpty(st.Description)) { <span class="row-sub">@st.Description</span> }
                             </button>
-                            <button class="icon small" title="@(r.IsAdded ? "In your stations" : "Add to your stations")" disabled="@r.IsAdded" @onclick="@(() => AddResult(r.Url))">@(r.IsAdded ? "✓" : "+")</button>
+                            <button class="icon small danger" title="Remove @st.Name" @onclick="@(() => DeleteStation(st.Url, st.Name))">✕</button>
                         </li>
                     }
                 </ul>
-                break;
-        }
-    </section>
-
-    <section class="card">
-        <div class="card-head">
-            <h2>Your stations</h2>
-            <button class="ghost" @onclick="@(() => _adding = !_adding)">@(_adding ? "Cancel" : "Add")</button>
-        </div>
-
-        @if (_adding)
-        {
-            <form class="add-form" @onsubmit="AddStation">
-                <input placeholder="Name" @bind="_newName" aria-label="Station name" />
-                <input placeholder="Stream URL (http://…)" @bind="_newUrl" aria-label="Stream URL" />
-                <select @bind="_newFormat" aria-label="Stream format">
-                    <option value="@StreamFormat.Aac">AAC</option>
-                    <option value="@StreamFormat.Mp3">MP3</option>
-                    <option value="@StreamFormat.Other">Other</option>
-                </select>
-                <button type="submit" class="primary" disabled="@(string.IsNullOrWhiteSpace(_newName) || string.IsNullOrWhiteSpace(_newUrl))">Save</button>
-            </form>
-        }
-
-        @if (s.Stations.Count == 0)
-        {
-            <p class="muted">No stations yet. Search above, or add one by URL.</p>
-        }
-        else
-        {
-            <ul class="list">
-                @foreach (var st in s.Stations)
-                {
-                    <li class="row @(st.Url == s.CurrentUrl ? "current" : "")">
-                        <button class="row-main" @onclick="@(() => PlayStation(st.Url))">
-                            <span class="row-title">@st.Name</span>
-                            @if (!string.IsNullOrEmpty(st.Description)) { <span class="row-sub">@st.Description</span> }
-                        </button>
-                        <button class="icon small danger" title="Remove @st.Name" @onclick="@(() => DeleteStation(st.Url, st.Name))">✕</button>
-                    </li>
-                }
-            </ul>
-        }
-    </section>
+            }
+        </section>
+    }
+    else
+    {
+        <section class="card">
+            <h2>Library</h2>
+            <p class="muted">Pick a song or build a playlist on the <a href="library">Library</a> page.</p>
+        </section>
+    }
 }
 else
 {
@@ -134,9 +161,36 @@ else
         int VolumePercent, string? CurrentUrl,
         IReadOnlyList<StationRow> Stations,
         PanelState SearchState, string SearchStatus, string? SearchError, string SearchEmptyMessage,
-        IReadOnlyList<StageRow> Stages, IReadOnlyList<ResultRow> Results, bool HasApiKey);
+        IReadOnlyList<StageRow> Stages, IReadOnlyList<ResultRow> Results, bool HasApiKey,
+        PlayerMode Mode, bool HasDuration, double PositionSeconds, double DurationSeconds,
+        string PositionText, string DurationText);
 
     private string _prompt = "";
+
+    // While the thumb is held, render the dragged value, not the playing position: the position
+    // ticks twice a second and each re-render would otherwise yank the thumb back.
+    private bool _seeking;
+    private double _seekValue;
+
+    private static double ParseSeconds(object? value) =>
+        double.TryParse(value?.ToString(), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0;
+
+    // Same format as MainViewModel.PositionText, so the readout doesn't change shape mid-drag.
+    private static string FormatTime(double seconds)
+    {
+        if (seconds <= 0 || double.IsNaN(seconds)) return "0:00";
+        var t = TimeSpan.FromSeconds(seconds);
+        return t.TotalHours >= 1 ? t.ToString(@"h\:mm\:ss") : t.ToString(@"m\:ss");
+    }
+
+    // Setting PositionSeconds from outside the position timer seeks (MainViewModel.PositionSeconds).
+    private async Task Seek(ChangeEventArgs e)
+    {
+        var target = ParseSeconds(e.Value);
+        await Do(a => a.ViewModel.PositionSeconds = target);
+        _seeking = false;
+    }
     private bool _adding;
     private string _newName = "", _newUrl = "";
     private StreamFormat _newFormat = StreamFormat.Mp3;
@@ -157,7 +211,8 @@ else
             vm.SearchResults.Select(r => new ResultRow(r.DisplayName, r.Station.Url,
                 string.Join(" · ", new[] { r.Reason, r.Country }.Where(x => !string.IsNullOrWhiteSpace(x))),
                 r.IsAdded)).ToList(),
-            a.ApiKeys.IsConfigured);
+            a.ApiKeys.IsConfigured,
+            vm.Mode, vm.HasDuration, vm.PositionSeconds, vm.DurationSeconds, vm.PositionText, vm.DurationText);
     }
 
     private Task SetVolume(ChangeEventArgs e)

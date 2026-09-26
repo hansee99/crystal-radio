@@ -3,44 +3,146 @@
 
 <PageTitle>Library · Crystal Radio</PageTitle>
 
-<section class="card">
-    <h1>Library</h1>
-    @if (Snap is not { } s)
-    {
-        <p class="muted">Loading…</p>
-    }
-    else if (s.Rows.Count == 0)
-    {
-        <p class="muted">Songs you save from the radio will appear here.</p>
-    }
-    else
-    {
-        <p class="muted">@s.Rows.Count @(s.Rows.Count == 1 ? "song" : "songs")</p>
-        <ul class="list">
-            @foreach (var r in s.Rows)
-            {
-                <li class="row @(r.IsCurrent ? "current" : "")">
-                    <div class="row-main" title="@r.Description">
-                        <span class="row-title">@r.Title</span>
-                        @if (!string.IsNullOrEmpty(r.Subtitle)) { <span class="row-sub">@r.Subtitle</span> }
-                    </div>
-                    @if (r.IsCurrent) { <span class="badge">Now</span> }
-                </li>
-            }
-        </ul>
-    }
-</section>
+@if (Snap is not { } s)
+{
+    <p class="muted">Loading…</p>
+}
+else
+{
+    <section class="card">
+        <h1>Library</h1>
+        <h2>Build a playlist</h2>
+        <form class="search-row" @onsubmit="Curate">
+            <input type="search" placeholder="e.g. upbeat songs for cooking" @bind="_prompt" aria-label="Describe a mood or vibe" />
+            <button type="submit" class="primary" disabled="@(s.CurateState == PanelState.Loading || string.IsNullOrWhiteSpace(_prompt))">Curate</button>
+        </form>
+        @if (!s.HasApiKey)
+        {
+            <p class="hint">Curating works best with an Anthropic API key — add one in <a href="settings">Settings</a>.</p>
+        }
+
+        @switch (s.CurateState)
+        {
+            case PanelState.Loading:
+                <ul class="stages">
+                    @foreach (var stage in s.CurateStages)
+                    {
+                        <li class="stage @stage.Status.ToString().ToLowerInvariant()">@stage.Label</li>
+                    }
+                </ul>
+                break;
+            case PanelState.Error:
+                <p class="error">@s.CurateError</p>
+                break;
+            case PanelState.Empty:
+                <p class="muted">@s.CurateEmptyMessage</p>
+                break;
+            default:
+                @if (!string.IsNullOrEmpty(s.PlaylistTitle)) { <p class="muted">@s.PlaylistTitle</p> }
+                <ul class="list">
+                    @foreach (var q in s.Queue)
+                    {
+                        <li class="row @(q.IsCurrent ? "current" : "")">
+                            <button class="row-main" @onclick="@(() => PlayQueueItem(q.Path))">
+                                <span class="row-title">@q.Title</span>
+                                @if (!string.IsNullOrEmpty(q.Subtitle)) { <span class="row-sub">@q.Subtitle</span> }
+                            </button>
+                            @if (q.IsCurrent) { <span class="badge">Now</span> }
+                        </li>
+                    }
+                </ul>
+                break;
+        }
+    </section>
+
+    <section class="card">
+        <h2>All saved songs</h2>
+        @if (s.Songs.Count == 0)
+        {
+            <p class="muted">Songs you save from the radio will appear here.</p>
+        }
+        else
+        {
+            <p class="muted">@s.Songs.Count @(s.Songs.Count == 1 ? "song" : "songs") — tap one to play from there.</p>
+            <ul class="list">
+                @foreach (var r in s.Songs)
+                {
+                    <li class="row @(r.IsCurrent ? "current" : "")">
+                        <button class="row-main" title="@r.Description" @onclick="@(() => PlaySong(r.Path))">
+                            <span class="row-title">@r.Title</span>
+                            @if (!string.IsNullOrEmpty(r.Subtitle)) { <span class="row-sub">@r.Subtitle</span> }
+                        </button>
+                        @if (r.IsCurrent) { <span class="badge">Now</span> }
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+}
 
 @code {
-    public sealed record Row(string Title, string Subtitle, string? Description, bool IsCurrent);
-    public sealed record Snapshot(IReadOnlyList<Row> Rows);
+    public sealed record SongRow(string Path, string Title, string Subtitle, string? Description, bool IsCurrent);
+    public sealed record QueueRow(string Path, string Title, string Subtitle, bool IsCurrent);
+    public sealed record StageRow(string Label, StageStatus Status);
+
+    public sealed record Snapshot(
+        IReadOnlyList<SongRow> Songs,
+        PanelState CurateState, string? CurateError, string CurateEmptyMessage, string PlaylistTitle,
+        IReadOnlyList<StageRow> CurateStages, IReadOnlyList<QueueRow> Queue, bool HasApiKey);
+
+    private string _prompt = "";
 
     // LibrarySongs is the user's own saves only (SongSource.UserSaved): DJ-harvested songs share the
     // index but are kept out of this list on purpose, as on the desktop's Songs tab.
     // Subtitle is the desktop's own "artist · description" line; the full description rides along
-    // as the row's tooltip, as it does there. Read-only for now — playing from the library needs a
-    // mode switch, which is the next follow-up (doc/PI-PORT-PLAN.md, Step 7).
-    protected override Snapshot Read(AppServices a) => new(
-        a.ViewModel.LibrarySongs
-            .Select(s => new Row(s.Title, s.Subtitle, s.Description, s.IsCurrent)).ToList());
+    // as the row's tooltip, as it does there.
+    protected override Snapshot Read(AppServices a)
+    {
+        var vm = a.ViewModel;
+        return new Snapshot(
+            vm.LibrarySongs.Select(s => new SongRow(s.Song.Path, s.Title, s.Subtitle, s.Description, s.IsCurrent)).ToList(),
+            vm.CuratePanelState, vm.CurateError, vm.CurateEmptyMessage, vm.CuratedPlaylistTitle,
+            vm.CurateProgress.Stages.Select(g => new StageRow(g.Label, g.Status)).ToList(),
+            vm.CuratedQueue.Select(q => new QueueRow(q.Path, q.Title, q.Subtitle, q.IsCurrent)).ToList(),
+            a.ApiKeys.IsConfigured);
+    }
+
+    // Everything here plays through the local engine, which only Library mode drives — so switch
+    // first (asking if that interrupts something), exactly as the desktop's mode pills would.
+    // Rows are addressed by file path, not index: saving a song rebuilds LibrarySongs, which would
+    // shift indexes between rendering the list and the tap. A path that's gone just plays nothing.
+
+    private async Task Curate()
+    {
+        var prompt = _prompt.Trim();
+        if (prompt.Length == 0 || !await EnsureModeAsync(PlayerMode.Library)) return;
+        await Do(a =>
+        {
+            a.ViewModel.LibraryPrompt = prompt;
+            if (a.ViewModel.CurateCommand.CanExecute(null))
+                a.ViewModel.CurateCommand.Execute(null);
+        });
+    }
+
+    private async Task PlaySong(string path)
+    {
+        if (!await EnsureModeAsync(PlayerMode.Library)) return;
+        await Do(a =>
+        {
+            var song = a.ViewModel.LibrarySongs.FirstOrDefault(x => x.Song.Path == path);
+            if (song is not null)
+                a.ViewModel.PlayLibrarySongCommand.Execute(song);
+        });
+    }
+
+    private async Task PlayQueueItem(string path)
+    {
+        if (!await EnsureModeAsync(PlayerMode.Library)) return;
+        await Do(a =>
+        {
+            var item = a.ViewModel.CuratedQueue.FirstOrDefault(x => x.Path == path);
+            if (item is not null)
+                a.ViewModel.PlayQueueItemCommand.Execute(item);
+        });
+    }
 }
