@@ -217,10 +217,16 @@ public class MessageLoopTests
         Assert.Equal(0, loop.RunPending()); // nothing left: returns rather than blocking
     }
 
+    /// <summary>A dedicated thread, not Task.Run: this test's own thread is a pool thread, and once
+    /// it awaits, the pool may run the Task.Run on that very thread. It did on a 2-core CI runner.</summary>
     [Fact]
-    public async Task RunPending_OnAnotherThread_Throws()
+    public void RunPending_OnAnotherThread_Throws()
     {
         var loop = MessageLoop.CreateForCurrentThread();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Task.Run(() => loop.RunPending()));
+        Exception? caught = null;
+        var other = new Thread(() => { try { loop.RunPending(); } catch (Exception e) { caught = e; } });
+        other.Start();
+        other.Join();
+        Assert.IsType<InvalidOperationException>(caught);
     }
 }
