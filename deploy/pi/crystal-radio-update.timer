@@ -1,0 +1,14 @@
+# When Crystal Radio's updater runs. Installed and enabled by setup.sh.
+# Every two hours for now, while the pipeline is new; the plan is nightly (OnCalendar=*-*-* 04:00).
+# The updater skips a run while audio plays or a DJ session is on, so frequent runs are harmless.
+[Unit]
+Description=Check for a new Crystal Radio build
+
+[Timer]
+OnCalendar=*-*-* 00/2:15:00
+RandomizedDelaySec=5min
+# A run missed while the Pi was off happens at the next boot.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

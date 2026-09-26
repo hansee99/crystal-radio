@@ -4,3 +4,4 @@
 deploy/pi/*.sh      text eol=lf
 deploy/pi/*.service text eol=lf
 scripts/*.sh        text eol=lf
+deploy/pi/*.timer   text eol=lf

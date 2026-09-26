@@ -6,8 +6,11 @@
 # Needs no password. Root-level setup (service, firewall, the sudo rule that lets this script
 # restart the service) is setup.sh's job, run once by a person.
 #
-# App files are replaced wholesale. User data is not touched: settings, stations and history live
-# in ~/.config/RadioPlayer, the catalogs and caches in ~/.local/share/RadioPlayer.
+# Also run by the updater (update.sh) for CI builds.
+#
+# App files are replaced wholesale; the replaced app is kept as ~/crystal-radio.prev, which the
+# updater rolls back to. User data is not touched: settings, stations and history live in
+# ~/.config/RadioPlayer, the catalogs and caches in ~/.local/share/RadioPlayer.
 set -euo pipefail
 
 staging="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,12 +34,13 @@ if ! $first_install; then
     fi
 fi
 
-echo "==> Replacing $app"
-rm -rf "$app"
+echo "==> Replacing $app (the old one stays as $app.prev)"
+rm -rf "$app.prev"
+if [ -d "$app" ]; then mv "$app" "$app.prev"; fi
 mv "$staging/pi" "$app"
 chmod +x "$app/RadioPlayer.Web"
 mkdir -p "$app/deploy"
-cp "$staging/setup.sh" "$staging/install.sh" "$staging/$unit" "$app/deploy/"
+cp "$staging"/*.sh "$staging"/*.service "$staging"/*.timer "$app/deploy/"
 rm -rf "$staging"
 
 if $first_install; then
@@ -46,10 +50,12 @@ if $first_install; then
     exit 10   # "installed, but not running yet" — publish-pi.ps1 tells this apart from failure
 fi
 
-if ! cmp -s "$app/deploy/$unit" "$installed"; then
-    echo "!! $unit has changed; re-run setup.sh to install the new one:" >&2
-    echo "   ssh -t $(whoami)@$(hostname) sudo bash ~/crystal-radio/deploy/setup.sh" >&2
-fi
+for file in "$unit" crystal-radio-update.service crystal-radio-update.timer; do
+    if ! cmp -s "$app/deploy/$file" "/etc/systemd/system/$file"; then
+        echo "!! $file is new or has changed; re-run setup.sh to install it:" >&2
+        echo "   ssh -t $(whoami)@$(hostname) sudo bash ~/crystal-radio/deploy/setup.sh" >&2
+    fi
+done
 
 echo "==> Starting"
 sudo -n systemctl start "$unit"

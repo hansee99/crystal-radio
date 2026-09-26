@@ -1,0 +1,13 @@
+# Runs Crystal Radio's updater once (deploy/pi/update.sh); started by crystal-radio-update.timer.
+# Installed to /etc/systemd/system by setup.sh. Same user and paths as crystal-radio.service.
+[Unit]
+Description=Crystal Radio updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hans
+ExecStart=/usr/bin/bash /home/hans/crystal-radio/deploy/update.sh
+# Download (~140 MB) + install + a rollback, with room to spare.
+TimeoutStartSec=30min

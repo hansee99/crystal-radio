@@ -110,7 +110,10 @@ $remote = 'rm -rf ~/crystal-radio.new && mkdir ~/crystal-radio.new && tar -xf - 
 # 'Continue' for this call only: Windows PowerShell turns every stderr line of a native program into
 # a terminating error under 'Stop', which would abort mid-install. The exit code is the verdict.
 $ErrorActionPreference = 'Continue'
-& cmd.exe /c "`"$tar`" -cf - -C `"$build`" pi -C `"$deployDir`" install.sh setup.sh crystal-radio.service | `"$ssh`" -o BatchMode=yes $Target `"$remote`" 2>&1"
+# The deploy files by pattern, so a new script or unit travels without editing this list.
+$deployFiles = (Get-ChildItem $deployDir -File | Where-Object { $_.Extension -in '.sh', '.service', '.timer' } |
+    ForEach-Object { $_.Name }) -join ' '
+& cmd.exe /c "`"$tar`" -cf - -C `"$build`" pi -C `"$deployDir`" $deployFiles | `"$ssh`" -o BatchMode=yes $Target `"$remote`" 2>&1"
 $ErrorActionPreference = 'Stop'
 $hostName = ($Target -split '@')[-1]
 if ($LASTEXITCODE -eq 10) {

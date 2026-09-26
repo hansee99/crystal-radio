@@ -2,11 +2,13 @@
 # One-time setup for Crystal Radio on a Pi. Needs root, so a person runs it (sudo asks for the
 # password) — from Windows:  ssh -t hans@ras4 sudo bash ~/crystal-radio/deploy/setup.sh
 #
-#   1. installs and enables the systemd service (re-run after crystal-radio.service changes);
-#   2. lets the service's user stop/start/restart THIS service without a password, so updates
-#      (install.sh, via scripts/publish-pi.ps1 -Deploy) run unattended. The unit file lives in
-#      root-owned /etc, so this grants no way to change what the service runs as;
-#   3. opens port 5000 in ufw, for the local network only.
+#   1. installs and enables the systemd service (re-run after any unit file changes);
+#   2. installs and enables the updater's timer (crystal-radio-update.timer), which installs new
+#      CI builds by itself while nobody is listening;
+#   3. lets the service's user stop/start/restart THIS service without a password, so updates
+#      (install.sh, from publish-pi.ps1 -Deploy or the updater) run unattended. The unit files live
+#      in root-owned /etc, so this grants no way to change what runs or as whom;
+#   4. opens port 5000 in ufw, for the local network only.
 set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -25,8 +27,14 @@ port=5000
 
 echo "==> Installing $unit"
 install -m 644 "$here/$unit" "/etc/systemd/system/$unit"
+
+echo "==> Installing the updater (crystal-radio-update.timer)"
+install -m 644 "$here/crystal-radio-update.service" /etc/systemd/system/crystal-radio-update.service
+install -m 644 "$here/crystal-radio-update.timer" /etc/systemd/system/crystal-radio-update.timer
+
 systemctl daemon-reload
 systemctl enable "$unit"
+systemctl enable --now crystal-radio-update.timer
 
 echo "==> Allowing $user to stop/start/restart $unit without a password"
 rule=/etc/sudoers.d/crystal-radio

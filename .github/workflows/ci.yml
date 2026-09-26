@@ -52,8 +52,8 @@ jobs:
           version=$(grep -oP '(?<=<Version>)[^<]+' crystal-radio.csproj)
           printf '{ "version": "%s", "commit": "%s", "built": "%s" }\n' \
             "$version" "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > build/pi/build-info.json
-          cp deploy/pi/install.sh deploy/pi/setup.sh deploy/pi/crystal-radio.service build/
-          tar -czf crystal-radio-pi.tar.gz -C build pi install.sh setup.sh crystal-radio.service
+          cp deploy/pi/*.sh deploy/pi/*.service deploy/pi/*.timer build/
+          (cd build && tar -czf ../crystal-radio-pi.tar.gz pi *.sh *.service *.timer)
           sha256sum crystal-radio-pi.tar.gz > crystal-radio-pi.tar.gz.sha256
           cp build/pi/build-info.json .
           ls -l crystal-radio-pi.tar.gz
