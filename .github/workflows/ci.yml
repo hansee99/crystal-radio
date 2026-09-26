@@ -24,14 +24,14 @@ jobs:
     name: Linux - Core tests + Pi package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
       - name: Cache the embedding model
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: MlAssets/all-MiniLM-L6-v2.onnx
           key: model-${{ hashFiles('scripts/fetch-model.sh') }}
@@ -58,7 +58,7 @@ jobs:
           cp build/pi/build-info.json .
           ls -l crystal-radio-pi.tar.gz
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pi-package
           path: |
@@ -71,14 +71,14 @@ jobs:
     name: Windows - all tests
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
       - name: Cache the embedding model
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: MlAssets/all-MiniLM-L6-v2.onnx
           key: model-${{ hashFiles('scripts/fetch-model.sh') }}
@@ -102,7 +102,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: pi-package
 
