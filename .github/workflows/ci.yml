@@ -106,8 +106,8 @@ jobs:
         with:
           name: pi-package
 
-      # One rolling pre-release, replaced on every green push to main. Release assets can be read
-      # with a contents:read token, which is all the Pi gets.
+      # One rolling pre-release, replaced on every green push to main. Release assets of a public repo
+      # download without a token, so the Pi needs none.
       - name: Replace the pi-latest release
         env:
           GH_TOKEN: ${{ github.token }}

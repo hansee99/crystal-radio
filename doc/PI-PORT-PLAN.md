@@ -1459,20 +1459,17 @@ listening device. The Pi only downloads finished, tested packages and reuses `de
   its `commit` with the release's.
 - **Published as** one rolling pre-release, tag **`pi-latest`**, deleted and re-created on every green
   push to `main`, with assets `crystal-radio-pi.tar.gz`, `crystal-radio-pi.tar.gz.sha256` and
-  `build-info.json`. A release, not a workflow artifact, because release assets are readable with a
-  *contents: read* token and don't count against Actions storage. For a few seconds during the swap
+  `build-info.json`. A release, not a workflow artifact, because release assets of a public repo
+  download without any token and don't count against Actions storage. For a few seconds during the swap
   there is no `pi-latest`; the updater must treat a missing release as "nothing new".
 
-**Open points to settle while building:**
-- The repo `hansee99/crystal-radio` is **private**: the Pi needs a read-only token to download
-  packages — a fine-grained PAT, *contents: read* only, created by the owner, stored owner-only
-  (0600) on the Pi, never in the repo.
-- GitHub Actions minutes: private repo on the free plan has a monthly allowance and Windows minutes
-  count double. Estimate ~11 billed minutes per push → a couple of hundred pushes a month. Check the
-  account's current limits before relying on it.
-- Tagged releases vs every green push to `main`: suggested every green push, applied nightly.
-- `origin` still points at the old URL `hansee99/radio-player` (GitHub redirects); the repo was
-  renamed to `crystal-radio`. Consider `git remote set-url origin https://github.com/hansee99/crystal-radio.git`.
+**Open points, settled 2026-09-26:**
+- The repo `hansee99/crystal-radio` is **public** (made so on 2026-09-26). The Pi downloads
+  `pi-latest` anonymously, so **no token** is needed on the Pi. Standard runners are free for public
+  repos, so Actions minutes aren't a constraint either.
+- Every green push to `main` is published; the Pi applies it nightly. No tagged releases.
+- `origin` now points at `https://github.com/hansee99/crystal-radio.git` (it was the pre-rename
+  `radio-player` URL).
 
 ---
 
