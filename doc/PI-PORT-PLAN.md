@@ -1357,6 +1357,37 @@ by itself. Then update the docs:
    `net10.0`. Low value until someone wants to run the tests on Linux.
 6. **Web UI polish** — the Crystal look from `Views/Theme.xaml`, translated to CSS.
 
+### Step 7 — progress (branch `pi-web-pages`)
+
+- **1 — done.** `/history` (latest 200, Save / "Save when it ends" through `SaveSongCommand`) and
+  `/library` (play any saved song, AI playlist from a prompt). The player page has a
+  Radio | Library | DJ switch and a seek bar. `LibrarySongs` is the user's own saves only —
+  DJ-harvested songs share the index but stay out of the list, as on the desktop.
+- **2 — done.** `/dj`: one prompt box that starts a session or changes the vibe
+  (`DjPromptSubmitCommand`), stop, status and stages, the DJ's remark at `DjRemarkSize`, up next,
+  mix, sources. Panel states are the view model's own.
+- **3 — done differently, and smaller.** `IConfirmDialog` has exactly one caller, the mode switch.
+  Instead of making it async, the question moved out of `ConfirmLeavingMode` into public
+  `MainViewModel.ModeSwitchConfirmation(target)` (unchanged logic); the web asks it in the browser
+  via `PlayerView.EnsureModeAsync` *before* invoking the switch, and `AlwaysConfirmDialog` then
+  answers the view model's own ask. The desktop dialog is untouched. Revisit only if a second
+  confirmation appears.
+- **Web patterns worth keeping:** rows are addressed by a stable key (history: time + title; library
+  and playlist: file path; stations: URL), never by list position — a new song or a save shifts
+  positions between render and tap. A C# `bool` in an `aria-*` attribute renders valueless; write
+  `"true"`/`"false"`. A running local web head locks `RadioPlayer.Core.dll` — stop it before building.
+- **Desktop bug found and fixed on the way:** tapping a curated-playlist track after playing from
+  the Songs tab played that *position of the whole library* (`PlayQueueItem` checked only that
+  some queue existed). Now `MainViewModel.IsSameQueue`, with tests.
+- **DJ on the Pi 4 (2 GB), measured:** steady state harvesting 4 stations while playing is 5–8 % of
+  one core; session start peaks ~70 % for ~30 s; finishing a song (QC + enrichment + embedding)
+  peaks ~60–75 % briefly. Temperature ≤ 54.5 °C, never throttled, 0 errors. **Memory is a
+  sawtooth, not a leak:** over 30 minutes and ~15 songs collected, RSS troughs stayed flat at
+  580–640 MB and peaked at 926 MB while a song was processed (QC decodes the whole segment to PCM —
+  a 6–8 min song is ~100–170 MB of samples — and GC returns it). Lowest `MemAvailable` seen: 816 MB
+  of 1.8 GB. If headroom ever matters, `Environment=DOTNET_GCConserveMemory=5` in the unit is the
+  first knob to try.
+
 ---
 
 ## Troubleshooting on the Pi
