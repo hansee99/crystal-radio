@@ -100,6 +100,10 @@ public sealed class PlayerHost : IHostedService
         WatchCollection(vm.CuratedQueue);
         vm.CurateProgress.PropertyChanged += (_, _) => RaiseChanged();
         WatchCollection(vm.CurateProgress.Stages);
+        WatchCollection(vm.DjMix);
+        WatchCollection(vm.DjHarvesters);
+        vm.DjProgress.PropertyChanged += (_, _) => RaiseChanged();
+        WatchCollection(vm.DjProgress.Stages);
         vm.SearchProgress.PropertyChanged += (_, _) => RaiseChanged();
         WatchCollection(vm.SearchProgress.Stages);
     }

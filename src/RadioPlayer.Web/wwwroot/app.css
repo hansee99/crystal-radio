@@ -280,3 +280,23 @@ div.row-main { cursor: default; }
 .blazor-error-boundary::after { content: "An error has occurred."; }
 
 button.small { min-height: 36px; padding: 6px 12px; font-size: 0.85rem; flex: none; }
+
+/* --- DJ ---------------------------------------------------------------------------------------- */
+
+.dj-vibe { margin: 12px 0 0; }
+
+/* The DJ's remark: the mode's signature. Its size follows the desktop's DjRemarkSize setting. */
+.dj-remark { border-left: 4px solid var(--accent); }
+.dj-remark-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+.dj-remark p { margin: 6px 0 0; font-style: italic; }
+.dj-remark.size-small p { font-size: 0.95rem; }
+.dj-remark.size-medium p { font-size: 1.15rem; line-height: 1.4; }
+.dj-remark.size-large p { font-size: 1.45rem; line-height: 1.35; }
+
+.row.played { opacity: 0.55; }

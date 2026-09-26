@@ -8,6 +8,7 @@
     <nav class="modes" aria-label="Player mode">
         <button class="@(s.Mode == PlayerMode.Radio ? "on" : "")" aria-pressed="@(s.Mode == PlayerMode.Radio ? "true" : "false")" @onclick="@(() => EnsureModeAsync(PlayerMode.Radio))">Radio</button>
         <button class="@(s.Mode == PlayerMode.Library ? "on" : "")" aria-pressed="@(s.Mode == PlayerMode.Library ? "true" : "false")" @onclick="@(() => EnsureModeAsync(PlayerMode.Library))">Library</button>
+        <button class="@(s.Mode == PlayerMode.Dj ? "on" : "")" aria-pressed="@(s.Mode == PlayerMode.Dj ? "true" : "false")" @onclick="@(() => EnsureModeAsync(PlayerMode.Dj))">DJ</button>
     </nav>
 
     <section class="card now-playing" aria-live="polite">
@@ -137,11 +138,25 @@
             }
         </section>
     }
-    else
+    else if (s.Mode == PlayerMode.Library)
     {
         <section class="card">
             <h2>Library</h2>
             <p class="muted">Pick a song or build a playlist on the <a href="library">Library</a> page.</p>
+        </section>
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(s.DjRemark))
+        {
+            <section class="card dj-remark size-@s.DjRemarkSize.ToString().ToLowerInvariant()" aria-live="polite">
+                <div class="dj-remark-label">Your DJ</div>
+                <p>@s.DjRemark</p>
+            </section>
+        }
+        <section class="card">
+            <h2>DJ mode</h2>
+            <p class="muted">Start a session or change the vibe on the <a href="dj">DJ</a> page.</p>
         </section>
     }
 }
@@ -163,7 +178,7 @@ else
         PanelState SearchState, string SearchStatus, string? SearchError, string SearchEmptyMessage,
         IReadOnlyList<StageRow> Stages, IReadOnlyList<ResultRow> Results, bool HasApiKey,
         PlayerMode Mode, bool HasDuration, double PositionSeconds, double DurationSeconds,
-        string PositionText, string DurationText);
+        string PositionText, string DurationText, string? DjRemark, DjRemarkSize DjRemarkSize);
 
     private string _prompt = "";
 
@@ -212,7 +227,8 @@ else
                 string.Join(" · ", new[] { r.Reason, r.Country }.Where(x => !string.IsNullOrWhiteSpace(x))),
                 r.IsAdded)).ToList(),
             a.ApiKeys.IsConfigured,
-            vm.Mode, vm.HasDuration, vm.PositionSeconds, vm.DurationSeconds, vm.PositionText, vm.DurationText);
+            vm.Mode, vm.HasDuration, vm.PositionSeconds, vm.DurationSeconds, vm.PositionText, vm.DurationText,
+            vm.IsDjMode ? vm.DjIntroLine : null, vm.DjRemarkSize);
     }
 
     private Task SetVolume(ChangeEventArgs e)

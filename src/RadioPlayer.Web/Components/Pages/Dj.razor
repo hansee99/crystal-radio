@@ -1,0 +1,177 @@
+@page "/dj"
+@inherits PlayerView<Dj.Snapshot>
+
+<PageTitle>DJ · Crystal Radio</PageTitle>
+
+@if (Snap is not { } s)
+{
+    <p class="muted">Loading…</p>
+}
+else
+{
+    <section class="card">
+        <div class="card-head">
+            <h1>DJ mode</h1>
+            @if (s.IsRunning)
+            {
+                <button class="ghost" @onclick="Stop">Stop session</button>
+            }
+        </div>
+        <p class="muted">
+            Describe a vibe. The DJ listens to matching stations, keeps the songs that fit, and plays
+            them back as a continuous mix.
+        </p>
+
+        @* One box, two jobs — start a session, or re-aim a running one — as on the desktop. *@
+        <form class="search-row" @onsubmit="Submit">
+            <input type="search" placeholder="@(s.IsRunning ? "Change the vibe…" : "e.g. warm soul for a rainy Sunday")"
+                   @bind="_prompt" aria-label="Describe the vibe" />
+            <button type="submit" class="primary" disabled="@(s.IsChangingVibe || string.IsNullOrWhiteSpace(_prompt))">
+                @(s.IsRunning ? "Change vibe" : "Start")
+            </button>
+        </form>
+        @if (!s.HasApiKey)
+        {
+            <p class="hint">DJ mode needs an Anthropic API key — add one in <a href="settings">Settings</a>.</p>
+        }
+
+        @if (s.IsRunning && !string.IsNullOrEmpty(s.SessionVibe))
+        {
+            <p class="dj-vibe">Vibe: <strong>@s.SessionVibe</strong></p>
+        }
+        @if (!string.IsNullOrEmpty(s.Status))
+        {
+            <p class="muted">@if (s.IsLive) { <span class="live">Live</span> } @s.Status</p>
+        }
+        @if (s.Error is not null)
+        {
+            <p class="error">@s.Error</p>
+        }
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(s.IntroLine))
+    {
+        <section class="card dj-remark size-@s.RemarkSize.ToString().ToLowerInvariant()" aria-live="polite">
+            <div class="dj-remark-label">Your DJ</div>
+            <p>@s.IntroLine</p>
+        </section>
+    }
+
+    <section class="card">
+        <h2>Mix</h2>
+        @if (!string.IsNullOrEmpty(s.UpNext))
+        {
+            <p class="muted">Up next: @s.UpNext</p>
+        }
+        @switch (s.MixState)
+        {
+            case PanelState.Loading:
+                <ul class="stages">
+                    @foreach (var stage in s.Stages)
+                    {
+                        <li class="stage @stage.Status.ToString().ToLowerInvariant()">@stage.Label</li>
+                    }
+                </ul>
+                break;
+            case PanelState.Error:
+            case PanelState.Empty:
+                <p class="muted">@s.MixEmptyMessage</p>
+                break;
+            default:
+                <ul class="list">
+                    @foreach (var m in s.Mix)
+                    {
+                        <li class="row @(m.IsCurrent ? "current" : "") @(m.HasPlayed ? "played" : "")">
+                            <div class="row-main">
+                                <span class="row-title">@m.Title</span>
+                                @if (!string.IsNullOrEmpty(m.Artist)) { <span class="row-sub">@m.Artist</span> }
+                            </div>
+                            @if (m.IsCurrent) { <span class="badge">Now</span> }
+                        </li>
+                    }
+                </ul>
+                break;
+        }
+    </section>
+
+    <section class="card">
+        <h2>Sources</h2>
+        @switch (s.SourcesState)
+        {
+            case PanelState.Loading:
+                <p class="muted">Finding and connecting to stations…</p>
+                break;
+            case PanelState.Error:
+            case PanelState.Empty:
+                <p class="muted">@s.SourcesEmptyMessage</p>
+                break;
+            default:
+                <ul class="list">
+                    @foreach (var h in s.Sources)
+                    {
+                        <li class="row">
+                            <div class="row-main">
+                                <span class="row-title">@h.Label</span>
+                                <span class="row-sub">@h.Status</span>
+                            </div>
+                        </li>
+                    }
+                </ul>
+                break;
+        }
+    </section>
+}
+
+@code {
+    public sealed record MixRow(string Title, string Artist, bool IsCurrent, bool HasPlayed);
+    public sealed record SourceRow(string Label, string Status);
+    public sealed record StageRow(string Label, StageStatus Status);
+
+    public sealed record Snapshot(
+        bool IsRunning, bool IsChangingVibe, bool IsLive, string? SessionVibe, string Status, string? Error,
+        string? IntroLine, DjRemarkSize RemarkSize, string? UpNext,
+        PanelState MixState, string MixEmptyMessage, IReadOnlyList<StageRow> Stages, IReadOnlyList<MixRow> Mix,
+        PanelState SourcesState, string SourcesEmptyMessage, IReadOnlyList<SourceRow> Sources,
+        bool HasApiKey);
+
+    private string _prompt = "";
+
+    // The panel states are the desktop's own (MainViewModel.DjMixPanelState etc.), so both front
+    // ends show loading / empty / error at the same moments.
+    protected override Snapshot Read(AppServices a)
+    {
+        var vm = a.ViewModel;
+        return new Snapshot(
+            vm.IsDjRunning, vm.IsChangingDjVibe, vm.ShowDjLiveDot,
+            vm.DjSessionVibe, vm.DjStatus, vm.DjError,
+            vm.IsDjMode ? vm.DjIntroLine : null, vm.DjRemarkSize, vm.IsDjMode ? vm.UpNext : null,
+            vm.DjMixPanelState, vm.DjMixEmptyMessage,
+            vm.DjProgress.Stages.Select(g => new StageRow(g.Label, g.Status)).ToList(),
+            vm.DjMix.Select(m => new MixRow(m.Title, m.Artist, m.IsCurrent, m.HasPlayed)).ToList(),
+            vm.DjSourcesPanelState, vm.DjSourcesEmptyMessage,
+            vm.DjHarvesters.Select(h => new SourceRow(h.Label, h.StatusText)).ToList(),
+            a.ApiKeys.IsConfigured);
+    }
+
+    // DJ sessions only run in DJ mode, so switch first (asking if that interrupts something), then
+    // hand the prompt to the same command the desktop's prompt row uses: it starts a session, or
+    // changes the vibe of a running one.
+    private async Task Submit()
+    {
+        var prompt = _prompt.Trim();
+        if (prompt.Length == 0 || !await EnsureModeAsync(PlayerMode.Dj)) return;
+        await Do(a =>
+        {
+            a.ViewModel.DjPrompt = prompt;
+            if (a.ViewModel.DjPromptSubmitCommand.CanExecute(null))
+                a.ViewModel.DjPromptSubmitCommand.Execute(null);
+        });
+        _prompt = "";
+    }
+
+    private Task Stop() => Do(a =>
+    {
+        if (a.ViewModel.StopDjCommand.CanExecute(null))
+            a.ViewModel.StopDjCommand.Execute(null);
+    });
+}
