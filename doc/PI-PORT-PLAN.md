@@ -1413,7 +1413,7 @@ by itself. Then update the docs:
 
 ---
 
-## Step 8 — Automatic Pi updates (designed 2026-09-26; pieces 1–2 built)
+## Step 8 — Automatic Pi updates (designed 2026-09-26; built)
 
 **Goal:** a push to `main` that passes every test reaches the Pi by itself, without interrupting
 playback and without a bad build taking the radio down.
@@ -1474,6 +1474,26 @@ listening device. The Pi only downloads finished, tested packages and reuses `de
   SDK stamps when building in a git checkout; `commit` is null otherwise. It matches
   `build-info.json`'s `commit` for a CI build.
 - Read on the player thread through `PlayerHost.ReadAsync`, like every page. No auth, LAN-only.
+
+**Piece 3 — as implemented** (`deploy/pi/update.sh`, `crystal-radio-update.{service,timer}`):
+- The timer runs **every two hours** for now (`OnCalendar=*-*-* 00/2:15:00`, 5 min random delay,
+  `Persistent=true`), at the user's request while the pipeline is new. The target is nightly.
+- The running commit comes from `/api/status`, not a file, so a hand deploy (`publish-pi.ps1`, no
+  `build-info.json`) is compared correctly too. A running build without the endpoint (404) is
+  treated as busy: never update blind.
+- Skips while `playing` or `djRunning`, checked before and again after the download. A service that
+  doesn't answer at all counts as idle: nothing to interrupt, and a new build may be the fix.
+- Download goes to `~/crystal-radio.download` (the Pi's `/tmp` is RAM). SHA-256 checked; the
+  extracted `build-info.json` must name the expected commit (CI may replace the release mid-run).
+- `install.sh` now keeps the replaced app as `~/crystal-radio.prev` (hand deploys too). After
+  install the updater waits up to 60 s for `/api/status` to report the new commit; if not, it
+  moves the new app to `~/crystal-radio.failed`, restores `.prev`, and writes the commit to
+  `~/.local/state/crystal-radio-update/failed-commit` so it isn't retried. If `install.sh` stopped
+  before swapping (e.g. couldn't stop the service), there's nothing to roll back and the commit
+  isn't blamed.
+- No new sudo rule: the updater only stops/starts the service, which the existing rule allows.
+  `setup.sh` installs and enables the timer; re-run it once after the first deploy that ships it.
+- JSON is read with `sed` (no `jq` on the Pi); `null` reads as empty.
 
 **Open points, settled 2026-09-26:**
 - The repo `hansee99/crystal-radio` is **public** (made so on 2026-09-26). The Pi downloads

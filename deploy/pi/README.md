@@ -28,29 +28,52 @@ ssh -t hans@ras4 sudo bash ~/crystal-radio/deploy/setup.sh     # once; asks for 
 `setup.sh` (the only step that needs root):
 
 1. installs and enables `crystal-radio.service`, so it starts at boot;
-2. adds `/etc/sudoers.d/crystal-radio`, letting that user stop/start/restart **this service only**
-   without a password, so updates run unattended. The unit file lives in root-owned `/etc`, so the
+2. installs and enables `crystal-radio-update.timer`, the automatic updater (below);
+3. adds `/etc/sudoers.d/crystal-radio`, letting that user stop/start/restart **this service only**
+   without a password, so updates run unattended. The unit files live in root-owned `/etc`, so the
    rule can't be used to change what runs as root;
-3. opens port 5000 in `ufw` for the local subnet only (skipped if ufw isn't active).
+4. opens port 5000 in `ufw` for the local subnet only (skipped if ufw isn't active).
 
 Then open `http://ras4:5000`, add the Anthropic API key under **Settings** (for AI search), and pick
 the audio output if needed: `sudo raspi-config` → System Options → Audio.
 
 ## Updates
 
+**Automatic.** Every push to `main` that passes CI (`.github/workflows/ci.yml`) is published as the
+GitHub release `pi-latest`. On the Pi, `crystal-radio-update.timer` runs `update.sh` every two hours
+(at :15 past even hours). It installs the new build only when:
+
+- the release's commit differs from the running one (`GET /api/status` reports it), and
+- nothing is playing and no DJ session is on, checked before and again after the download.
+
+It verifies the package's SHA-256, installs through `install.sh` (the old app stays as
+`~/crystal-radio.prev`) and waits for the new build to answer. If it doesn't, it **rolls back** to
+`~/crystal-radio.prev`, keeps the failed build as `~/crystal-radio.failed`, and doesn't retry that
+commit. No token or password needed: the repo is public, and the sudo rule covers the restarts.
+
+```bash
+journalctl -u crystal-radio-update              # what the updater did, run by run
+systemctl list-timers crystal-radio-update      # when it runs next
+bash ~/crystal-radio/deploy/update.sh           # run it now, by hand
+```
+
+**By hand**, from Windows (restarts the service even while playing):
+
 ```powershell
 .\scripts\publish-pi.ps1 -Deploy
 ```
 
 No password needed. `install.sh` stops the service, replaces `~/crystal-radio`, starts it again and
-waits for it to answer. If `crystal-radio.service` itself changed, it says so: re-run `setup.sh`.
+waits for it to answer. If a unit file is new or changed, it says so: re-run `setup.sh`.
 
 ## Where things live on the Pi
 
 | Path | What |
 | --- | --- |
 | `~/crystal-radio/` | The app. Replaced on every update — never put data here. |
-| `~/crystal-radio/deploy/` | `setup.sh`, `install.sh` and the unit file from the last deploy. |
+| `~/crystal-radio/deploy/` | `setup.sh`, `install.sh`, `update.sh` and the unit files from the last deploy. |
+| `~/crystal-radio.prev/` | The app before the last update; the updater's rollback target. |
+| `~/.local/state/crystal-radio-update/` | The updater's lock, and the commit of a build that failed to start. |
 | `~/.config/RadioPlayer/` | `settings.json` (API key, base64 in an owner-only file), `stations.json`, `history.json`. |
 | `~/.local/share/RadioPlayer/` | The catalog and library databases, harvest cache, `logs/`. |
 
