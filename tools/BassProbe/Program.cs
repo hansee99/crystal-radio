@@ -2,14 +2,29 @@ using ManagedBass;
 using ManagedBass.Aac;
 using RadioPlayer.Services;
 
-// Step 0 of doc/PI-PORT-PLAN.md. Usage: BassProbe [url] [seconds]
-//   url      default: Radio Paradise AAC 128 (exercises the bass_aac path + ICY metadata)
-//   seconds  play this long and exit; omit to play until Enter
-var url = args.Length > 0 ? args[0] : "http://stream.radioparadise.com/aac-128";
-int? seconds = args.Length > 1 && int.TryParse(args[1], out var s) ? s : null;
+// Step 0 of doc/PI-PORT-PLAN.md. Usage: BassProbe [url] [seconds] [--any-channels] [--devbuf=MS]
+//   url             default: Radio Paradise AAC 128 (exercises the bass_aac path + ICY metadata)
+//   seconds         play this long and exit; omit to play until Enter
+//   --any-channels  let BASS open the device with every channel it offers (the default before
+//                   the fix below; kept so the difference can be heard again)
+//   --devbuf=MS     ALSA device buffer length in ms (BASS's Linux default measured at 40 ms)
+var positional = args.Where(a => !a.StartsWith("--")).ToArray();
+var url = positional.Length > 0 ? positional[0] : "http://stream.radioparadise.com/aac-128";
+int? seconds = positional.Length > 1 && int.TryParse(positional[1], out var s) ? s : null;
+var anyChannels = args.Contains("--any-channels");
+var devBuf = args.Select(a => a.StartsWith("--devbuf=") && int.TryParse(a[9..], out var ms) ? ms : (int?)null)
+    .FirstOrDefault(v => v is not null);
 
 Console.WriteLine($"BASS {Bass.Version}, OS {Environment.OSVersion}, arch {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}");
-if (!Bass.Init())
+
+// The Pi 4's headphone driver (bcm2835) advertises 8 channels, and without Stereo BASS opens
+// all 8: the stereo jack then misreads every frame and the result is badly distorted. Stereo is
+// harmless on Windows, where the default device is already opened as stereo.
+var flags = anyChannels ? DeviceInitFlags.Default : DeviceInitFlags.Stereo;
+if (devBuf is int buf)
+    Bass.Configure(Configuration.DeviceBufferLength, buf); // must precede Init
+Console.WriteLine($"Init flags: {flags}, device buffer: {(devBuf is null ? "BASS default" : $"{devBuf} ms")}");
+if (!Bass.Init(-1, 44100, flags))
 {
     Console.WriteLine($"Bass.Init failed: {Bass.LastError}");
     return 1;

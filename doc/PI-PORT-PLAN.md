@@ -184,6 +184,31 @@ Record the exact BASS version and OS release in your commit message body.
 
 **Commit.** `Add a BASS probe tool and the linux-arm64 natives`
 
+### Step 0 finding — a bare `Bass.Init()` distorts on the Pi (must carry forward)
+
+The first Pi run passed every metric (stream decoded, titles arrived, non-zero level) and still
+sounded **badly distorted**. `/proc/asound/card0/pcm0p/sub0/hw_params` during playback showed why:
+
+| | bare `Bass.Init()` | `Bass.Init(-1, 44100, DeviceInitFlags.Stereo)` + 200 ms device buffer |
+| --- | --- | --- |
+| `channels` | **8** | 2 |
+| `buffer_size` | 1764 frames (40 ms) | 8880 frames (200 ms) |
+| heard | distorted | clear (confirmed by ear, 60 s across a song change) |
+
+The Pi 4's headphone driver (bcm2835) advertises 8 channels and BASS opens all of them unless told
+otherwise; the stereo jack then misreads every frame. The small buffer was not the audible cause
+(CPU 91 % idle, no throttling, no xruns), but 40 ms leaves no margin on a Pi, so raise it too.
+
+**Rule for every BASS output device on Linux:** before `Bass.Init`,
+`Bass.Configure(Configuration.DeviceBufferLength, 200)`, and init with
+`Bass.Init(-1, 44100, DeviceInitFlags.Stereo)`. Applied in Step 5 (below). The DJ harvest's
+`Bass.Init(0)` is the "no sound" device and is unaffected.
+
+Lesson for later verification: **a level meter is not a listening test.** Any step whose
+definition of done says "audio plays" on the Pi means a person heard it and it sounded right.
+
+`BassProbe --any-channels` reproduces the broken behaviour; `--devbuf=MS` sets the buffer.
+
 ---
 
 ## Step 1 — Threading abstraction: replace `System.Windows.Threading.Dispatcher`
@@ -833,6 +858,37 @@ dedicated thread running a `MessageLoop` owns it, for the life of the process; b
 observers. Every read of, and every call into, the view model from a Blazor component goes
 through `PlayerHost.InvokeAsync`. Do not read view-model properties directly from a component.
 
+**First: Linux audio device init** (the Step 0 finding). `RadioEngine` (ctor, ~line 70) and
+`LocalPlaybackEngine` (ctor, ~line 101) both call a bare `Bass.Init()`. Add one helper in Core,
+`Services/BassDevice.cs`, and call it from both instead:
+
+```csharp
+using ManagedBass;
+
+namespace RadioPlayer.Services;
+
+/// <summary>
+/// Opens BASS's default output device. On Linux it must be forced to stereo with a bigger buffer:
+/// the Pi 4's headphone driver advertises 8 channels, BASS opens all of them otherwise, and the
+/// stereo jack then plays badly distorted audio (doc/PI-PORT-PLAN.md, "Step 0 finding").
+/// Windows keeps its existing bare Init.
+/// </summary>
+internal static class BassDevice
+{
+    internal static bool InitDefault()
+    {
+        if (!OperatingSystem.IsLinux())
+            return Bass.Init();
+        Bass.Configure(Configuration.DeviceBufferLength, 200); // ms; BASS's Linux default is ~40
+        return Bass.Init(-1, 44100, DeviceInitFlags.Stereo);
+    }
+}
+```
+
+Keep each call site's existing `&& Bass.LastError != Errors.Already` check exactly as it is:
+`if (!BassDevice.InitDefault() && Bass.LastError != Errors.Already)`. Do not touch
+`DjHarvestService`'s `Bass.Init(0)`.
+
 **Project.** `dotnet new blazor -n RadioPlayer.Web -o src/RadioPlayer.Web --interactivity Server --empty`
 then edit the csproj to:
 
@@ -1154,6 +1210,7 @@ by itself. Then update the docs:
 | Symptom | Cause / fix |
 | --- | --- |
 | `DllNotFoundException: bass` | `libbass.so` not next to the executable, or wrong arch. `ls`, then `file libbass.so` must say `ARM aarch64`. |
+| Audio plays but is badly distorted | Device opened with more than 2 channels. While playing, `grep channels /proc/asound/card0/pcm0p/sub0/hw_params` must say `2`. Fix: `BassDevice.InitDefault` (Step 5), see "Step 0 finding". |
 | `Bass.Init` → `Errors.Device` / `Driver` | ALSA can't open `default`. `aplay -l`; pick the output in `raspi-config`; check `libasound2` is installed. |
 | AAC URL fails, MP3 works | `libbass_aac.so` missing or not loading. `ldd libbass_aac.so`. |
 | ONNX load throws | Publish was not `linux-arm64` self-contained, so `libonnxruntime.so` for arm64 wasn't copied; or the `.onnx` is missing (git-ignored — see `MlAssets/README`). |
