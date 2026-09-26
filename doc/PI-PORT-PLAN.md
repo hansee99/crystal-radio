@@ -1413,6 +1413,49 @@ by itself. Then update the docs:
 
 ---
 
+## Step 8 — Automatic Pi updates (designed 2026-09-26, not started)
+
+**Goal:** a push to `main` that passes every test reaches the Pi by itself, without interrupting
+playback and without a bad build taking the radio down.
+
+**Decided: build in GitHub Actions, not on the Pi.** A build on the 2 GB Pi 4 takes minutes and
+lots of memory *while it plays* (Core build + tests measured at ~2¾ min; DJ sessions already peak at
+~930 MB RSS), it could only ever run the Linux half of the tests, and a failed build would sit on the
+listening device. The Pi only downloads finished, tested packages and reuses `deploy/pi/install.sh`.
+
+**Pieces, in order (each its own session, each testable):**
+
+1. **CI workflow** (`.github/workflows/`), on every push to `main`:
+   - *Linux job* (ubuntu x64): `dotnet test tests/RadioPlayer.Core.Tests` (uses
+     `native/linux-x64`), then `dotnet publish src/RadioPlayer.Web -r linux-arm64 --self-contained`
+     (cross-compiles fine), package with `deploy/pi/*`, upload as a release/artifact.
+   - *Windows job*: both test projects (`tests/RadioPlayer.Core.Tests`, `tests/RadioPlayer.Tests`).
+   - Publish the Pi package **only if both jobs pass**. Judge by exit code.
+   - The ONNX model (`MlAssets/all-MiniLM-L6-v2.onnx`, ~90 MB) is git-ignored: CI downloads it from
+     the URL in README.md (cache it), **or** move it out of the app folder on the Pi so packages
+     don't carry it — the latter needs a small code change (model path) and install.sh must stop
+     deleting it. Decide when building this.
+2. **Status endpoint** in the web head: read-only, e.g. `GET /api/status` →
+   `{ playing, mode, djRunning, version }`, LAN-only like the rest. The updater needs to know whether
+   something is playing, and there's no way to ask today.
+3. **Pi updater**: a systemd timer (nightly, e.g. 04:00) + script that checks the latest package,
+   skips if the status endpoint says something is playing, installs through `install.sh`, waits for
+   the service to answer, and **rolls back to the previous version** if it doesn't (keep the previous
+   `~/crystal-radio` as `~/crystal-radio.prev` instead of deleting it).
+
+**Open points to settle while building:**
+- The repo `hansee99/crystal-radio` is **private**: the Pi needs a read-only token to download
+  packages — a fine-grained PAT, *contents: read* only, created by the owner, stored owner-only
+  (0600) on the Pi, never in the repo.
+- GitHub Actions minutes: private repo on the free plan has a monthly allowance and Windows minutes
+  count double. Estimate ~11 billed minutes per push → a couple of hundred pushes a month. Check the
+  account's current limits before relying on it.
+- Tagged releases vs every green push to `main`: suggested every green push, applied nightly.
+- `origin` still points at the old URL `hansee99/radio-player` (GitHub redirects); the repo was
+  renamed to `crystal-radio`. Consider `git remote set-url origin https://github.com/hansee99/crystal-radio.git`.
+
+---
+
 ## Troubleshooting on the Pi
 
 | Symptom | Cause / fix |
