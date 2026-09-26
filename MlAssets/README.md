@@ -8,12 +8,14 @@ Phase 2 semantic search embeds station descriptions locally with
 | `vocab.txt` | ✅ yes | BERT WordPiece vocab (~230 KB) |
 | `all-MiniLM-L6-v2.onnx` | ❌ no (git-ignored) | ~90 MB model — fetch it (below) |
 
-The `.onnx` is git-ignored to keep the repo small. Fetch it once after cloning:
+The `.onnx` is git-ignored to keep the repo small. Fetch it once after cloning (Git Bash works):
 
 ```sh
-curl -L -o MlAssets/all-MiniLM-L6-v2.onnx \
-  https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx
+bash scripts/fetch-model.sh
 ```
+
+It downloads the model pinned to one upstream revision and checks its SHA-256. CI uses the same
+script, so every build embeds with the same model.
 
 Both files are copied to the build output (`MlAssets/`) via `<Content>` in the csproj.
 If the model file is missing, semantic search degrades gracefully (the embedding provider

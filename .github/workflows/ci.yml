@@ -1,0 +1,122 @@
+# Tests every push on Linux and Windows. On main, when both pass, it also publishes the Raspberry Pi
+# package as the release "pi-latest", which the Pi's updater installs (doc/PI-PORT-PLAN.md, Step 8).
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per branch at a time; a newer push to the same branch cancels the older run, so a stale
+# build can never overwrite a newer pi-latest.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  linux:
+    name: Linux - Core tests + Pi package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache the embedding model
+        uses: actions/cache@v4
+        with:
+          path: MlAssets/all-MiniLM-L6-v2.onnx
+          key: model-${{ hashFiles('scripts/fetch-model.sh') }}
+
+      - name: Fetch the embedding model
+        run: bash scripts/fetch-model.sh
+
+      - name: Core tests
+        run: dotnet test tests/RadioPlayer.Core.Tests -c Release
+
+      - name: Publish linux-arm64
+        run: dotnet publish src/RadioPlayer.Web/RadioPlayer.Web.csproj -c Release -r linux-arm64 --self-contained -o build/pi
+
+      # The same layout scripts/publish-pi.ps1 uploads: the app as pi/ and the deploy files next to
+      # it, so deploy/pi/install.sh works on either.
+      - name: Package
+        run: |
+          version=$(grep -oP '(?<=<Version>)[^<]+' crystal-radio.csproj)
+          printf '{ "version": "%s", "commit": "%s", "built": "%s" }\n' \
+            "$version" "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > build/pi/build-info.json
+          cp deploy/pi/install.sh deploy/pi/setup.sh deploy/pi/crystal-radio.service build/
+          tar -czf crystal-radio-pi.tar.gz -C build pi install.sh setup.sh crystal-radio.service
+          sha256sum crystal-radio-pi.tar.gz > crystal-radio-pi.tar.gz.sha256
+          cp build/pi/build-info.json .
+          ls -l crystal-radio-pi.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pi-package
+          path: |
+            crystal-radio-pi.tar.gz
+            crystal-radio-pi.tar.gz.sha256
+            build-info.json
+          retention-days: 3
+
+  windows:
+    name: Windows - all tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache the embedding model
+        uses: actions/cache@v4
+        with:
+          path: MlAssets/all-MiniLM-L6-v2.onnx
+          key: model-${{ hashFiles('scripts/fetch-model.sh') }}
+
+      # The WPF head copies the model to its output, so its build fails without the file.
+      - name: Fetch the embedding model
+        shell: bash
+        run: bash scripts/fetch-model.sh
+
+      - name: Core tests
+        run: dotnet test tests/RadioPlayer.Core.Tests -c Release
+
+      - name: WPF head tests
+        run: dotnet test tests/RadioPlayer.Tests -c Release
+
+  release:
+    name: Publish pi-latest
+    needs: [linux, windows]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pi-package
+
+      # One rolling pre-release, replaced on every green push to main. Release assets can be read
+      # with a contents:read token, which is all the Pi gets.
+      - name: Replace the pi-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version=$(jq -r .version build-info.json)
+          gh release delete pi-latest --cleanup-tag --yes || true
+          gh release create pi-latest \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Pi build $version (${GITHUB_SHA:0:7})" \
+            --notes "Raspberry Pi package built from $GITHUB_SHA. Installed nightly by the Pi's updater; see deploy/pi/README.md." \
+            crystal-radio-pi.tar.gz crystal-radio-pi.tar.gz.sha256 build-info.json

@@ -1413,7 +1413,7 @@ by itself. Then update the docs:
 
 ---
 
-## Step 8 — Automatic Pi updates (designed 2026-09-26, not started)
+## Step 8 — Automatic Pi updates (designed 2026-09-26; piece 1 built)
 
 **Goal:** a push to `main` that passes every test reaches the Pi by itself, without interrupting
 playback and without a bad build taking the radio down.
@@ -1442,6 +1442,26 @@ listening device. The Pi only downloads finished, tested packages and reuses `de
    skips if the status endpoint says something is playing, installs through `install.sh`, waits for
    the service to answer, and **rolls back to the previous version** if it doesn't (keep the previous
    `~/crystal-radio` as `~/crystal-radio.prev` instead of deleting it).
+
+**Piece 1 — as implemented** (`.github/workflows/ci.yml`):
+- Runs on **every push, any branch** (plus manual `workflow_dispatch`); only `main` publishes. A
+  branch push is how a change gets tested in CI before it is merged.
+- Jobs `linux` (Core tests, `linux-arm64` publish, package) and `windows` (both test projects) run in
+  parallel; `release` needs both. `concurrency` cancels an older run on the same branch, so a stale
+  build can't overwrite a newer package.
+- **Model: CI downloads it** (`scripts/fetch-model.sh`, cached). Needed anyway, because the WPF
+  head's build fails without the file. The script is pinned to upstream revision `1110a24` and checks
+  the SHA-256 (`6fd5d72f…`), identical to the file the catalogs were embedded with. Moving the model
+  out of the app folder isn't needed; the package is just larger.
+- **Package:** `crystal-radio-pi.tar.gz` = `pi/` + `install.sh`, `setup.sh`, `crystal-radio.service`,
+  the same layout `publish-pi.ps1` uploads, so `install.sh` serves both. `pi/build-info.json` holds
+  `{ version, commit, built }` and ends up as `~/crystal-radio/build-info.json`; the updater compares
+  its `commit` with the release's.
+- **Published as** one rolling pre-release, tag **`pi-latest`**, deleted and re-created on every green
+  push to `main`, with assets `crystal-radio-pi.tar.gz`, `crystal-radio-pi.tar.gz.sha256` and
+  `build-info.json`. A release, not a workflow artifact, because release assets are readable with a
+  *contents: read* token and don't count against Actions storage. For a few seconds during the swap
+  there is no `pi-latest`; the updater must treat a missing release as "nothing new".
 
 **Open points to settle while building:**
 - The repo `hansee99/crystal-radio` is **private**: the Pi needs a read-only token to download
