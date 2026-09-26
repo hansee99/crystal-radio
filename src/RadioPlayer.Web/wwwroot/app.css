@@ -1,52 +1,83 @@
-/* Crystal Radio — web remote. Phone-first: most use is a phone on the same Wi-Fi as the Pi. */
+/* Crystal Radio — web remote, in the desktop's Crystal look.
+   Tokens are the desktop's (Views/Theme.xaml, summarised in doc/design-review/design-tokens.md):
+   near-black surfaces with a green cast, five green-tinted text tiers, one teal accent, radius 10.
+   Dark only, like the desktop. Phone-first: most use is a phone on the Pi's Wi-Fi. */
+
+/* Hanken Grotesk (SIL OFL 1.1, see THIRD-PARTY-NOTICES.md): copies of the repo's Fonts/static in
+   wwwroot/fonts. Copied, not linked: the static-asset pipeline registers linked files but serves
+   them empty in development. */
+@font-face { font-family: "Hanken Grotesk"; src: url("fonts/HankenGrotesk-Light.ttf") format("truetype"); font-weight: 300; font-display: swap; }
+@font-face { font-family: "Hanken Grotesk"; src: url("fonts/HankenGrotesk-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Hanken Grotesk"; src: url("fonts/HankenGrotesk-Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Hanken Grotesk"; src: url("fonts/HankenGrotesk-SemiBold.ttf") format("truetype"); font-weight: 600; font-display: swap; }
 
 :root {
-    --bg: #f4f5f8;
-    --surface: #ffffff;
-    --surface-2: #eef0f5;
-    --text: #151821;
-    --muted: #5d6475;
-    --border: #dde1ea;
-    --accent: #3a5bd9;
-    --accent-text: #ffffff;
-    --current: #e7ecfd;
-    --danger: #c0392b;
-    --live: #d63a3a;
-    --radius: 14px;
-    color-scheme: light;
-}
+    color-scheme: dark;
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bg: #0f1116;
-        --surface: #181b23;
-        --surface-2: #222632;
-        --text: #eceef3;
-        --muted: #9aa1b2;
-        --border: #2b3040;
-        --accent: #7c95ff;
-        --accent-text: #0f1116;
-        --current: #232b48;
-        --danger: #ff7b6e;
-        --live: #ff6b6b;
-        color-scheme: dark;
-    }
+    /* Surfaces */
+    --bg: #050D0C;
+    --panel: rgb(6 17 15 / 0.72);          /* BgPanel, translucent over the artwork */
+    --panel-solid: #06110F;
+    --hairline: rgb(255 255 255 / 0.08);
+    --hairline-soft: rgb(255 255 255 / 0.06);
+    --fill-subtle: rgb(255 255 255 / 0.045);
+    --fill-track: rgb(255 255 255 / 0.13);
+
+    /* Text tiers */
+    --text: #F3F9F7;
+    --body: #E7F0EE;
+    --secondary: #BCCCC8;
+    --muted: #7D938E;
+    --faint: #8A9F9A;
+    --nontext: #5F736F;
+
+    /* Teal ramp — the only accent */
+    --teal: #56C7BA;
+    --teal-bright: #62D2C4;
+    --teal-text: #CDEEE7;
+    --teal-tint-07: rgb(86 199 186 / 0.07);
+    --teal-tint-10: rgb(86 199 186 / 0.10);
+    --teal-tint-16: rgb(86 199 186 / 0.16);
+    --teal-border-22: rgb(86 199 186 / 0.22);
+    --teal-border-35: rgb(86 199 186 / 0.35);
+    --grad-play: linear-gradient(135deg, #6FDCCD, #34988D);
+    --grad-fill: linear-gradient(90deg, #34988D, #62D2C4);
+    --grad-brand: linear-gradient(135deg, #62D2C4, #2F8F86);
+
+    --danger: #FF8A80;
+    --radius: 10px;
 }
 
 * { box-sizing: border-box; }
 
+/* The background lives on html only: a body background would paint over the artwork layer below,
+   but only as far down as the content reaches — a hard edge on short pages. */
+html { background: var(--bg); }
 html, body {
     margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100%;
+    color: var(--body);
+    font: 400 16px/1.45 "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-text-size-adjust: 100%;
 }
 
-a { color: var(--accent); }
-code { font-size: 0.9em; }
+/* The desktop's backdrop art, faded into the surface so text keeps its contrast. */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+        linear-gradient(180deg, rgb(5 13 12 / 0.55) 0%, rgb(5 13 12 / 0.82) 45%, var(--bg) 85%),
+        url("img/player-bg.webp") right top / cover no-repeat,
+        var(--bg);
+}
 
-/* --- Shell ----------------------------------------------------------------------------------- */
+a { color: var(--teal-bright); }
+code { font-size: 0.9em; color: var(--secondary); }
+.icon { flex: none; display: block; }
+
+/* --- Shell ------------------------------------------------------------------------------------ */
 
 .topbar {
     position: sticky;
@@ -56,126 +87,151 @@ code { font-size: 0.9em; }
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 12px 16px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    background: rgb(5 13 12 / 0.86);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--hairline);
 }
 
-.brand { font-weight: 700; color: var(--text); text-decoration: none; }
-
-.topbar nav { display: flex; gap: 4px; overflow-x: auto; max-width: 100%; }
-
-/* Brand plus four links doesn't fit a 360px phone on one line: put the links on their own row. */
-@media (max-width: 480px) {
-    .topbar { flex-wrap: wrap; row-gap: 8px; }
-    .topbar nav { width: 100%; }
-    .topbar nav a { padding: 6px 10px; }
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.8rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
 }
+.brand-mark {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--grad-brand);
+    color: var(--bg);
+}
+.brand-light { font-weight: 300; }
+
+.topbar nav { display: flex; gap: 2px; overflow-x: auto; max-width: 100%; }
 .topbar nav a {
-    padding: 6px 12px;
-    border-radius: 999px;
+    padding: 6px 10px;
+    border-radius: 8px;
     color: var(--muted);
     text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
 }
-.topbar nav a.active { background: var(--surface-2); color: var(--text); }
+.topbar nav a:hover { color: var(--secondary); }
+.topbar nav a.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--teal); border-radius: 8px 8px 0 0; }
+
+/* Brand plus five links doesn't fit a 360px phone on one line: the links get their own row. */
+@media (max-width: 560px) {
+    .topbar { flex-wrap: wrap; row-gap: 6px; }
+    .topbar nav { width: 100%; }
+}
 
 .page {
     max-width: 720px;
     margin: 0 auto;
     padding: 16px;
     display: grid;
+    /* minmax(0, 1fr), not the implicit auto column: an auto column grows to its widest content, and a
+       no-wrap ellipsis title's natural width is the whole title — the page ran off a phone screen. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
 }
 
 .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
     padding: 16px;
     min-width: 0;
+    backdrop-filter: blur(6px);
 }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1, h2 { margin: 0 0 12px; line-height: 1.2; color: var(--text); font-weight: 600; }
+h1 { font-size: 1.35rem; }
+/* Routes.razor moves focus to the page's h1 after navigation (FocusOnNavigate) so screen readers
+   announce the new page. The heading isn't interactive, so it needs no visible ring. */
+h1:focus { outline: none; }
+/* Section headings read as the desktop's eyebrows: small, caps, spaced. */
+h2, .eyebrow {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+.card-head h2, .card-head h1 { margin: 0; }
 
-h1, h2 { margin: 0 0 12px; line-height: 1.2; }
-h1 { font-size: 1.4rem; }
-h2 { font-size: 1.05rem; }
-.card-head h2 { margin: 0; }
-
-.muted, .hint { color: var(--muted); }
-.hint { font-size: 0.9rem; margin: 8px 0 0; }
+.muted { color: var(--muted); font-size: 0.9rem; }
+.hint { color: var(--faint); font-size: 0.85rem; margin: 8px 0 0; }
 .error { color: var(--danger); }
+p { margin: 8px 0; }
 
 /* --- Now playing ------------------------------------------------------------------------------ */
 
-.now-playing { text-align: center; }
+.now-playing { padding: 20px 18px 18px; }
 .np-station { color: var(--muted); font-size: 0.9rem; }
-.np-title { font-size: 1.5rem; margin: 6px 0 2px; overflow-wrap: anywhere; }
-.np-title.idle { color: var(--muted); font-weight: 500; }
-.np-artist { font-size: 1.05rem; overflow-wrap: anywhere; }
+.np-title {
+    font-size: clamp(1.75rem, 7vw, 2.6rem);
+    line-height: 1.1;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    margin: 8px 0 4px;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+.np-title.idle { color: var(--muted); font-size: clamp(1.4rem, 5.5vw, 1.9rem); }
+.np-artist { font-size: 1.15rem; font-weight: 300; color: var(--secondary); overflow-wrap: anywhere; }
 .np-status {
-    margin-top: 6px;
+    margin-top: 12px;
     color: var(--muted);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     display: flex;
-    gap: 8px;
-    justify-content: center;
+    gap: 10px;
     align-items: center;
     flex-wrap: wrap;
 }
+
+/* LIVE: teal badge with a pulsing dot — "live and healthy", nothing else. */
 .live {
-    color: var(--live);
-    border: 1px solid currentColor;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 9px;
     border-radius: 999px;
-    padding: 0 8px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    background: var(--teal-tint-10);
+    border: 1px solid var(--teal-border-35);
+    color: var(--teal-text);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
 }
+.live::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--teal);
+    animation: pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes pulse { from { opacity: 1; } to { opacity: 0.35; } }
 
 .transport {
     display: flex;
     justify-content: center;
-    gap: 12px;
-    margin: 16px 0 8px;
-}
-
-.modes {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: 1fr;
-    gap: 4px;
-    padding: 4px;
-    background: var(--surface-2);
-    border-radius: 12px;
-}
-.modes button { border: none; background: transparent; color: var(--muted); }
-.modes button.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / 0.15); }
-
-.seek {
-    display: grid;
-    grid-template-columns: 5ch 1fr 5ch;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-    color: var(--muted);
-    font-size: 0.85rem;
-    font-variant-numeric: tabular-nums;
+    gap: 14px;
+    margin: 22px 0 14px;
 }
-.seek span:last-child { text-align: right; }
-.seek input { width: 100%; accent-color: var(--accent); }
-
-.volume {
-    display: grid;
-    grid-template-columns: auto 1fr 3.5ch;
-    align-items: center;
-    gap: 12px;
-    color: var(--muted);
-    font-size: 0.9rem;
-}
-.volume input { width: 100%; accent-color: var(--accent); }
-.vol-readout { text-align: right; }
 
 /* --- Controls --------------------------------------------------------------------------------- */
 
@@ -183,120 +239,277 @@ button, input, select { font: inherit; color: inherit; }
 
 button {
     cursor: pointer;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    border-radius: 10px;
-    padding: 10px 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     min-height: 44px;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--hairline);
+    background: var(--fill-subtle);
+    color: var(--body);
+    font-weight: 600;
+    font-size: 0.9rem;
 }
-button:disabled { opacity: 0.45; cursor: default; }
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
-button.ghost { background: transparent; }
+button:hover:not(:disabled) { border-color: var(--teal-border-35); color: var(--text); }
+button:disabled { opacity: 0.4; cursor: default; }
 
-button.icon {
-    width: 52px;
-    height: 52px;
+/* Primary (non-AI) action: solid teal. */
+button.primary { background: var(--teal); border-color: var(--teal); color: var(--bg); }
+button.primary:hover:not(:disabled) { background: var(--teal-bright); color: var(--bg); }
+
+/* AI actions: sparkle + label on a teal tint — the desktop's AboutPillButton. */
+button.ai {
+    background: var(--teal-tint-10);
+    border-color: var(--teal-border-35);
+    color: var(--teal-text);
+}
+button.ai .icon { color: var(--teal-bright); }
+button.ai:hover:not(:disabled) { background: var(--teal-tint-16); }
+
+button.ghost { background: transparent; }
+button.small { min-height: 36px; padding: 6px 12px; font-size: 0.8rem; flex: none; }
+
+/* Round ghost transport buttons, and the glowing play button — the page's focal point. */
+button.round {
+    width: 48px;
+    height: 48px;
+    min-height: 0;
     padding: 0;
     border-radius: 50%;
-    font-size: 1.25rem;
-    line-height: 1;
+    background: transparent;
+    color: var(--body);
 }
-button.icon.primary { width: 64px; height: 64px; font-size: 1.5rem; }
-button.icon.small { width: 40px; height: 40px; min-height: 40px; font-size: 1rem; flex: none; }
-button.icon.danger { color: var(--danger); }
+button.play {
+    width: 66px;
+    height: 66px;
+    min-height: 0;
+    padding: 0;
+    border-radius: 50%;
+    border: none;
+    background: var(--grad-play);
+    color: #032320;
+    box-shadow: 0 6px 28px rgb(86 199 186 / 0.45);
+}
+button.play:hover:not(:disabled) { color: #032320; box-shadow: 0 6px 32px rgb(86 199 186 / 0.6); }
+button.play:disabled { box-shadow: none; }
+
+/* Per-row icon actions (save, remove): the desktop's GhostSquareButton. */
+button.icon-btn {
+    width: 38px;
+    height: 38px;
+    min-height: 0;
+    padding: 0;
+    flex: none;
+    background: transparent;
+    color: var(--muted);
+}
+button.icon-btn:hover:not(:disabled) { color: var(--teal-bright); }
+button.icon-btn.danger:hover:not(:disabled) { color: var(--danger); border-color: rgb(255 138 128 / 0.4); }
+button.icon-btn.saved { color: var(--teal); border-color: var(--teal-border-35); }
 
 input, select {
     width: 100%;
     min-width: 0;
     min-height: 44px;
     padding: 10px 12px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
+    background: rgb(0 0 0 / 0.25);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    color: var(--text);
+}
+input::placeholder { color: var(--nontext); }
+input:focus { outline: none; border-color: var(--teal-border-35); }
+
+:is(button, input, select, a):focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+/* Sliders: faint track, gradient fill, white thumb with a teal glow — the desktop's VolumeSlider.
+   The fill width comes from --pct, set inline by the page (WebKit has no progress pseudo). */
+input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 22px;
+    padding: 0;
+    min-height: 0;
+    border: none;
+    background: transparent;
+}
+input[type=range]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #34988D, #62D2C4) 0 / var(--pct, 0%) 100% no-repeat, var(--fill-track);
+}
+input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--fill-track); }
+input[type=range]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--grad-fill); }
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 10px rgb(98 210 196 / 0.7);
+}
+input[type=range]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 10px rgb(98 210 196 / 0.7);
 }
 
-:is(button, input, select, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.volume, .seek {
+    display: grid;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}
+.volume { grid-template-columns: auto 1fr 4ch; }
+.vol-readout { text-align: right; }
+.seek { grid-template-columns: 5ch 1fr 5ch; margin-bottom: 10px; }
+.seek span:last-child { text-align: right; }
+
+/* Mode switch: the desktop's segmented pill tabs. */
+.modes {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 4px;
+    padding: 4px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+}
+.modes button { border: 1px solid transparent; background: transparent; color: var(--muted); min-height: 40px; }
+.modes button.on { background: var(--teal-tint-10); border-color: var(--teal-border-22); color: var(--text); }
 
 .search-row { display: flex; gap: 8px; }
 .search-row button { flex: none; }
-
 .add-form { display: grid; gap: 8px; margin: 12px 0; }
 
 /* --- Lists ------------------------------------------------------------------------------------ */
 
-.list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
 
-.row { display: flex; align-items: center; gap: 8px; border-radius: 10px; }
-.row.current { background: var(--current); }
+.row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: var(--radius);
+    padding-right: 6px;
+    border-left: 2px solid transparent;
+}
+.row:hover { background: var(--fill-subtle); }
+/* Selected / current: teal tint and a 2px teal bar on the left, never a full border. */
+.row.current { background: var(--teal-tint-07); border-left-color: var(--teal); }
+.row.played { opacity: 0.55; }
 
 .row-main {
     flex: 1;
     min-width: 0;
     display: grid;
+    gap: 2px;
     text-align: left;
     background: transparent;
     border: none;
-    padding: 8px 10px;
+    padding: 9px 10px;
+    min-height: 0;
+    justify-content: stretch;
+    font-weight: 400;
 }
-.row-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.row-main:hover:not(:disabled) { color: inherit; }
+div.row-main { cursor: default; }
+.row-title {
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .row-sub {
     color: var(--muted);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
 }
 
-div.row-main { cursor: default; }
-
 .badge {
     flex: none;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
+    font-weight: 600;
     color: var(--muted);
-    border: 1px solid var(--border);
+    border: 1px solid var(--hairline);
     border-radius: 999px;
     padding: 2px 8px;
-    margin-right: 6px;
 }
-.row.current .badge { color: var(--accent); border-color: currentColor; }
+.row.current .badge { color: var(--teal-text); border-color: var(--teal-border-35); background: var(--teal-tint-10); }
 
-.stages { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 4px; }
-.stage { color: var(--muted); }
-.stage::before { content: "○ "; }
-.stage.active { color: var(--text); font-weight: 600; }
-.stage.active::before { content: "● "; color: var(--accent); }
-.stage.done::before { content: "✓ "; color: var(--accent); }
+/* Staged progress for the long AI waits: ring → spinner → teal check. */
+.stages { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; font-size: 0.88rem; }
+.stage { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.stage::before {
+    content: "";
+    width: 12px;
+    height: 12px;
+    flex: none;
+    border-radius: 50%;
+    border: 1.5px solid var(--nontext);
+}
+.stage.active { color: var(--text); }
+.stage.active::before {
+    border-color: var(--teal);
+    border-right-color: transparent;
+    animation: spin 0.9s linear infinite;
+}
+.stage.done { color: var(--secondary); }
+.stage.done::before { border: none; background: var(--teal); box-shadow: inset 0 0 0 3px var(--panel-solid); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .live::before, .stage.active::before { animation: none; }
+}
 
 .key-state { margin: 12px 0 0; }
 
-/* --- Blazor framework UI (from the template) -------------------------------------------------- */
+/* --- DJ --------------------------------------------------------------------------------------- */
 
-.blazor-error-boundary {
-    background: #b32121;
-    padding: 1rem;
-    color: white;
-}
-.blazor-error-boundary::after { content: "An error has occurred."; }
-
-button.small { min-height: 36px; padding: 6px 12px; font-size: 0.85rem; flex: none; }
-
-/* --- DJ ---------------------------------------------------------------------------------------- */
-
-.dj-vibe { margin: 12px 0 0; }
+.dj-vibe { margin: 12px 0 0; color: var(--secondary); }
+.dj-vibe strong { color: var(--text); font-weight: 600; }
 
 /* The DJ's remark: the mode's signature. Its size follows the desktop's DjRemarkSize setting. */
-.dj-remark { border-left: 4px solid var(--accent); }
+.dj-remark { border-color: var(--teal-border-22); background: linear-gradient(135deg, var(--teal-tint-10), var(--panel)); }
 .dj-remark-label {
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--accent);
+    color: var(--teal-bright);
 }
-.dj-remark p { margin: 6px 0 0; font-style: italic; }
+.dj-remark p { margin: 8px 0 0; font-style: italic; color: var(--body); }
 .dj-remark.size-small p { font-size: 0.95rem; }
 .dj-remark.size-medium p { font-size: 1.15rem; line-height: 1.4; }
 .dj-remark.size-large p { font-size: 1.45rem; line-height: 1.35; }
 
-.row.played { opacity: 0.55; }
+/* --- Blazor framework UI ---------------------------------------------------------------------- */
+
+.blazor-error-boundary {
+    background: #5a1a17;
+    padding: 1rem;
+    color: #fff;
+    border-radius: var(--radius);
+}
+.blazor-error-boundary::after { content: "An error has occurred."; }
+
+/* History save state, as on the desktop: teal plus = marked (saves when the song ends), teal
+   check = saved. Not buttons — nothing left to do on these rows. */
+.icon-state { width: 38px; height: 38px; flex: none; display: grid; place-items: center; color: var(--teal); }

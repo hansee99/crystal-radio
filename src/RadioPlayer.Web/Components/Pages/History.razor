@@ -25,15 +25,16 @@
                     </div>
                     @if (r.IsSaved)
                     {
-                        <span class="badge" title="Saved to your library">Saved</span>
+                        <span class="icon-state saved" title="Saved to your library" role="img" aria-label="Saved"><Icon Name="check-circle" /></span>
                     }
                     else if (r.MarkedForSave)
                     {
-                        <span class="badge" title="Saved as soon as the song ends">Will save</span>
+                        <span class="icon-state marked" title="Saves when the song ends" role="img" aria-label="Saves when the song ends"><Icon Name="add-circle" /></span>
                     }
                     else if (r.CanSave)
                     {
-                        <button class="ghost small" @onclick="@(() => Save(r.Key))">@(r.IsCurrent ? "Save when it ends" : "Save")</button>
+                        var saveLabel = r.IsCurrent ? "Save when it ends" : "Save to your library";
+                        <button class="icon-btn" title="@saveLabel" aria-label="@saveLabel" @onclick="@(() => Save(r.Key))"><Icon Name="add-circle" /></button>
                     }
                     else if (r.IsCurrent)
                     {

@@ -14,7 +14,7 @@ else
             <h1>DJ mode</h1>
             @if (s.IsRunning)
             {
-                <button class="ghost" @onclick="Stop">Stop session</button>
+                <button class="ghost small" @onclick="Stop">End session</button>
             }
         </div>
         <p class="muted">
@@ -26,7 +26,8 @@ else
         <form class="search-row" @onsubmit="Submit">
             <input type="search" placeholder="@(s.IsRunning ? "Change the vibe…" : "e.g. warm soul for a rainy Sunday")"
                    @bind="_prompt" aria-label="Describe the vibe" />
-            <button type="submit" class="primary" disabled="@(s.IsChangingVibe || string.IsNullOrWhiteSpace(_prompt))">
+            <button type="submit" class="ai" disabled="@(s.IsChangingVibe || string.IsNullOrWhiteSpace(_prompt))">
+                <Icon Name="sparkle" Size="16" />
                 @(s.IsRunning ? "Change vibe" : "Start")
             </button>
         </form>
@@ -52,7 +53,7 @@ else
     @if (!string.IsNullOrWhiteSpace(s.IntroLine))
     {
         <section class="card dj-remark size-@s.RemarkSize.ToString().ToLowerInvariant()" aria-live="polite">
-            <div class="dj-remark-label">Your DJ</div>
+            <div class="dj-remark-label"><Icon Name="sparkle" Size="14" />Your DJ</div>
             <p>@s.IntroLine</p>
         </section>
     }

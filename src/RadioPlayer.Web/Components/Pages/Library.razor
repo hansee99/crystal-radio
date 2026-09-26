@@ -14,7 +14,7 @@ else
         <h2>Build a playlist</h2>
         <form class="search-row" @onsubmit="Curate">
             <input type="search" placeholder="e.g. upbeat songs for cooking" @bind="_prompt" aria-label="Describe a mood or vibe" />
-            <button type="submit" class="primary" disabled="@(s.CurateState == PanelState.Loading || string.IsNullOrWhiteSpace(_prompt))">Curate</button>
+            <button type="submit" class="ai" disabled="@(s.CurateState == PanelState.Loading || string.IsNullOrWhiteSpace(_prompt))"><Icon Name="sparkle" Size="16" />Curate</button>
         </form>
         @if (!s.HasApiKey)
         {
