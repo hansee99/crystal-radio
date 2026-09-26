@@ -37,14 +37,5 @@ public class SecretProtectorTests
     public void Dpapi_UnreadableValue_IsNoKey(string stored)
         => Assert.Null(new DpapiSecretProtector().Unprotect(stored));
 
-    [Fact]
-    public void Plain_RoundTrips()
-    {
-        var p = new PlainSecretProtector();
-        Assert.Equal(Key, p.Unprotect(p.Protect(Key)));
-    }
-
-    [Fact]
-    public void Plain_UnreadableValue_IsNoKey()
-        => Assert.Null(new PlainSecretProtector().Unprotect("not base64 at all!"));
+    // PlainSecretProtector (the Pi's) is tested in RadioPlayer.Core.Tests, which runs on Linux.
 }

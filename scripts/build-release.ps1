@@ -47,7 +47,9 @@ $AppUserModelId = 'HansSeebacher.CrystalRadio'
 
 $repo    = Split-Path $PSScriptRoot -Parent
 $project = Join-Path $repo 'crystal-radio.csproj'
-$tests   = Join-Path $repo 'tests\RadioPlayer.Tests\RadioPlayer.Tests.csproj'
+# Both test projects: Core's (portable, the bulk) and the WPF head's (Windows-only UI tests).
+$tests   = @((Join-Path $repo 'tests\RadioPlayer.Core.Tests\RadioPlayer.Core.Tests.csproj'),
+             (Join-Path $repo 'tests\RadioPlayer.Tests\RadioPlayer.Tests.csproj'))
 $staging = Join-Path $env:TEMP ('crystal-radio-publish-' + [Guid]::NewGuid().ToString('n').Substring(0, 8))
 
 <#
@@ -207,8 +209,10 @@ if ($running.Count -gt 0) {
 
 if (-not $SkipTests) {
     Step "Running tests"
-    & dotnet test $tests -c Debug --nologo
-    if ($LASTEXITCODE -ne 0) { Fail "Tests failed — nothing installed." }
+    foreach ($testProject in $tests) {
+        & dotnet test $testProject -c Debug --nologo
+        if ($LASTEXITCODE -ne 0) { Fail "Tests failed — nothing installed." }
+    }
 } else {
     Write-Host ""
     Write-Host "  Skipping tests (-SkipTests)." -ForegroundColor Yellow

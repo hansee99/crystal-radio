@@ -1,5 +1,4 @@
 using System.IO;
-using System.Windows.Threading;
 using RadioPlayer.Services;
 using RadioPlayer.Tests.Fakes;
 using Xunit;
@@ -40,13 +39,7 @@ public sealed class BridgeHeardLiveTests : IDisposable
     /// DjQueueService marshals harvest arrivals through the dispatcher it captured at construction,
     /// so nothing lands until that dispatcher is pumped. Same helper as DjQueueServiceTests.
     /// </summary>
-    private static void PumpDispatcher()
-    {
-        var frame = new DispatcherFrame();
-        Dispatcher.CurrentDispatcher.BeginInvoke(
-            DispatcherPriority.ContextIdle, new Action(() => frame.Continue = false));
-        Dispatcher.PushFrame(frame);
-    }
+    private static void PumpDispatcher() => TestLoop.Pump();
 
     private DjQueueService NewQueue() => new(_local, _curator, _harvest);
 

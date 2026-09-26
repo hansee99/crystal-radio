@@ -19,6 +19,7 @@
        misreads. -->
   <ItemGroup>
     <InternalsVisibleTo Include="RadioPlayer.Tests" />
+    <InternalsVisibleTo Include="RadioPlayer.Core.Tests" />
   </ItemGroup>
 
   <ItemGroup>

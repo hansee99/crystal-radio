@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Xunit;
 
@@ -17,7 +16,7 @@ public class SpecialFolderUsageTests
     [Fact]
     public void EveryGetFolderPathCallInCoreCreatesTheFolder()
     {
-        var core = Path.Combine(RepoRoot(), "src", "RadioPlayer.Core");
+        var core = Path.Combine(Repo.Root(), "src", "RadioPlayer.Core");
         Assert.True(Directory.Exists(core), $"Core source not found at {core}");
 
         var offenders = new List<string>();
@@ -38,7 +37,4 @@ public class SpecialFolderUsageTests
             "GetFolderPath without SpecialFolderOption.Create (returns \"\" on Linux when the folder is missing):\n"
             + string.Join("\n", offenders));
     }
-
-    private static string RepoRoot([CallerFilePath] string thisFile = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(thisFile)!, "..", ".."));
 }

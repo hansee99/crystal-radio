@@ -196,4 +196,31 @@ public class MessageLoopTests
 
         Assert.False(ran);
     }
+
+    // RunPending is what TestLoop.Pump — and so every pumping test — stands on.
+
+    [Fact]
+    public void RunPending_RunsWorkQueuedWhileItRuns_ThenReturns()
+    {
+        var loop = MessageLoop.CreateForCurrentThread();
+        var order = new List<string>();
+        loop.Post(() =>
+        {
+            order.Add("first");
+            loop.Post(() => order.Add("queued by first")); // WPF's frame ran these too
+        });
+
+        var ran = loop.RunPending();
+
+        Assert.Equal(["first", "queued by first"], order);
+        Assert.Equal(2, ran);
+        Assert.Equal(0, loop.RunPending()); // nothing left: returns rather than blocking
+    }
+
+    [Fact]
+    public async Task RunPending_OnAnotherThread_Throws()
+    {
+        var loop = MessageLoop.CreateForCurrentThread();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Task.Run(() => loop.RunPending()));
+    }
 }

@@ -27,11 +27,17 @@ public sealed class MessageLoop : IDispatcher
     /// setup is done.</summary>
     public static MessageLoop InstallOnCurrentThread()
     {
-        var loop = new MessageLoop(Environment.CurrentManagedThreadId);
+        var loop = CreateForCurrentThread();
         DispatcherContext.Install(loop);
         SynchronizationContext.SetSynchronizationContext(new LoopSynchronizationContext(loop));
         return loop;
     }
+
+    /// <summary>A loop bound to the calling thread, installed nowhere: not as
+    /// <see cref="DispatcherContext.Current"/>, and not as the SynchronizationContext. For a
+    /// <see cref="DispatcherContext.Fallback"/> on threads that already have a context of their
+    /// own to keep — a test framework's, for instance.</summary>
+    public static MessageLoop CreateForCurrentThread() => new(Environment.CurrentManagedThreadId);
 
     public bool CheckAccess() => Environment.CurrentManagedThreadId == _threadId;
     public bool HasShutdownStarted => _shutdown;
@@ -84,6 +90,26 @@ public sealed class MessageLoop : IDispatcher
             try { action(); }
             catch (Exception ex) { AppLog.Error("[MessageLoop] unhandled exception in posted action", ex); }
         }
+    }
+
+    /// <summary>
+    /// Runs everything queued so far — including work queued while it runs — then returns: what
+    /// WPF's <c>Dispatcher.PushFrame</c> at <c>ContextIdle</c> did. For a thread that can't hand
+    /// itself to <see cref="Run"/> because it has more to do in between — the tests, which step
+    /// an engine, flush its callbacks, and assert. Returns how many actions ran.
+    /// </summary>
+    internal int RunPending()
+    {
+        if (!CheckAccess())
+            throw new InvalidOperationException("MessageLoop.RunPending must be called on the loop's thread.");
+        var ran = 0;
+        while (_queue.TryTake(out var action))
+        {
+            ran++;
+            try { action(); }
+            catch (Exception ex) { AppLog.Error("[MessageLoop] unhandled exception in posted action", ex); }
+        }
+        return ran;
     }
 
     public IDispatcherTimer CreateTimer() => new LoopTimer(this);

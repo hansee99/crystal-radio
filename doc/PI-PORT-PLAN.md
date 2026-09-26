@@ -1390,6 +1390,18 @@ by itself. Then update the docs:
   `html`, not `body`, or it paints over the fixed artwork layer only as far as the content goes;
   grid columns holding no-wrap ellipsis text need `minmax(0, 1fr)`. Headless Edge screenshots can't
   go below ~500 px wide (it lays out wider and crops), so check real phone width on a phone.
+- **5 — done (branch `test-split`), as a split rather than just the four tests.** 12 of 57 test
+  files depended on Windows. Now `tests/RadioPlayer.Core.Tests` (net10.0, 684 cases incl. theory
+  rows) and `tests/RadioPlayer.Tests` (WPF head, 61). The four `DispatcherFrame` pumps became
+  `TestLoop.Pump()` over `MessageLoop.RunPending()`; test threads get
+  `MessageLoop.CreateForCurrentThread()` as their fallback (no SynchronizationContext — xUnit's
+  must stay). `LyricsServiceTests` checks against `crystal-radio.csproj`'s `<Version>`
+  (`Repo.ProductVersion()`) instead of the WPF `App`. Some tests start a real DJ harvest, whose
+  thread opens BASS device 0 (no sound card needed), so the Core test project copies the BASS
+  library for the building machine — Windows x64, Linux x64 (new: `native/linux-x64`) or Linux arm64.
+  **Verified on the Pi:** all 682 (before the two RunPending tests were added) pass on Linux arm64 (SDK installed to a temp folder, removed after).
+  Found on the way: a missing BASS library made `Bass.Init` *throw* on the harvest thread and take
+  the whole process down; `HarvestThreadMain` now reports it as a failed session start.
 - **DJ on the Pi 4 (2 GB), measured:** steady state harvesting 4 stations while playing is 5–8 % of
   one core; session start peaks ~70 % for ~30 s; finishing a song (QC + enrichment + embedding)
   peaks ~60–75 % briefly. Temperature ≤ 54.5 °C, never throttled, 0 errors. **Memory is a

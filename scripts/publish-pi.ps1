@@ -36,7 +36,9 @@ $ErrorActionPreference = 'Stop'
 
 $repo    = Split-Path $PSScriptRoot -Parent
 $project = Join-Path $repo 'src\RadioPlayer.Web\RadioPlayer.Web.csproj'
-$tests   = Join-Path $repo 'tests\RadioPlayer.Tests\RadioPlayer.Tests.csproj'
+# Both test projects: Core's (portable, the bulk) and the WPF head's (Windows-only UI tests).
+$tests   = @((Join-Path $repo 'tests\RadioPlayer.Core.Tests\RadioPlayer.Core.Tests.csproj'),
+             (Join-Path $repo 'tests\RadioPlayer.Tests\RadioPlayer.Tests.csproj'))
 $out     = Join-Path $repo 'build\pi'
 $deployDir = Join-Path $repo 'deploy\pi'
 $model   = Join-Path $repo 'MlAssets\all-MiniLM-L6-v2.onnx'
@@ -82,8 +84,10 @@ if ($Deploy) {
 
 if (-not $SkipTests) {
     Step "Running tests"
-    & dotnet test $tests -c Release --nologo
-    if ($LASTEXITCODE -ne 0) { Fail "Tests failed - nothing published." }
+    foreach ($testProject in $tests) {
+        & dotnet test $testProject -c Release --nologo
+        if ($LASTEXITCODE -ne 0) { Fail "Tests failed - nothing published." }
+    }
 }
 
 Step "Publishing linux-arm64 -> $out"

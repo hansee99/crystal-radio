@@ -642,6 +642,13 @@ reads as "keep": a wrong "no" deletes real music, a wrong "yes" costs one bad tr
 
 ## Testing
 
+**Automated — two projects.** `tests/RadioPlayer.Core.Tests` (plain `net10.0`) holds everything that
+tests Core — the bulk — and runs on Windows and Linux; `tests/RadioPlayer.Tests` holds only what
+needs the WPF head (controls, dialogs, toasts, DPAPI) and runs on Windows. Put a new test in Core's
+project unless it needs WPF. The build scripts run both. Threading tests pump a `MessageLoop` with
+`TestLoop.Pump()`, not a WPF `DispatcherFrame`. **Judge a run by its exit code, never by grepping
+"Passed!"**: an aborted test host still prints "Passed!" for the tests that ran before the crash.
+
 - **Primary:** `http://stream.radioparadise.com/aac-128` (AAC — exercises the
   `bass_aac` path + ICY metadata).
 - **Add one MP3 station** to validate the non-AAC `Bass.CreateStream` path.

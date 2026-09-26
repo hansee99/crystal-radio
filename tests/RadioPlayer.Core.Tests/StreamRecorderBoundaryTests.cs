@@ -1,6 +1,5 @@
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Windows.Threading;
 using RadioPlayer.Models;
 using RadioPlayer.Services;
 using Xunit;
@@ -58,13 +57,7 @@ public sealed class StreamRecorderBoundaryTests : IDisposable
 
     /// <summary>Events are marshalled through the captured dispatcher, so nothing arrives until
     /// the queue is pumped.</summary>
-    private void Pump()
-    {
-        var frame = new DispatcherFrame();
-        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ContextIdle,
-            new Action(() => frame.Continue = false));
-        Dispatcher.PushFrame(frame);
-    }
+    private static void Pump() => TestLoop.Pump();
 
     [Fact]
     public void ASegmentBetweenTwoBoundariesIsAnnounced()

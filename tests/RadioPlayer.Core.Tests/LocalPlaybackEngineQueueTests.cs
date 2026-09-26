@@ -1,4 +1,3 @@
-using System.Windows.Threading;
 using RadioPlayer.Models;
 using RadioPlayer.Services;
 using Xunit;
@@ -50,13 +49,7 @@ public class LocalPlaybackEngineQueueTests
         paths.Select(Track).ToList();
 
     /// <summary>Flushes the dispatcher the engine captured, so queued callbacks actually run.</summary>
-    private static void Pump()
-    {
-        var frame = new DispatcherFrame();
-        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ContextIdle,
-            new Action(() => frame.Continue = false));
-        Dispatcher.PushFrame(frame);
-    }
+    private static void Pump() => TestLoop.Pump();
 
     // --- The regression this file exists for --------------------------------------------------
 

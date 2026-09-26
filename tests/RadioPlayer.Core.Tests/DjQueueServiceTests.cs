@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Windows.Threading;
 using RadioPlayer.Services;
 using RadioPlayer.Tests.Fakes;
 using Xunit;
@@ -49,12 +48,7 @@ public sealed class DjQueueServiceTests : IDisposable
 
     /// <summary>Flushes every dispatcher operation queued at Normal priority or above (e.g. the
     /// BeginInvoke inside DjQueueService's event handlers) without needing a real message loop.</summary>
-    private static void PumpDispatcher()
-    {
-        var frame = new DispatcherFrame();
-        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() => frame.Continue = false));
-        Dispatcher.PushFrame(frame);
-    }
+    private static void PumpDispatcher() => TestLoop.Pump();
 
     private static CuratedSong Song(string path, string artist, string title) => new(path, title, artist, null);
 

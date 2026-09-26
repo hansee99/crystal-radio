@@ -420,7 +420,17 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
 
     private void HarvestThreadMain(List<Station> hot, TaskCompletionSource ready)
     {
-        if (!Bass.Init(0) && Bass.LastError != Errors.Already)
+        // Bass.Init can also THROW — DllNotFoundException when the native library is missing or
+        // for the wrong CPU. Uncaught on this thread, that took the whole process down instead of
+        // failing the session start, which the caller already reports through `ready`.
+        bool initialised;
+        try { initialised = Bass.Init(0) || Bass.LastError == Errors.Already; }
+        catch (Exception ex)
+        {
+            ready.TrySetException(new InvalidOperationException($"DJ harvest BASS init failed: {ex.Message}", ex));
+            return;
+        }
+        if (!initialised)
         {
             ready.TrySetException(new InvalidOperationException($"DJ harvest BASS init failed: {Bass.LastError}"));
             return;

@@ -259,8 +259,11 @@ try {
         # --- Tests -----------------------------------------------------------------------------
         if (-not $SkipTests) {
             Step 'Running tests'
-            & dotnet test (Join-Path $repo 'tests\RadioPlayer.Tests\RadioPlayer.Tests.csproj') -c Release --nologo
-            if ($LASTEXITCODE -ne 0) { Fail 'Tests failed - not building an installer from this.' }
+            foreach ($testProject in 'tests\RadioPlayer.Core.Tests\RadioPlayer.Core.Tests.csproj',
+                                     'tests\RadioPlayer.Tests\RadioPlayer.Tests.csproj') {
+                & dotnet test (Join-Path $repo $testProject) -c Release --nologo
+                if ($LASTEXITCODE -ne 0) { Fail 'Tests failed - not building an installer from this.' }
+            }
         }
 
         # --- Publish ---------------------------------------------------------------------------
