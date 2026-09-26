@@ -1,5 +1,3 @@
-using System.IO;
-using System.Net.Http;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -16,17 +14,9 @@ namespace RadioPlayer;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private readonly RadioEngine _engine;
-    private readonly LocalPlaybackEngine _localEngine;
-    private readonly StreamRecorder _recorder;
+    private readonly AppServices _services;
     private readonly MainViewModel _viewModel;
     private readonly SettingsStore _settingsStore;
-    private readonly EnrichmentStore _enrichmentStore;
-    private readonly LibraryStore _libraryStore;
-    private readonly MiniLmEmbeddingProvider _embeddingProvider;
-    private readonly DjHarvestService _djHarvest;
-    private readonly DjIntroService _djIntro;
-    private readonly ApiKeySource _apiKeys;
     private SmtcController? _smtc;
 
     public MainWindow() : this(null) { }
@@ -49,85 +39,13 @@ public partial class MainWindow : Window
         SizeChanged  += (_, _) => UpdateShellClip();
         StateChanged += (_, _) => UpdateShellClip();
 
-        Stage("Reading your settings");
-        _settingsStore = new SettingsStore(new DpapiSecretProtector());
-        _recorder = new StreamRecorder(_settingsStore.Load().CaptureBoundaryOffsetSeconds);
-        Stage("Starting the audio engine");
-        _engine = new RadioEngine(_recorder);
-        _localEngine = new LocalPlaybackEngine();
-        // Edge guards for imperfect boundary cuts; 0 = off. Engine-wide, so they apply to saved
-        // songs as well as the DJ mix — both come from the same cutting mechanism.
-        var edgeSettings = _settingsStore.Load();
-        _localEngine.IntroSkipSeconds = edgeSettings.IntroSkipSeconds;
-        _localEngine.OutroGuardSeconds = edgeSettings.OutroGuardSeconds;
-
-        // AI-assisted search services (raw HttpClient; key never committed). Prefer the key
-        // saved in-app (DPAPI-encrypted), then fall back to the ANTHROPIC_API_KEY env var.
-        // Shared by reference, not copied: every service below reads this same slot, so saving a
-        // key in the options dialog reaches all of them without a restart. See ApiKeySource.
-        _apiKeys = new ApiKeySource(ResolveApiKey());
-        var apiKey = _apiKeys;
-        var searchService = new StationSearchService(new HttpClient());
-        var interpreter = new PromptInterpreter(new HttpClient(), apiKey);              // Pattern A
-
-        // Phase 1 enrichment (SQLite cache) + Phase 2 local embeddings (offline ONNX).
-        Stage("Opening your station catalog");
-        _enrichmentStore = new EnrichmentStore();
-        var mlDir = Path.Combine(AppContext.BaseDirectory, "MlAssets");
-        // The long one on a cold start: an 86 MB model off disk plus session init.
-        Stage("Loading the language model");
-        _embeddingProvider = new MiniLmEmbeddingProvider(
-            Path.Combine(mlDir, "all-MiniLM-L6-v2.onnx"), Path.Combine(mlDir, "vocab.txt"));
-
-        var enrichment = new EnrichmentService(
-            new HttpClient(), new HttpClient(), _enrichmentStore, _embeddingProvider, apiKey);
-        var semanticSearch = new SemanticSearchService(_embeddingProvider, _enrichmentStore, searchService);
-        var agenticSearch = new AgenticSearchService(            // Pattern B
-            new HttpClient(), searchService, enrichment, apiKey);
-        var ranker = new LlmSearchRanker(new HttpClient(), apiKey);     // relevance re-rank
-        var trackInfo = new TrackInfoService(new HttpClient(), apiKey); // "About this track" briefings
-        // LRCLIB needs no key, so lyrics work on a fresh install with nothing configured.
-        var lyrics = new LyricsService(new HttpClient());
-        var notifications = new WindowsNotificationService();
-        // DJ Mode's on-air intro line; its voice is a settings.json knob (DjPersonality).
-        _djIntro = new DjIntroService(new HttpClient(), apiKey, _settingsStore.Load().ResolveDjPersonality());
-
-        // Phase C: local song-library index (metadata + AI description + local embedding on save).
-        Stage("Opening your song library");
-        _libraryStore = new LibraryStore();
-        var songLibrary = new SongLibraryService(new HttpClient(), _libraryStore, _embeddingProvider,
-            apiKey, lyrics: lyrics);
-
-        // Phase D: prompt-driven curation over the library index (cosine recall + LLM ordering).
-        var curator = new SongCurator(new HttpClient(), _libraryStore, _embeddingProvider, apiKey);
-
-        // DJ mode: harvest pool + edge-trim QC, feeding songs into the same library index above
-        // (tagged SongSource.Harvested) so warm-starts and future curation both benefit from it.
-        // Offset 0 + edge-trim on are the PoC-validated defaults for the harvest path specifically
-        // — independent of CaptureBoundaryOffsetSeconds, which stays 6.0 for the live "Save Song"
-        // recorder above.
-        var djSettings = _settingsStore.Load();
-        var harvestDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadioPlayer", "harvest");
-        _djHarvest = new DjHarvestService(searchService, interpreter, agenticSearch, ranker, enrichment, songLibrary, harvestDir,
-            harvesterCount: djSettings.DjHarvesterCount, reserveCount: djSettings.DjHarvestReserveCount,
-            offsetSeconds: 0.0, trimEdges: true,
-            rejectBelow: djSettings.DjMusicFractionFloor,   // backstop under the duration gate
-            minSongSeconds: djSettings.DjMinSongSeconds,
-            stationIdleMinutes: djSettings.DjStationIdleMinutes,
-            maxHarvestCacheBytes: djSettings.ResolveHarvestCacheBytes(),
-            maxRejectedCacheBytes: djSettings.ResolveRejectedCacheBytes(),
-            // So a session can still start off the local catalog when the mirrors are down (#26).
-            semanticSearch: semanticSearch);
-
-        Stage("Almost there");
-        _viewModel = new MainViewModel(_engine, new StationStore(), _settingsStore,
-            new SongHistoryStore(), _recorder,
-            new StationDialogService(this), interpreter, searchService, agenticSearch, enrichment,
-            semanticSearch, ranker, trackInfo, lyrics, notifications, songLibrary, _localEngine, curator, _djHarvest, _djIntro,
-            new ConfirmDialogService(this));   // asks before a mode switch throws something away (#46)
+        _services = AppServices.Build(
+            new AppHooks(new DpapiSecretProtector(), new WindowsNotificationService(),
+                new StationDialogService(this), new ConfirmDialogService(this)),
+            Stage);
+        _viewModel = _services.ViewModel;
+        _settingsStore = _services.Settings;
         DataContext = _viewModel;
-        _viewModel.DjNotificationsEnabled = _settingsStore.Load().DjNotificationsEnabled;
 
         // Reset the About reading view to the top whenever fresh content loads (a new briefing
         // or a regenerate), so the previous track's scroll offset isn't carried over.
@@ -159,9 +77,6 @@ public partial class MainWindow : Window
             new System.Windows.Controls.Primitives.DragStartedEventHandler((_, _) => _viewModel.BeginSeekDrag()));
         SeekSlider.AddHandler(System.Windows.Controls.Primitives.Thumb.DragCompletedEvent,
             new System.Windows.Controls.Primitives.DragCompletedEventHandler((_, _) => _viewModel.EndSeekDrag()));
-
-        // One-time/background: embed any enriched rows lacking a current-model vector.
-        enrichment.BackfillEmbeddingsInBackground();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -170,7 +85,7 @@ public partial class MainWindow : Window
 
         // SMTC must be obtained per-HWND, and the HWND only exists once the window is shown.
         var hwnd = new WindowInteropHelper(this).Handle;
-        _smtc = new SmtcController(hwnd, _engine);
+        _smtc = new SmtcController(hwnd, _services.Engine);
         // Media-key / flyout "next track" → next station / next queue track (VM decides per mode).
         _smtc.NextRequested += (_, _) => _viewModel.NextStationCommand.Execute(null);
         // Mirror now-playing text to the OS controls in both modes, and repoint SMTC at the
@@ -207,15 +122,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
-        _viewModel.SaveSettings();
-        _djHarvest.Dispose();   // stops harvesters and tears down its own (device 0) BASS thread first
-        _smtc?.Dispose();
-        _localEngine.Dispose();  // free its stream before RadioEngine frees the shared BASS device
-        _engine.Dispose();       // ends the capture session and calls Bass.Free()
-        _recorder.Dispose();
-        _embeddingProvider.Dispose();
-        _enrichmentStore.Dispose();
-        _libraryStore.Dispose();
+        // SMTC goes where it always went in the teardown: after the DJ harvest, before the engines.
+        _services.Shutdown(detachOsIntegration: () => _smtc?.Dispose());
         base.OnClosed(e);
     }
 
@@ -245,40 +153,7 @@ public partial class MainWindow : Window
     private void Options_Click(object sender, RoutedEventArgs e)
     {
         if (ShowDialogSafely(() => new OptionsDialog(_settingsStore) { Owner = this }) == true)
-            ApplySettings();
-    }
-
-    /// <summary>The key actually in effect: the one saved in-app (DPAPI-encrypted) if there is
-    /// one, otherwise the environment's.</summary>
-    private string? ResolveApiKey() =>
-        _settingsStore.GetApiKey() ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
-
-    /// <summary>
-    /// Pushes saved settings into the already-running app. Every one of these was previously read
-    /// once in this constructor and never again, which is why the dialog used to carry a "restart
-    /// Crystal Radio" notice.
-    ///
-    /// <para>Not all of it can be instant, and the dialog says which is which rather than
-    /// pretending: <see cref="DjHarvestService.HarvesterCount"/> is consulted when a session
-    /// starts, so changing it cannot re-deal the harvesters of a mix already playing.</para>
-    /// </summary>
-    private void ApplySettings()
-    {
-        var settings = _settingsStore.Load();
-
-        _apiKeys.Current = ResolveApiKey();
-        _viewModel.LibraryFolder = settings.ResolveLibraryFolder();
-        _djIntro.Personality = settings.ResolveDjPersonality();
-
-        // Read per track, so whatever is playing keeps the guards it started with.
-        _localEngine.IntroSkipSeconds = settings.IntroSkipSeconds;
-        _localEngine.OutroGuardSeconds = settings.OutroGuardSeconds;
-
-        _viewModel.DjNotificationsEnabled = settings.DjNotificationsEnabled;
-
-        _djHarvest.HarvesterCount = settings.DjHarvesterCount;   // next session
-        _djHarvest.MaxHarvestCacheBytes = settings.ResolveHarvestCacheBytes();
-        _djHarvest.MaxRejectedCacheBytes = settings.ResolveRejectedCacheBytes();
+            _services.ApplySettings();
     }
 
     /// <summary>

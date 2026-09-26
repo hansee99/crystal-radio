@@ -909,6 +909,24 @@ station plays, DJ mode starts, closing the window exits cleanly with no exceptio
 
 **Commit.** `Move the composition root into Core so both heads build the same graph`
 
+### Step 4 — as implemented (differences from the text above)
+
+- **`ApplySettings()` and `ResolveApiKey` moved into `AppServices` too.** Pushing saved settings
+  into running services is not view logic, and the web head's Settings page needs the same call.
+  `MainWindow.Options_Click` now calls `_services.ApplySettings()`.
+- **Teardown is `Shutdown(Action? detachOsIntegration)`**, not `Dispose` plus a double-dispose.
+  The callback runs exactly where `OnClosed` used to dispose SMTC — after the DJ harvest (stopping
+  it can still push now-playing through the view model into SMTC), before the engines. It also
+  includes `ViewModel.SaveSettings()`, which `OnClosed` did first. `Dispose()` = `Shutdown()`;
+  both are idempotent.
+- `enrichment.BackfillEmbeddingsInBackground()` runs at the end of `Build`, not after the view
+  wiring — it is a background task with no dependency on it.
+- `AppServices` exposes only what a head reads after construction (`Settings`, `Engine`,
+  `ViewModel`, …); the rest stay locals inside `Build`.
+- Verified the move mechanically: the old construction block (from `HEAD`) and `Build`, after
+  normalising `_field` → local names, differ only in the four hook substitutions and the
+  `ApiKeySource` local.
+
 ---
 
 ## Step 5 — The web head (Blazor Server), verified on Windows first
