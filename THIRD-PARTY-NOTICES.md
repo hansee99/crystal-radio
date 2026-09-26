@@ -5,7 +5,8 @@ this project's [LICENSE](LICENSE.md). Each remains under its own terms, summariz
 
 ## BASS audio library (native) — un4seen Developments Ltd.
 
-Files: `native/x64/bass.dll`, `native/x64/bass_aac.dll`
+Files: `native/x64/bass.dll`, `native/x64/bass_aac.dll`, and their Linux aarch64 builds
+`native/linux-arm64/libbass.so`, `native/linux-arm64/libbass_aac.so` (Raspberry Pi port)
 
 BASS and its add-ons are © un4seen Developments Ltd. They are **proprietary freeware,
 free for non-commercial use only**. Commercial use requires a paid license purchased

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Step 0 of doc/PI-PORT-PLAN.md: proves BASS + the AAC add-on play a stream on the target
+       platform before anything is refactored. Deliberately standalone (no reference to the app). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ManagedBass" Version="4.0.2" />
+    <PackageReference Include="ManagedBass.Aac" Version="4.0.2" />
+  </ItemGroup>
+
+  <!-- The app's own tag decoder (internal, so linked as source): the probe then checks the exact
+       decoding RadioEngine uses, not a second copy of it. -->
+  <ItemGroup>
+    <Compile Include="..\..\Services\IcyTags.cs" Link="IcyTags.cs" />
+  </ItemGroup>
+
+  <!-- Natives per RID: ManagedBass P/Invokes "bass" / "bass_aac", which .NET resolves to bass.dll
+       on Windows and libbass.so / libbass_aac.so on Linux, from the app directory. -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'linux-arm64'">
+    <Content Include="..\..\native\linux-arm64\libbass.so" Link="libbass.so" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\native\linux-arm64\libbass_aac.so" Link="libbass_aac.so" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != 'linux-arm64'">
+    <Content Include="..\..\native\x64\bass.dll" Link="bass.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\native\x64\bass_aac.dll" Link="bass_aac.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
