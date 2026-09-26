@@ -269,7 +269,11 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
 
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _harvestThread = new Thread(() => HarvestThreadMain(hot, ready)) { IsBackground = true };
-        _harvestThread.SetApartmentState(ApartmentState.STA);
+        // STA dates from when this thread ran a WPF Dispatcher; kept on Windows because that is the
+        // configuration DJ sessions were verified with. Elsewhere apartments don't exist and the
+        // call would throw PlatformNotSupportedException — and the MessageLoop doesn't need one.
+        if (OperatingSystem.IsWindows())
+            _harvestThread.SetApartmentState(ApartmentState.STA);
         _harvestThread.Start();
         await ready.Task.ConfigureAwait(false);
     }

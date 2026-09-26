@@ -43,7 +43,7 @@ dotnet run --project tools/DjQueue -- --prompt "mellow electronic for coding" --
 
 ## `LocalPlaybackEngine` changes
 
-Two small, real (non-PoC) additions in `Services/LocalPlaybackEngine.cs`, needed because
+Two small, real (non-PoC) additions in `src/RadioPlayer.Core/Services/LocalPlaybackEngine.cs`, needed because
 `SetQueue` replaces the whole queue and restarts playback — wrong for a queue that's supposed to
 grow quietly in the background:
 

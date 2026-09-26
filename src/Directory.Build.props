@@ -1,0 +1,13 @@
+<Project>
+
+  <!-- One product version for every assembly under src/. The release scripts read <Version> from
+       crystal-radio.csproj ("bump it there, nowhere else", scripts/README.md), so these projects
+       read it from there too instead of keeping a copy that could drift. It matters: LyricsService
+       puts its own assembly's version in the User-Agent it sends LRCLIB, and it moved into
+       RadioPlayer.Core — without this it would report 1.0.0. -->
+  <PropertyGroup>
+    <_ProductProjectFile>$(MSBuildThisFileDirectory)..\crystal-radio.csproj</_ProductProjectFile>
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText($(_ProductProjectFile))), '(?&lt;=&lt;Version&gt;)[^&lt;]+').Value)</Version>
+  </PropertyGroup>
+
+</Project>

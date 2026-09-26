@@ -161,7 +161,10 @@ public class LyricsServiceTests
 
         // The version must come from the BUILD, not a literal. It was hardcoded to 1.9.0 while the
         // assembly said 1.8.2, so LRCLIB was told a different version from the one running.
-        var version = typeof(LyricsService).Assembly.GetName().Version!;
+        // Compared against the shipped app's assembly, not LyricsService's own: the service lives in
+        // RadioPlayer.Core, which only reports the product version because src/Directory.Build.props
+        // reads it from crystal-radio.csproj — the assertion must be able to catch that breaking.
+        var version = typeof(App).Assembly.GetName().Version!;
         Assert.Contains($"CrystalRadio/{version.Major}.{version.Minor}.{version.Build}", ua);
     }
 

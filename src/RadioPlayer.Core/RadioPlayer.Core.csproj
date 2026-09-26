@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The platform-neutral core: models, services, engines, the view model and the threading
+       abstraction. Plain net10.0 on purpose — nothing here may depend on WPF or Windows, and the
+       compiler enforces that. The WPF head (repo root) and the web head (src/RadioPlayer.Web, for
+       the Raspberry Pi) both build on it; see doc/PI-PORT-PLAN.md.
+       Version comes from src/Directory.Build.props, which reads crystal-radio.csproj's. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>RadioPlayer</RootNamespace>
+    <AssemblyName>RadioPlayer.Core</AssemblyName>
+  </PropertyGroup>
+
+  <!-- MusicDetector/Fft are internal (they're an implementation detail of the QC backstop, not
+       app API) but they carry the fitted weights and the edge-trim logic, which is exactly the
+       part worth testing — especially while the corpus is being extended to genres it currently
+       misreads. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="RadioPlayer.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ManagedBass" Version="4.0.2" />
+    <PackageReference Include="ManagedBass.Aac" Version="4.0.2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <!-- Pinned to override the 2.1.11 that Microsoft.Data.Sqlite 10.0.9 pulls in transitively.
+         2.1.11 bundles SQLite 3.49.1, which is exposed to CVE-2025-6965 (GHSA-2m69-gcr7-jv3q, high,
+         memory corruption fixed in SQLite 3.50.2). 2.1.12 brings SQLite 3.53.3.
+
+         Verified by asking the native library rather than trusting version numbers: the advisory's
+         affected range is "<= 2.1.11", so a bump silences NU1903 by definition — but what actually
+         matters is sqlite_version(), measured at 3.49.1 before and 3.53.3 after. A patch bump inside
+         the same 2.x line MDS was built against; the 3.0.x major is a bigger jump for SQLite 3.53.4,
+         which buys nothing here. Drop this pin once Microsoft.Data.Sqlite ships 2.1.12+ itself. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.22.1" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="1.0.3" />
+  </ItemGroup>
+
+</Project>

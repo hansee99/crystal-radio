@@ -25,8 +25,8 @@ suggestion: how many seconds of non-music sit at the head and tail of an otherwi
 segment. It also writes every window's raw features to CSV so the weights can be tuned/fitted.
 
 The detector (`MusicDetector`) and FFT (`Fft`) are dependency-free and operate on `float[]` PCM —
-promoted into the app as `Services/MusicDetector.cs`/`Services/Fft.cs` once DJ mode shipped
-(`Services/SegmentQualityChecker.cs` is the production QC/edge-trim backstop that uses them). This
+promoted into the app as `src/RadioPlayer.Core/Services/MusicDetector.cs`/`src/RadioPlayer.Core/Services/Fft.cs` once DJ mode shipped
+(`src/RadioPlayer.Core/Services/SegmentQualityChecker.cs` is the production QC/edge-trim backstop that uses them). This
 tool links the app's copies (`<Compile Include>`) rather than owning a duplicate, so tuning/
 re-fitting here applies directly to what ships.
 
@@ -151,7 +151,7 @@ clips), not more music — that's the class that's actually behind on both count
   `MusicDetector`) were fitted to a labelled corpus. To re-fit as your corpus grows, run
   `python tools/DjDetector/fit_logreg.py tools/DjDetector/corpus/djdetector-features.csv` (pass
   `corrections-features.csv` alongside it too if you've added corrections) and paste the printed
-  constants back into `Services/MusicDetector.cs` (the app's copy — this tool links it, see
+  constants back into `src/RadioPlayer.Core/Services/MusicDetector.cs` (the app's copy — this tool links it, see
   above). The fitter reports honest, file-grouped hold-out accuracy (windows from one clip never
   split across train/test).
 

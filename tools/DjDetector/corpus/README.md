@@ -27,7 +27,7 @@ dotnet run --project tools/DjDetector -- <folder-or-files> --label music|nonmusi
 python tools/DjDetector/fit_logreg.py tools/DjDetector/corpus/features-*.csv new.csv
 ```
 
-Paste the printed constants into `Services/MusicDetector.cs` and update the provenance comment
+Paste the printed constants into `src/RadioPlayer.Core/Services/MusicDetector.cs` and update the provenance comment
 above them with the honest CV numbers.
 
 ## Gotchas

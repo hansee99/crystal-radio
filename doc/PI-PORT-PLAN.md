@@ -795,6 +795,26 @@ Run the app and play a station. Run `.\scripts\build-release.ps1` (or at minimum
 
 **Commit.** `Split the platform-neutral core out of the WPF project`
 
+### Step 3 — as implemented (differences from the text above)
+
+- **`InternalsVisibleTo RadioPlayer.Tests` is in both projects**, not moved. Tests also reach
+  internals that stay in the head (`ListCentering`, `OptionsDialog`, `WindowsNotificationService`).
+- **Versioning.** `src/Directory.Build.props` reads `<Version>` out of `crystal-radio.csproj`
+  (a regex at evaluation time), so every project under `src/` reports the product version while
+  the release scripts keep their single source. Needed because `LyricsService` builds LRCLIB's
+  User-Agent from its *own* assembly version and would otherwise have reported Core's 1.0.0.
+  `LyricsServiceTests` now compares against the head's (`App`) version, so it catches this.
+- **`DjHarvestService` called `Thread.SetApartmentState(STA)`** — a leftover from the WPF
+  Dispatcher days, and it throws `PlatformNotSupportedException` on Linux: DJ mode would have died
+  on the Pi at session start. Now Windows-only. Found by CA1416 once Core targeted `net10.0` —
+  exactly what the split is for. Build Core with `--no-incremental` to see all CA1416 warnings.
+- `tools/BassProbe` links `IcyTags.cs` and needed its path updated too.
+- Doc paths updated in `CLAUDE.md`, `doc/TECHNICAL.md` and the tool READMEs. The DJ-mode spec
+  docs were left alone: they are historical proposals (several files they name never existed).
+- **Verified:** `dotnet publish -r win-x64` of this branch and of `main` differ by exactly
+  `RadioPlayer.Core.dll`/`.pdb` (26 → 28 files), both DLLs report 1.10.0, 707 tests pass, the
+  app starts cleanly.
+
 ---
 
 ## Step 4 — Shared composition root

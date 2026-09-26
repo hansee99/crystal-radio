@@ -21,25 +21,35 @@ Architecture, AI search design, and project structure for contributors and devel
 
 ## Project structure
 
+Two projects. `src/RadioPlayer.Core` is plain `net10.0` and holds everything platform-neutral —
+models, services, both playback engines, the view model and the threading abstraction — so the
+compiler guarantees none of it depends on WPF or Windows. The repo-root `crystal-radio.csproj` is
+the WPF head: views, SMTC, toasts, the Start Menu shortcut, and the Windows implementations of
+Core's seams (`WpfDispatcher`, `DpapiSecretProtector`). A second head for the Raspberry Pi is
+under way on the `pi-port` branch; see [PI-PORT-PLAN.md](PI-PORT-PLAN.md).
+
 | Path | Responsibility |
 | --- | --- |
-| `Services/RadioEngine.cs` | The only class that talks to BASS: play/pause/stop/volume, ICY metadata, reconnection, stream probing. Marshals BASS callbacks to the UI thread. |
+| `src/RadioPlayer.Core/Threading/` | `IDispatcher` — the single-thread affinity engines and view model marshal onto; `MessageLoop`, a plain-.NET pump (the DJ harvest thread runs on one). |
+| `Threading/WpfDispatcher.cs` | `IDispatcher` over the WPF `Dispatcher`; installed as every thread's fallback at startup. |
+| `Services/DpapiSecretProtector.cs` | `ISecretProtector` for Windows: DPAPI under the current user. |
+| `src/RadioPlayer.Core/Services/RadioEngine.cs` | The only class that talks to BASS: play/pause/stop/volume, ICY metadata, reconnection, stream probing. Marshals BASS callbacks to the UI thread. |
 | `Services/SmtcController.cs` | Owns the SMTC instance; pushes now-playing info and maps the flyout/media-key buttons (incl. next-track) onto the app. |
-| `Services/StationStore.cs` | Loads/saves the station list as JSON under `%AppData%\RadioPlayer\`. |
-| `Services/SettingsStore.cs` | Persists volume and the DPAPI-encrypted Anthropic API key. |
-| `Services/StationSearchService.cs` | Radio Browser API client; maps results to playable `Station` candidates. |
-| `Services/PromptInterpreter.cs` | Pattern A — translates a prompt into Radio Browser search parameters (structured output). |
-| `Services/AgenticSearchService.cs` | Pattern B — two-tool agentic loop (web search + Radio Browser lookup). |
-| `Services/LlmSearchRanker.cs` | LLM relevance re-rank of the merged candidate pool; its strictness also drives the web-escalation decision. |
-| `Services/EnrichmentService.cs`, `EnrichmentStore.cs` | Phase 1 — distil + cache per-station descriptions in SQLite under `%LocalAppData%\RadioPlayer\`. |
-| `Services/SemanticSearchService.cs`, `MiniLmEmbeddingProvider.cs` | Phase 2 — local ONNX embeddings + brute-force cosine search. |
-| `Services/TrackInfoService.cs` | "About this track" — on-demand AI briefing about the now-playing song/artist via server-side web search (Sonnet); per-session cached. |
-| `Services/SongHistoryStore.cs`, `SongHistoryFilter.cs` | Song history — persists songs heard on a stream (JSON under `%AppData%\RadioPlayer\`) and filters out ads/jingles/idents before they're recorded. |
-| `Services/StreamRecorder.cs` | Rolling audio cache — cuts the raw stream bytes (via `RadioEngine`'s BASS download callback) into per-song segments at ICY title boundaries; only complete segments survive. |
-| `Services/LibraryStore.cs`, `SongLibraryService.cs` | The local song-library index (SQLite under `%LocalAppData%\RadioPlayer\`): saved-song metadata, AI-derived description/facets, and an embedding per song. |
-| `Services/IPlaybackEngine.cs`, `LocalPlaybackEngine.cs` | The shared playback-transport interface, and its local-file sibling to `RadioEngine` — adds seeking, a position timeline, and queue auto-advance for the Library player. |
-| `Services/ISongCurator.cs`, `SongCurator.cs` | Curates an ordered playlist from the local library for a free-text prompt — see "Offline AI-curated playlists" below. |
-| `ViewModels/MainViewModel.cs` | Playback state, commands, station list, now-playing, search orchestration. |
+| `src/RadioPlayer.Core/Services/StationStore.cs` | Loads/saves the station list as JSON under `%AppData%\RadioPlayer\`. |
+| `src/RadioPlayer.Core/Services/SettingsStore.cs` | Persists volume and the Anthropic API key, protected by the head's `ISecretProtector` (DPAPI on Windows). |
+| `src/RadioPlayer.Core/Services/StationSearchService.cs` | Radio Browser API client; maps results to playable `Station` candidates. |
+| `src/RadioPlayer.Core/Services/PromptInterpreter.cs` | Pattern A — translates a prompt into Radio Browser search parameters (structured output). |
+| `src/RadioPlayer.Core/Services/AgenticSearchService.cs` | Pattern B — two-tool agentic loop (web search + Radio Browser lookup). |
+| `src/RadioPlayer.Core/Services/LlmSearchRanker.cs` | LLM relevance re-rank of the merged candidate pool; its strictness also drives the web-escalation decision. |
+| `src/RadioPlayer.Core/Services/EnrichmentService.cs`, `EnrichmentStore.cs` | Phase 1 — distil + cache per-station descriptions in SQLite under `%LocalAppData%\RadioPlayer\`. |
+| `src/RadioPlayer.Core/Services/SemanticSearchService.cs`, `MiniLmEmbeddingProvider.cs` | Phase 2 — local ONNX embeddings + brute-force cosine search. |
+| `src/RadioPlayer.Core/Services/TrackInfoService.cs` | "About this track" — on-demand AI briefing about the now-playing song/artist via server-side web search (Sonnet); per-session cached. |
+| `src/RadioPlayer.Core/Services/SongHistoryStore.cs`, `SongHistoryFilter.cs` | Song history — persists songs heard on a stream (JSON under `%AppData%\RadioPlayer\`) and filters out ads/jingles/idents before they're recorded. |
+| `src/RadioPlayer.Core/Services/StreamRecorder.cs` | Rolling audio cache — cuts the raw stream bytes (via `RadioEngine`'s BASS download callback) into per-song segments at ICY title boundaries; only complete segments survive. |
+| `src/RadioPlayer.Core/Services/LibraryStore.cs`, `SongLibraryService.cs` | The local song-library index (SQLite under `%LocalAppData%\RadioPlayer\`): saved-song metadata, AI-derived description/facets, and an embedding per song. |
+| `src/RadioPlayer.Core/Services/IPlaybackEngine.cs`, `LocalPlaybackEngine.cs` | The shared playback-transport interface, and its local-file sibling to `RadioEngine` — adds seeking, a position timeline, and queue auto-advance for the Library player. |
+| `src/RadioPlayer.Core/Services/ISongCurator.cs`, `SongCurator.cs` | Curates an ordered playlist from the local library for a free-text prompt — see "Offline AI-curated playlists" below. |
+| `src/RadioPlayer.Core/ViewModels/MainViewModel.cs` | Playback state, commands, station list, now-playing, search orchestration. |
 | `Views/MainWindow.xaml(.cs)` | UI layout, taskbar thumb buttons, custom window chrome, HWND/SMTC bootstrap. |
 | `Views/Theme.xaml` | Crystal theme: brushes, icon geometries, all control styles. |
 | `Views/StationDialog.xaml(.cs)` | Add/edit station editor. |
@@ -47,7 +57,7 @@ Architecture, AI search design, and project structure for contributors and devel
 | `Views/AboutDialog.xaml(.cs)` | About dialog. |
 | `Views/StationDialogService.cs` | Spawns the station dialog from the view model (keeps VM free of Window references). |
 | `App.xaml(.cs)` | App entry point + single-instance guard (named mutex + EventWaitHandle). |
-| `Models/Station.cs` | `{ Name, Url, Format, Description }` station record. |
+| `src/RadioPlayer.Core/Models/Station.cs` | `{ Name, Url, Format, Description }` station record. |
 | `MlAssets/` | BERT vocab (`vocab.txt`, tracked) and the `all-MiniLM-L6-v2.onnx` model (git-ignored, ~90 MB — see [MlAssets/README.md](../MlAssets/README.md)). |
 | `tools/SeedEnrichment/` | Console tool to pre-fill the enrichment cache from the Radio Browser popularity ranking. |
 

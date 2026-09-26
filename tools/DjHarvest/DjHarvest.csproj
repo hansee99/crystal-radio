@@ -24,8 +24,8 @@
        Services/ source (now that DJ mode shipped it there as SegmentQualityChecker's backstop)
        so it compiles directly into this tool's own assembly, same trick as before the promotion. -->
   <ItemGroup>
-    <Compile Include="..\..\Services\Fft.cs" Link="Detector\Fft.cs" />
-    <Compile Include="..\..\Services\MusicDetector.cs" Link="Detector\MusicDetector.cs" />
+    <Compile Include="..\..\src\RadioPlayer.Core\Services\Fft.cs" Link="Detector\Fft.cs" />
+    <Compile Include="..\..\src\RadioPlayer.Core\Services\MusicDetector.cs" Link="Detector\MusicDetector.cs" />
   </ItemGroup>
 
   <!-- Native BASS DLLs (x64). Content doesn't flow across a ProjectReference, so link the

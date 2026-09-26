@@ -69,11 +69,20 @@ Keep a clean seam between the audio engine and everything else.
 - **`Station` model** — `{ Name, Url, Format }` so the engine knows whether to use
   the AAC add-on path or the core path.
 
+**Project layout.** The service layer, models, view model and the threading abstraction live in
+`src/RadioPlayer.Core` (plain `net10.0`, no WPF — the compiler enforces it, so keep Windows-only
+code out). The repo-root project is the WPF head: views, SMTC, toasts, the Start Menu shortcut,
+`WpfDispatcher`, `DpapiSecretProtector`. A second head, `src/RadioPlayer.Web`, targets the
+Raspberry Pi — see `doc/PI-PORT-PLAN.md`. Bump `<Version>` in `crystal-radio.csproj` only;
+`src/Directory.Build.props` reads it from there for every project under `src/`.
+
 ### Threading model (important)
 
 - BASS sync callbacks (metadata changes, stalls, end-of-stream) fire on
-  **BASS-owned threads**. Marshal to the UI thread via `Dispatcher` before touching
-  the view model, UI, or SMTC.
+  **BASS-owned threads**. Marshal to the owning thread via the engine's `IDispatcher`
+  (`DispatcherContext.Current`, captured at construction) before touching the view model,
+  UI, or SMTC. On the WPF head that is the UI thread's `Dispatcher`; the DJ harvest thread
+  runs its own `MessageLoop`.
 - Treat `RadioEngine`'s public surface as UI-thread-affine; do the marshalling inside
   the engine so callers don't have to think about it.
 
@@ -575,7 +584,7 @@ popup). Separate from station *search* — it explains what's already playing.
   + an API key. Geometries `SparkleGeometry`/`BackGeometry` and the `AboutPillButton` /
   `AboutBackButton` / `AboutLinkButton` styles live in `Views/Theme.xaml`.
 - Same `web_search` cost/enablement caveats as Pattern B.
-- **Model ids live only in `Services/AnthropicApi.cs`** (the shared Messages-API helper —
+- **Model ids live only in `src/RadioPlayer.Core/Services/AnthropicApi.cs`** (the shared Messages-API helper —
   endpoint/version constants, request construction, response-text extraction, JSON-fence
   stripping). Two tiers: a Haiku-class model for one-shot translation/description/judging
   (interpreter, ranker, enrichment, song descriptions) and a Sonnet-class model for multi-step

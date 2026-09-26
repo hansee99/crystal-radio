@@ -17,7 +17,7 @@
   <!-- The app's own tag decoder (internal, so linked as source): the probe then checks the exact
        decoding RadioEngine uses, not a second copy of it. -->
   <ItemGroup>
-    <Compile Include="..\..\Services\IcyTags.cs" Link="IcyTags.cs" />
+    <Compile Include="..\..\src\RadioPlayer.Core\Services\IcyTags.cs" Link="IcyTags.cs" />
   </ItemGroup>
 
   <!-- Natives per RID: ManagedBass P/Invokes "bass" / "bass_aac", which .NET resolves to bass.dll
