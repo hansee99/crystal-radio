@@ -1,6 +1,4 @@
 using System.IO;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 
 namespace RadioPlayer.Services;
@@ -215,6 +213,12 @@ public sealed class SettingsStore
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
+    private readonly ISecretProtector _secrets;
+
+    /// <param name="secrets">How the API key is protected at rest — the head's choice
+    /// (<see cref="DpapiSecretProtector"/> on Windows).</param>
+    public SettingsStore(ISecretProtector secrets) => _secrets = secrets;
+
     public AppSettings Load()
     {
         try
@@ -278,7 +282,27 @@ public sealed class SettingsStore
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, Options));
+            var json = JsonSerializer.Serialize(settings, Options);
+            if (OperatingSystem.IsWindows())
+            {
+                File.WriteAllText(FilePath, json);
+                return;
+            }
+
+            // Off Windows the key is only as private as this file (PlainSecretProtector is base64),
+            // so the file is owner-only: created 0600, and an older file narrowed BEFORE the key is
+            // written into it rather than after.
+            const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            if (File.Exists(FilePath))
+                File.SetUnixFileMode(FilePath, OwnerOnly);
+            using var stream = new FileStream(FilePath, new FileStreamOptions
+            {
+                Mode = FileMode.Create,
+                Access = FileAccess.Write,
+                UnixCreateMode = OwnerOnly,
+            });
+            using var writer = new StreamWriter(stream);
+            writer.Write(json);
         }
         catch
         {
@@ -287,7 +311,11 @@ public sealed class SettingsStore
     }
 
     /// <summary>Decrypts and returns the stored API key, or null if none is set / undecryptable.</summary>
-    public string? GetApiKey() => Unprotect(Load().ApiKeyProtected);
+    public string? GetApiKey()
+    {
+        var stored = Load().ApiKeyProtected;
+        return string.IsNullOrWhiteSpace(stored) ? null : _secrets.Unprotect(stored);
+    }
 
     /// <summary>
     /// Encrypts and persists the API key (or clears it when null/blank), leaving other
@@ -296,33 +324,7 @@ public sealed class SettingsStore
     public void SetApiKey(string? plaintext)
     {
         var settings = Load();
-        settings.ApiKeyProtected = string.IsNullOrWhiteSpace(plaintext) ? null : Protect(plaintext);
+        settings.ApiKeyProtected = string.IsNullOrWhiteSpace(plaintext) ? null : _secrets.Protect(plaintext);
         Save(settings);
-    }
-
-    // DPAPI under the current Windows user: the encrypted blob is only readable by this user
-    // on this machine, and is kept out of source control (it lives in %AppData%).
-    private static string Protect(string plaintext)
-    {
-        var blob = ProtectedData.Protect(
-            Encoding.UTF8.GetBytes(plaintext), null, DataProtectionScope.CurrentUser);
-        return Convert.ToBase64String(blob);
-    }
-
-    private static string? Unprotect(string? protectedBase64)
-    {
-        if (string.IsNullOrWhiteSpace(protectedBase64))
-            return null;
-        try
-        {
-            var bytes = ProtectedData.Unprotect(
-                Convert.FromBase64String(protectedBase64), null, DataProtectionScope.CurrentUser);
-            return Encoding.UTF8.GetString(bytes);
-        }
-        catch
-        {
-            // Corrupt, or encrypted by a different user — treat as no key.
-            return null;
-        }
     }
 }

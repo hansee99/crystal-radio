@@ -50,7 +50,7 @@ public partial class MainWindow : Window
         StateChanged += (_, _) => UpdateShellClip();
 
         Stage("Reading your settings");
-        _settingsStore = new SettingsStore();
+        _settingsStore = new SettingsStore(new DpapiSecretProtector());
         _recorder = new StreamRecorder(_settingsStore.Load().CaptureBoundaryOffsetSeconds);
         Stage("Starting the audio engine");
         _engine = new RadioEngine(_recorder);

@@ -672,6 +672,22 @@ confirm the key is still there (Options shows it as set / AI search works).
 
 **Commit.** `Put the API-key protection behind an interface`
 
+### Step 2 — as implemented (differences from the text above)
+
+- **The Linux file is never world-readable, even briefly.** The listing chmods *after* writing,
+  which leaves the key readable by other users for a moment. `Save` instead creates the file with
+  `UnixCreateMode = 0600`, and narrows an existing file *before* writing the key into it.
+- `SettingsStore` keeps the "blank stored value = no key" check, so protectors only ever see a
+  real value. `System.Text` and `System.Security.Cryptography` usings went with the DPAPI code.
+- `SecretProtectorTests` (6 cases) includes one that matters for existing installs: a key stored
+  byte-for-byte the way the old `SettingsStore` did it still decrypts through `DpapiSecretProtector`.
+- **Verified on ras4**, not just reasoned about: a scratch console app linking the real
+  `SettingsStore.cs` ran against `XDG_CONFIG_HOME=/tmp/…` (so `~/.config` was untouched) and
+  confirmed a new file is 0600, a pre-existing 0644 file is narrowed to 0600, the key round-trips,
+  other settings survive a key change, the key is not stored in the clear, and clearing works.
+  That same run showed `SettingsStore.cs` already compiles on plain `net10.0` — needing only
+  `IDjIntroService.cs` for `DjPersonality` — which is Step 3's premise.
+
 ---
 
 ## Step 3 — Split into `RadioPlayer.Core` + the WPF head
