@@ -56,7 +56,7 @@ works on Linux/arm64 with the AAC add-on. Retire that risk before paying for any
 
 **Prerequisites (human).**
 
-- A Raspberry Pi 4 or 5 running the **64-bit** Raspberry Pi OS (Bookworm). 32-bit will not work
+- A Raspberry Pi 4 or 5 running the **64-bit** Raspberry Pi OS. 32-bit will not work
   — ONNX Runtime and SQLite native packages only ship `linux-arm64`.
 - Native libraries from <https://www.un4seen.com/> (same non-commercial licence as the Windows
   DLLs, see [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)):
@@ -66,7 +66,22 @@ works on Linux/arm64 with the AAC add-on. Retire that risk before paying for any
   Place both in a new folder `native/linux-arm64/`. **If the AAC add-on has no aarch64 Linux
   build, stop here and report** — the fallback is swapping the engine to LibVLCSharp behind
   `RadioEngine` (CLAUDE.md, "Decisions"), which is a different plan.
-- SSH access to the Pi (`pi@radio.local` is assumed below; substitute as needed).
+- SSH access to the Pi.
+
+**The target Pi (verified 2026-09-26).** `hans@ras4` — Raspberry Pi 4 Model B (2 GB), Debian 13
+"trixie" 64-bit, headless (no PipeWire/PulseAudio; BASS talks to ALSA directly, and ALSA's
+`default` is the headphone jack). `libasound2t64`, `libicu76` and `libssl3t64` are already
+installed, and `hans` has passwordless sudo. Commands below use `hans@ras4`.
+
+**SSH from this Windows box — two gotchas.**
+
+- The key (`~/.ssh/id_ed25519`) has a passphrase and is unlocked in the **Windows** ssh-agent.
+  Git Bash's `/usr/bin/ssh` cannot reach that agent and fails with "Permission denied
+  (publickey)" even though the Pi accepts the key. Always call
+  `/c/Windows/System32/OpenSSH/ssh.exe` (from Bash) or plain `ssh` from PowerShell, with
+  `-o BatchMode=yes` so a missing agent fails fast instead of prompting.
+- `scp -r` of a directory drops the connection. Copy directories as a tar stream instead:
+  `tar -cf - <dir> | ssh.exe -o BatchMode=yes hans@ras4 'tar -xf - -C ~'`.
 
 **Files.**
 
@@ -152,11 +167,12 @@ return 0;
    `dotnet publish tools/BassProbe -c Release -r linux-arm64 --self-contained -o build/probe`
 4. Copy and run on the Pi:
    ```
-   scp -r build/probe pi@radio.local:~/probe
-   ssh pi@radio.local 'sudo apt-get install -y libasound2 libicu72; chmod +x ~/probe/BassProbe; ~/probe/BassProbe'
+   cd build && tar -cf - probe | /c/Windows/System32/OpenSSH/ssh.exe -o BatchMode=yes hans@ras4 'rm -rf ~/probe && tar -xf - -C ~'
+   /c/Windows/System32/OpenSSH/ssh.exe -o BatchMode=yes hans@ras4 '~/probe/BassProbe http://stream.radioparadise.com/aac-128 30'
    ```
-   If `libicu72` is not the package name on that OS release, `apt-cache search libicu | grep '^libicu[0-9]'`
-   and install the one it lists.
+   On a fresh OS, install ALSA and ICU first. Package names change per release (trixie:
+   `libasound2t64 libicu76`; bookworm: `libasound2 libicu72`) —
+   `apt-cache search '^libicu[0-9]+$'` lists the right ICU one.
 5. If `Bass.Init` fails: `aplay -l` on the Pi, then pick the output in `sudo raspi-config` →
    System Options → Audio. BASS opens the ALSA `default` device.
 6. If `CreateStream` fails with `FileFormat`/`Unknown` on the AAC URL but an MP3 URL works
@@ -1069,9 +1085,9 @@ one at a time.
   Wants=network-online.target
 
   [Service]
-  User=pi
-  WorkingDirectory=/home/pi/crystal-radio
-  ExecStart=/home/pi/crystal-radio/RadioPlayer.Web
+  User=hans
+  WorkingDirectory=/home/hans/crystal-radio
+  ExecStart=/home/hans/crystal-radio/RadioPlayer.Web
   Environment=ASPNETCORE_URLS=http://0.0.0.0:5000
   Environment=DOTNET_gcServer=0
   # Optional: Environment=ANTHROPIC_API_KEY=...   (or set it once in the web UI's Settings page)
@@ -1086,9 +1102,11 @@ one at a time.
 **Steps on the Pi (document them in that README):**
 
 ```
-sudo apt-get install -y libasound2 libicu72        # ALSA + ICU (see Step 0 for the ICU package name)
-scp -r build/pi/ pi@radio.local:~/crystal-radio
-ssh pi@radio.local
+# from the Windows box (see Step 0 for why tar + Windows ssh.exe):
+cd build && tar -cf - pi | /c/Windows/System32/OpenSSH/ssh.exe -o BatchMode=yes hans@ras4 'rm -rf ~/crystal-radio && mkdir ~/crystal-radio && tar -xf - -C ~/crystal-radio --strip-components=1'
+
+# on the Pi:
+sudo apt-get install -y libasound2t64 libicu76     # already present on ras4; names per Step 0
 chmod +x ~/crystal-radio/RadioPlayer.Web
 sudo raspi-config    # System Options → Audio → pick headphone / HDMI / USB DAC
 sudo cp ~/crystal-radio/deploy/crystal-radio.service /etc/systemd/system/   # (copy the unit file up separately)
@@ -1101,7 +1119,7 @@ Data lands under `~/.local/share/RadioPlayer` (`LocalApplicationData`) and `~/.c
 Nothing in Core hardcodes a Windows path; confirm with `grep -rn "C:\\\\\|%AppData%\|\\\\\\\\" src/RadioPlayer.Core --include=*.cs`
 (expect only comments).
 
-**Definition of done.** From another machine on the LAN, `http://radio.local:5000` shows the UI,
+**Definition of done.** From another machine on the LAN, `http://ras4:5000` shows the UI,
 a station plays out of the Pi, the title updates, and `sudo reboot` brings the service back up
 by itself. Then update the docs:
 
