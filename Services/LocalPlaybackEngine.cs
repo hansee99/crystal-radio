@@ -1,4 +1,4 @@
-using System.Windows.Threading;
+using RadioPlayer.Threading;
 using ManagedBass;
 using ManagedBass.Aac;
 using RadioPlayer.Models;
@@ -43,8 +43,8 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     // defensive FreeFadeOutStream() call in BeginCrossfade if it ever does).
     private const double MinDurationForCrossfade = FadeSeconds * 2;
 
-    private readonly Dispatcher _dispatcher;
-    private readonly DispatcherTimer _positionTimer;
+    private readonly IDispatcher _dispatcher;
+    private readonly IDispatcherTimer _positionTimer;
 
     private int _stream;
     private double _volume = 0.5;
@@ -77,11 +77,9 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
 
     public LocalPlaybackEngine()
     {
-        _dispatcher = Dispatcher.CurrentDispatcher;
-        _positionTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher)
-        {
-            Interval = TimeSpan.FromMilliseconds(500)
-        };
+        _dispatcher = DispatcherContext.Current;
+        _positionTimer = _dispatcher.CreateTimer();
+        _positionTimer.Interval = TimeSpan.FromMilliseconds(500);
         _positionTimer.Tick += (_, _) => PublishPosition();
 
         InitAudio();
@@ -426,7 +424,7 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, 0f);
         SeekToEffectiveStart();
 
-        _endSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => OnTrackEnded(generation));
+        _endSync = (_, _, _, _) => _dispatcher.Post(() => OnTrackEnded(generation));
         Bass.ChannelSetSync(_stream, SyncFlags.End, 0, _endSync);
 
         if (!Bass.ChannelPlay(_stream))
@@ -470,14 +468,14 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
             if (end >= duration)
                 return; // no guard in play; the natural End sync handles it
             var endBytes = Bass.ChannelSeconds2Bytes(_stream, end);
-            _fadeTriggerSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => OnTrackEnded(generation));
+            _fadeTriggerSync = (_, _, _, _) => _dispatcher.Post(() => OnTrackEnded(generation));
             Bass.ChannelSetSync(_stream, SyncFlags.Position, endBytes, _fadeTriggerSync);
             return;
         }
 
         // Fade so the outgoing track reaches silence AT the guarded end rather than the file's.
         var triggerBytes = Bass.ChannelSeconds2Bytes(_stream, Math.Max(0, end - FadeSeconds));
-        _fadeTriggerSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => BeginCrossfade(generation));
+        _fadeTriggerSync = (_, _, _, _) => _dispatcher.Post(() => BeginCrossfade(generation));
         Bass.ChannelSetSync(_stream, SyncFlags.Position, triggerBytes, _fadeTriggerSync);
     }
 
@@ -495,7 +493,7 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         if (at <= PositionSeconds)
             return;
 
-        _runningDrySync = (_, _, _, _) => _dispatcher.BeginInvoke(() =>
+        _runningDrySync = (_, _, _, _) => _dispatcher.Post(() =>
         {
             // Re-check on arrival: a track appended in the meantime means the queue is no longer
             // about to run dry, and the crossfade will handle the handover instead.
@@ -564,7 +562,7 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         var outgoing = _stream;
         _fadeOutStream = outgoing;
         _fadeOutKeepAlive = [_endSync, _fadeTriggerSync, _runningDrySync];
-        _fadeOutSlidedSync = (_, _, _, _) => _dispatcher.BeginInvoke(FreeFadeOutStream);
+        _fadeOutSlidedSync = (_, _, _, _) => _dispatcher.Post(FreeFadeOutStream);
         Bass.ChannelSetSync(outgoing, SyncFlags.Slided, 0, _fadeOutSlidedSync);
         Bass.ChannelSlideAttribute(outgoing, ChannelAttribute.Volume, 0f, FadeMs);
 
@@ -574,7 +572,7 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
         Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, 0f);
         SeekToEffectiveStart();
 
-        _endSync = (_, _, _, _) => _dispatcher.BeginInvoke(() => OnTrackEnded(incomingGeneration));
+        _endSync = (_, _, _, _) => _dispatcher.Post(() => OnTrackEnded(incomingGeneration));
         Bass.ChannelSetSync(_stream, SyncFlags.End, 0, _endSync);
 
         if (!Bass.ChannelPlay(_stream))

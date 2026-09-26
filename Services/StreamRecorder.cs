@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Windows.Threading;
+using RadioPlayer.Threading;
 using RadioPlayer.Models;
 
 namespace RadioPlayer.Services;
@@ -77,7 +77,7 @@ public sealed class StreamRecorder : IDisposable
     // session has flowed to measure one.
     private const double FallbackBytesPerSecond = 16_000;
 
-    private readonly Dispatcher _dispatcher;
+    private readonly IDispatcher _dispatcher;
     private readonly double _boundaryOffsetSeconds;
 
     private readonly object _lock = new();
@@ -121,7 +121,7 @@ public sealed class StreamRecorder : IDisposable
     /// so concurrent recorders never collide.</param>
     public StreamRecorder(double boundaryOffsetSeconds = 6.0, string? cacheDir = null)
     {
-        _dispatcher = Dispatcher.CurrentDispatcher;
+        _dispatcher = DispatcherContext.Current;
         _boundaryOffsetSeconds = Math.Clamp(boundaryOffsetSeconds, 0.0, 30.0);
         _cacheDir = cacheDir ?? CacheDir;
     }
@@ -190,7 +190,7 @@ public sealed class StreamRecorder : IDisposable
                 WriteToCurrentLocked(_copyBuffer, take, length - take);
         }
         if (done is not null)
-            _dispatcher.BeginInvoke(() => SegmentCompleted?.Invoke(this, done));
+            _dispatcher.Post(() => SegmentCompleted?.Invoke(this, done));
     }
 
     /// <summary>
@@ -236,7 +236,7 @@ public sealed class StreamRecorder : IDisposable
             }
         }
         if (done is not null)
-            _dispatcher.BeginInvoke(() => SegmentCompleted?.Invoke(this, done));
+            _dispatcher.Post(() => SegmentCompleted?.Invoke(this, done));
     }
 
     /// <summary>
@@ -400,7 +400,7 @@ public sealed class StreamRecorder : IDisposable
                     : bytes < MinSegmentBytes ? DiscardReason.TooShort
                     : DiscardReason.NotSongLike;
                 var discarded = new DiscardedSegment(reason, pending.Title, pending.Artist, bytes);
-                _dispatcher.BeginInvoke(() => SegmentDiscarded?.Invoke(this, discarded));
+                _dispatcher.Post(() => SegmentDiscarded?.Invoke(this, discarded));
             }
             return null;
         }

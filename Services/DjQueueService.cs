@@ -1,5 +1,5 @@
 using System.IO;
-using System.Windows.Threading;
+using RadioPlayer.Threading;
 using RadioPlayer.Models;
 
 namespace RadioPlayer.Services;
@@ -25,7 +25,7 @@ public sealed class DjQueueService : IDisposable
     private readonly ILocalQueuePlayer _local;
     private readonly ISongCurator _curator;
     private readonly IDjHarvestSource _harvest;
-    private readonly Dispatcher _dispatcher;
+    private readonly IDispatcher _dispatcher;
     private readonly int _maxSeed;
     private readonly int _lowWatermark;
 
@@ -46,7 +46,7 @@ public sealed class DjQueueService : IDisposable
         _local = local;
         _curator = curator;
         _harvest = harvest;
-        _dispatcher = Dispatcher.CurrentDispatcher;
+        _dispatcher = DispatcherContext.Current;
         _maxSeed = maxSeed;
         _lowWatermark = lowWatermark;
     }
@@ -149,7 +149,7 @@ public sealed class DjQueueService : IDisposable
     private void OnSegmentIndexed(object? sender, HarvestedSong harvested)
     {
         // Fires on a background thread (see DjHarvestService) — marshal before touching _local.
-        _dispatcher.BeginInvoke(() =>
+        _dispatcher.Post(() =>
         {
             var song = harvested.Song;
             if (!File.Exists(song.Path)) return;

@@ -4,6 +4,7 @@ using System.Net.Http;
 using RadioPlayer.Models;
 using RadioPlayer.Mvvm;
 using RadioPlayer.Services;
+using RadioPlayer.Threading;
 
 namespace RadioPlayer.ViewModels;
 
@@ -47,7 +48,7 @@ public sealed class MainViewModel : ObservableObject
     // DjHarvestService's events fire on a background thread (unlike every other engine this
     // view model handles, which already marshal to the UI thread before raising anything) — this
     // is the one dispatcher MainViewModel captures itself, purely to marshal those.
-    private readonly System.Windows.Threading.Dispatcher _dispatcher;
+    private readonly IDispatcher _dispatcher;
 
     // Below this cosine score the local index is considered too weak (heuristic fallback only).
     private const double SemanticThreshold = 0.30;
@@ -120,7 +121,7 @@ public sealed class MainViewModel : ObservableObject
         // no way to ask simply doesn't (see ConfirmLeavingMode).
         IConfirmDialog? confirmDialog = null)
     {
-        _dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+        _dispatcher = DispatcherContext.Current;
         _engine = engine;
         _store = store;
         _settingsStore = settingsStore;
@@ -147,7 +148,7 @@ public sealed class MainViewModel : ObservableObject
 
         // DjHarvestService's events fire on a background thread (see its own doc comment) —
         // marshal before touching any UI-bound property.
-        _djHarvest.StatusChanged += (_, status) => _dispatcher.BeginInvoke(() => OnDjStatusChanged(status));
+        _djHarvest.StatusChanged += (_, status) => _dispatcher.Post(() => OnDjStatusChanged(status));
 
         // Restore the persisted volume onto both engines (either/or, but volume is shared).
         _volume = settingsStore.Load().Volume;
@@ -2829,7 +2830,7 @@ public sealed class MainViewModel : ObservableObject
 
     private HarvestStatus? _djLastStatus;
     private DateTime _djSessionStarted;
-    private System.Windows.Threading.DispatcherTimer? _djSessionTimer;
+    private IDispatcherTimer? _djSessionTimer;
     private DjSessionLog? _djSessionLog;
 
     private bool _isEditingDjVibe;
@@ -2924,10 +2925,11 @@ public sealed class MainViewModel : ObservableObject
     private void StartDjSessionClock()
     {
         _djSessionStarted = DateTime.Now;
-        _djSessionTimer ??= new System.Windows.Threading.DispatcherTimer
+        if (_djSessionTimer is null)
         {
-            Interval = TimeSpan.FromSeconds(30)
-        };
+            _djSessionTimer = _dispatcher.CreateTimer();
+            _djSessionTimer.Interval = TimeSpan.FromSeconds(30);
+        }
         _djSessionTimer.Tick -= OnDjSessionTick;
         _djSessionTimer.Tick += OnDjSessionTick;
         _djSessionTimer.Start();

@@ -1,7 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Threading;
-using System.Windows.Threading;
+using RadioPlayer.Threading;
 using ManagedBass;
 using RadioPlayer.Models;
 
@@ -92,8 +92,8 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
     }
     private Queue<Station> _reserve = new();
     private Thread? _harvestThread;
-    private Dispatcher? _harvestDispatcher;
-    private DispatcherTimer? _watchdog;
+    private IDispatcher? _harvestDispatcher;
+    private IDispatcherTimer? _watchdog;
 
     /// <summary>How long a harvester may serve no ICY metadata before it's assumed not to
     /// support it. Generous: a station that only announces on change, connected mid-song, still
@@ -331,7 +331,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         // station that was wrong for the old prompt may be exactly right for this one.
         BeginPoolTracking(prompt, stations, sourced.FromLocalCatalog);
 
-        dispatcher.Invoke(() => SwapPool(hot, reserve));
+        dispatcher.Send(() => SwapPool(hot, reserve));
 
         TopStation = hot[0]; // best-first out of RankRelevantAsync — the live bridge uses this
         SessionLog?.VibeChanged(prompt, hot.Count);
@@ -387,7 +387,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         var dispatcher = _harvestDispatcher;
         if (dispatcher is not null)
         {
-            dispatcher.BeginInvoke(() =>
+            dispatcher.Post(() =>
             {
                 _watchdog?.Stop();
                 _watchdog = null;
@@ -403,7 +403,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
                     _active.Clear();
                 }
                 Bass.Free(); // frees only THIS (harvest) thread's device (0) — per-thread, confirmed via ManagedBass docs
-                dispatcher.InvokeShutdown();
+                dispatcher.Shutdown();
             });
         }
         _harvestThread?.Join(TimeSpan.FromSeconds(5));
@@ -421,7 +421,10 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             ready.TrySetException(new InvalidOperationException($"DJ harvest BASS init failed: {Bass.LastError}"));
             return;
         }
-        _harvestDispatcher = Dispatcher.CurrentDispatcher;
+        // Installed before StartHarvester: each StreamRecorder captures DispatcherContext.Current
+        // in its constructor, and that must be this loop, not a lazily-made one.
+        var loop = MessageLoop.InstallOnCurrentThread();
+        _harvestDispatcher = loop;
 
         foreach (var station in hot)
             StartHarvester(station);
@@ -430,10 +433,8 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         // retire/replace path is the same single-threaded one every other harvester lifecycle
         // call uses. Duplicates go first: that verdict is available as soon as icy-name is read,
         // so there's no reason to make a redundant harvester wait out the idle limit.
-        _watchdog = new DispatcherTimer(DispatcherPriority.Background, Dispatcher.CurrentDispatcher)
-        {
-            Interval = TimeSpan.FromSeconds(30)
-        };
+        _watchdog = loop.CreateTimer();
+        _watchdog.Interval = TimeSpan.FromSeconds(30);
         _watchdog.Tick += (_, _) =>
         {
             RecordTitleCounts();
@@ -444,7 +445,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
         _watchdog.Start();
 
         ready.TrySetResult();
-        Dispatcher.Run(); // returns once Stop()'s dispatched action calls InvokeShutdown
+        loop.Run(); // returns once Stop()'s dispatched action calls Shutdown
     }
 
     private void StartHarvester(Station station)
@@ -1327,7 +1328,7 @@ public sealed class DjHarvestService : IDisposable, IDjHarvestSource
             return;
         }
 
-        _ = dispatcher.BeginInvoke(() => InstallTopUp(sourced, generation));
+        dispatcher.Post(() => InstallTopUp(sourced, generation));
     }
 
     /// <summary>

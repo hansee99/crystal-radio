@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Windows;
 using RadioPlayer.Services;
+using RadioPlayer.Threading;
 
 namespace RadioPlayer;
 
@@ -19,6 +20,11 @@ public partial class App : Application
     private Mutex? _instanceMutex;
     private EventWaitHandle? _activateEvent;
     private bool _isPrimary;
+
+    // Every engine captures DispatcherContext.Current in its constructor. On this head that is
+    // the constructing thread's own WPF Dispatcher — what Dispatcher.CurrentDispatcher gave them
+    // before the threading abstraction existed.
+    static App() => DispatcherContext.Fallback = () => WpfDispatcher.ForCurrentThread();
 
     protected override void OnStartup(StartupEventArgs e)
     {

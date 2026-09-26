@@ -24,6 +24,11 @@ using RadioPlayer.Services;
 // its "-NNN-" bitrate tag in the filename (SomaFM/Icecast convention) — the most direct way to
 // check whether the byte-rate assumption StreamRecorder's deferred cut relies on is actually
 // correct for these streams, without guessing.
+
+// The app's engines capture DispatcherContext.Current; on this thread that must be the WPF
+// Dispatcher pumped by Dispatcher.Run() below, as it was before the threading abstraction.
+RadioPlayer.Threading.DispatcherContext.Fallback = () => RadioPlayer.Threading.WpfDispatcher.ForCurrentThread();
+
 var probeDir = ArgStr("--probe", null);
 
 var seconds = ArgInt("--seconds", 900);

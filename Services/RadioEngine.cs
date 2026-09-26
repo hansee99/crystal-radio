@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using System.Windows.Threading;
+using RadioPlayer.Threading;
 using ManagedBass;
 using ManagedBass.Aac;
 using RadioPlayer.Models;
@@ -26,7 +26,7 @@ public sealed record TrackMetadata(string Title, string? Artist, string? Station
 /// </summary>
 public sealed class RadioEngine : IPlaybackEngine
 {
-    private readonly Dispatcher _dispatcher;
+    private readonly IDispatcher _dispatcher;
     private readonly StreamRecorder? _recorder;
 
     // BASS's device selection is per-CALLING-THREAD, and a thread that has never explicitly
@@ -63,7 +63,7 @@ public sealed class RadioEngine : IPlaybackEngine
 
     public RadioEngine(StreamRecorder? recorder = null)
     {
-        _dispatcher = Dispatcher.CurrentDispatcher;
+        _dispatcher = DispatcherContext.Current;
         _recorder = recorder;
 
         // Init the default output device. Returns false if already initialised; that's fine.
@@ -165,7 +165,7 @@ public sealed class RadioEngine : IPlaybackEngine
         Bass.ChannelSlideAttribute(fading, ChannelAttribute.Volume, 0f, milliseconds);
 
         // Station stays published until the fade completes — it IS still the audible one.
-        Task.Delay(milliseconds + 120).ContinueWith(_ => _dispatcher.BeginInvoke(() =>
+        Task.Delay(milliseconds + 120).ContinueWith(_ => _dispatcher.Post(() =>
         {
             if (_stream != fading) return; // something else took over; not ours to stop
             Stop();
@@ -254,7 +254,7 @@ public sealed class RadioEngine : IPlaybackEngine
                 ? BassAac.CreateStream(url, 0, BassFlags.Default, downloadProc)
                 : Bass.CreateStream(url, 0, BassFlags.Default, downloadProc);
             var error = Bass.LastError; // BASS error state is per-thread
-            _dispatcher.BeginInvoke(() => OnStreamCreated(generation, station, pendingState, handle, error));
+            _dispatcher.Post(() => OnStreamCreated(generation, station, pendingState, handle, error));
         });
     }
 
@@ -289,17 +289,17 @@ public sealed class RadioEngine : IPlaybackEngine
 
         // Live track changes.
         _metaSync = (h, channel, data, user) =>
-            _dispatcher.BeginInvoke(() => OnMetadataReceived(channel));
+            _dispatcher.Post(() => OnMetadataReceived(channel));
         Bass.ChannelSetSync(_stream, SyncFlags.MetadataReceived, 0, _metaSync);
 
         // Stalls (network hiccups): data == 0 stalled, data == 1 resumed.
         _stallSync = (h, channel, data, user) =>
-            _dispatcher.BeginInvoke(() => OnStall(channel, data));
+            _dispatcher.Post(() => OnStall(channel, data));
         Bass.ChannelSetSync(_stream, SyncFlags.Stalled, 0, _stallSync);
 
         // End of stream (the server dropped us): try to reconnect.
         _endSync = (h, channel, data, user) =>
-            _dispatcher.BeginInvoke(() => OnStreamEnded(channel));
+            _dispatcher.Post(() => OnStreamEnded(channel));
         Bass.ChannelSetSync(_stream, SyncFlags.End, 0, _endSync);
 
         if (!Bass.ChannelPlay(_stream))
@@ -353,7 +353,7 @@ public sealed class RadioEngine : IPlaybackEngine
 
         Task.Delay(TimeSpan.FromSeconds(3)).ContinueWith(_ =>
         {
-            _dispatcher.BeginInvoke(() =>
+            _dispatcher.Post(() =>
             {
                 // User changed station / stopped in the meantime — abandon this attempt.
                 if (generation != _generation || !ReferenceEquals(station, _currentStation))

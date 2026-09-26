@@ -18,6 +18,10 @@ using RadioPlayer.Services;
 //
 // Ctrl+C to stop, or pass --seconds to auto-stop.
 
+// The app's engines capture DispatcherContext.Current; on this thread that must be the WPF
+// Dispatcher pumped by Dispatcher.Run() below, as it was before the threading abstraction.
+RadioPlayer.Threading.DispatcherContext.Fallback = () => RadioPlayer.Threading.WpfDispatcher.ForCurrentThread();
+
 var prompt = ArgStr("--prompt", null);
 if (string.IsNullOrWhiteSpace(prompt))
 {

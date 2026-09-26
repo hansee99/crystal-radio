@@ -571,6 +571,34 @@ run the app (`dotnet run`), play a station, and start a DJ session for at least 
 
 **Commit.** `Abstract the dispatcher so the engines no longer depend on WPF`
 
+### Step 1 — as implemented (differences from the text above)
+
+The code in `Threading/` is the reference now, not the listings above. What changed and why:
+
+- **`MessageLoop` installs a SynchronizationContext** on its thread. A WPF Dispatcher does this
+  while it pumps, so `await` without `ConfigureAwait(false)` resumes on the dispatcher thread.
+  `MainViewModel`'s async commands depend on that, and in Step 5 they run on a `MessageLoop` —
+  without it they would resume on the thread pool and mutate view-model state off-thread. (The
+  harvest code already uses `ConfigureAwait(false)` everywhere, so nothing there changed.)
+- **`Send` after shutdown returns instead of hanging**, like `Dispatcher.Invoke` on a shut-down
+  dispatcher. The listing's version blocked forever on a task that could never complete — reachable
+  from `DjHarvestService.ChangeVibeAsync` racing a `Stop()`.
+- **`LoopTimer` drops ticks queued before a `Stop`/restart** (a generation counter), and
+  `Start()`/setting `Interval` on a running timer restarts the countdown, both as `DispatcherTimer`
+  does.
+- `_ = dispatcher.BeginInvoke(…)` (`DjHarvestService` top-up) needed its discard removed: `Post`
+  returns void.
+- The view model's `_djSessionTimer` was a default `DispatcherTimer` (Background priority); it is now
+  `_dispatcher.CreateTimer()` (Normal). Irrelevant for a 30 s session-card refresh.
+- The test fallback went into the existing `tests/RadioPlayer.Tests/TestHostSetup.cs` module
+  initializer, not a second one. `MessageLoopTests` has nine facts: the four above plus inline
+  `Send`, exception propagation through `InvokeAsync`, a throwing action not killing the loop,
+  `await` resuming on the loop, and `Send` after shutdown not hanging.
+- The definition-of-done grep is too loose — `DispatcherTimer` also matches `IDispatcherTimer`. Use
+  `\bDispatcherTimer\b`: `grep -rnE "System\.Windows\.Threading|\bDispatcherTimer\b|Dispatcher\.CurrentDispatcher" Services ViewModels --include=*.cs`.
+- **Pre-existing, not fixed here:** `tools/DjQueue` does not compile (`Program.cs` does `foreach`
+  over a `CurationResult`; it predates the `SongCurator` API change). It fails identically on `main`.
+
 ---
 
 ## Step 2 — Secret storage abstraction

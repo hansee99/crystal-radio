@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using System.Windows.Threading;
+using RadioPlayer.Threading;
 using ManagedBass;
 using ManagedBass.Aac;
 using RadioPlayer.Models;
@@ -27,7 +27,7 @@ public sealed class StreamHarvester : IDisposable
     private readonly string _url;
     private readonly StreamFormat _format;
     private readonly StreamRecorder _recorder;
-    private readonly Dispatcher _dispatcher;
+    private readonly IDispatcher _dispatcher;
     private readonly DownloadProcedure _dl; // rooted so BASS's native pointer stays valid
     private SyncProcedure? _metaSync, _endSync, _stallSync;
 
@@ -135,7 +135,7 @@ public sealed class StreamHarvester : IDisposable
     public Station Station { get; }
 
     public StreamHarvester(string label, string url, StreamFormat format, string cacheDir,
-        double offsetSeconds, Dispatcher dispatcher)
+        double offsetSeconds, IDispatcher dispatcher)
     {
         Label = label;
         Station = new Station(label, url, format);
@@ -185,9 +185,9 @@ public sealed class StreamHarvester : IDisposable
 
         // Syncs fire on BASS threads → marshal to the harvest dispatcher so all BASS lifecycle
         // calls for this harvester stay single-threaded (mirrors RadioEngine).
-        _metaSync = (_, _, _, _) => _dispatcher.BeginInvoke(OnMeta);
+        _metaSync = (_, _, _, _) => _dispatcher.Post(OnMeta);
         Bass.ChannelSetSync(_handle, SyncFlags.MetadataReceived, 0, _metaSync);
-        _endSync = (_, _, _, _) => _dispatcher.BeginInvoke(OnEnd);
+        _endSync = (_, _, _, _) => _dispatcher.Post(OnEnd);
         Bass.ChannelSetSync(_handle, SyncFlags.End, 0, _endSync);
         _stallSync = (_, _, _, _) => { }; // transient network hiccups need no action here
         Bass.ChannelSetSync(_handle, SyncFlags.Stalled, 0, _stallSync);
@@ -240,7 +240,7 @@ public sealed class StreamHarvester : IDisposable
             return;
         }
         // Bounded reconnect after a short delay, back on the harvest dispatcher thread.
-        Task.Delay(3000).ContinueWith(_ => _dispatcher.BeginInvoke(() =>
+        Task.Delay(3000).ContinueWith(_ => _dispatcher.Post(() =>
         {
             if (_dead) return;
             if (!Start())
