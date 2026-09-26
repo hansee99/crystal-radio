@@ -56,7 +56,7 @@ sudo -n systemctl start "$unit"
 
 # The player builds its whole service graph before Kestrel listens; give it a moment.
 for _ in $(seq 1 30); do
-    if curl -fsS -o /dev/null "http://localhost:5000/"; then
+    if curl -fsS -o /dev/null "http://localhost:5000/" 2>/dev/null; then   # quiet: "not yet" is expected
         echo "==> Up: http://$(hostname):5000"
         exit 0
     fi

@@ -68,7 +68,13 @@ if (-not (Test-Path $model)) {
 if ($Deploy) {
     Step "Checking $Target"
     foreach ($tool in $ssh, $tar) { if (-not (Test-Path $tool)) { Fail "Missing $tool." } }
-    & $ssh -o BatchMode=yes -o ConnectTimeout=8 $Target 'true'
+    # A few tries: "ras4" resolves only through mDNS here (not the router's DNS), and a missed
+    # multicast reply on Wi-Fi shows up as a transient "No such host is known".
+    for ($try = 1; $try -le 4; $try++) {
+        & $ssh -o BatchMode=yes -o ConnectTimeout=8 $Target 'true' 2>$null
+        if ($LASTEXITCODE -eq 0) { break }
+        if ($try -lt 4) { Write-Host "    not reachable yet, retrying..."; Start-Sleep -Seconds 3 }
+    }
     if ($LASTEXITCODE -ne 0) {
         Fail "Can't log in to $Target over ssh. Check the key is loaded in the Windows ssh-agent (ssh-add)."
     }
@@ -97,7 +103,11 @@ Step "Uploading to $Target and installing"
 # programs, which corrupts a binary stream.
 $build = Split-Path $out -Parent
 $remote = 'rm -rf ~/crystal-radio.new && mkdir ~/crystal-radio.new && tar -xf - -C ~/crystal-radio.new && bash ~/crystal-radio.new/install.sh'
-& cmd.exe /c "`"$tar`" -cf - -C `"$build`" pi -C `"$deployDir`" install.sh setup.sh crystal-radio.service | `"$ssh`" -o BatchMode=yes $Target `"$remote`""
+# 'Continue' for this call only: Windows PowerShell turns every stderr line of a native program into
+# a terminating error under 'Stop', which would abort mid-install. The exit code is the verdict.
+$ErrorActionPreference = 'Continue'
+& cmd.exe /c "`"$tar`" -cf - -C `"$build`" pi -C `"$deployDir`" install.sh setup.sh crystal-radio.service | `"$ssh`" -o BatchMode=yes $Target `"$remote`" 2>&1"
+$ErrorActionPreference = 'Stop'
 $hostName = ($Target -split '@')[-1]
 if ($LASTEXITCODE -eq 10) {
     # install.sh's "first install": app files are in place, the service isn't set up yet.

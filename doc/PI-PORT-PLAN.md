@@ -1331,6 +1331,13 @@ by itself. Then update the docs:
   `TimeoutStopSec=20` so the DJ harvest has time to stop on shutdown.
 - Testing trap: `pgrep -f`/`pkill -f` with the app's path match the ssh command running them —
   signal the PID instead (`$!`).
+- Found on the first *update* deploy: (1) Windows PowerShell under `$ErrorActionPreference='Stop'`
+  turns any stderr line of a native program into a terminating error, so `curl`'s expected
+  "not up yet" messages aborted the script mid-install — the `cmd.exe` call now runs under
+  `'Continue'` and is judged by exit code, and `install.sh`'s wait loop is quiet. (2) `ras4`
+  resolves only via mDNS here (the router's DNS doesn't know it), which intermittently fails on
+  Wi-Fi with "No such host is known"; the reachability check retries 4× before giving up. A DHCP
+  reservation plus a router DNS entry (or a hosts-file line) would make the name reliable.
 
 ---
 
