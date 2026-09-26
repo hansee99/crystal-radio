@@ -1413,7 +1413,7 @@ by itself. Then update the docs:
 
 ---
 
-## Step 8 — Automatic Pi updates (designed 2026-09-26; piece 1 built)
+## Step 8 — Automatic Pi updates (designed 2026-09-26; pieces 1–2 built)
 
 **Goal:** a push to `main` that passes every test reaches the Pi by itself, without interrupting
 playback and without a bad build taking the radio down.
@@ -1462,6 +1462,18 @@ listening device. The Pi only downloads finished, tested packages and reuses `de
   `build-info.json`. A release, not a workflow artifact, because release assets of a public repo
   download without any token and don't count against Actions storage. For a few seconds during the swap
   there is no `pi-latest`; the updater must treat a missing release as "nothing new".
+
+**Piece 2 — as implemented** (`src/RadioPlayer.Web/Hosting/StatusEndpoint.cs`, mapped in
+`Program.cs`): `GET /api/status` →
+`{"playing":false,"mode":"radio","djRunning":false,"version":"1.10.0","commit":"43efb39…"}`.
+- `playing` is `IsPlaying || IsBusy`: buffering and reconnecting count, since a listener is waiting.
+  It covers all three engines (radio, library, DJ).
+- `mode` is `radio` | `library` | `dj`. `djRunning` is true for a DJ session even while paused: it
+  harvests in the background, so the updater should treat it as "in use" too.
+- `version` and `commit` come from the assembly's informational version (`1.10.0+<sha>`), which the
+  SDK stamps when building in a git checkout; `commit` is null otherwise. It matches
+  `build-info.json`'s `commit` for a CI build.
+- Read on the player thread through `PlayerHost.ReadAsync`, like every page. No auth, LAN-only.
 
 **Open points, settled 2026-09-26:**
 - The repo `hansee99/crystal-radio` is **public** (made so on 2026-09-26). The Pi downloads
