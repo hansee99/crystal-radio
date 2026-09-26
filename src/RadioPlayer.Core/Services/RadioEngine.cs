@@ -67,7 +67,7 @@ public sealed class RadioEngine : IPlaybackEngine
         _recorder = recorder;
 
         // Init the default output device. Returns false if already initialised; that's fine.
-        if (!Bass.Init() && Bass.LastError != Errors.Already)
+        if (!BassDevice.InitDefault() && Bass.LastError != Errors.Already)
             throw new InvalidOperationException($"BASS init failed: {Bass.LastError}");
 
         // Whether we just initialized it or it was already up (e.g. LocalPlaybackEngine got

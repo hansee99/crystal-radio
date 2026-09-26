@@ -1204,6 +1204,37 @@ one at a time.
 
 **Commit.** `Add a Blazor Server head that drives the player from a browser`
 
+### Step 5 — as implemented (differences from the text above)
+
+- **No `CommitStation` refactor — the view model is untouched.** `WebStationDialog` answers the
+  add/edit commands' `IStationDialog.Show()` in advance: `Supply(station, run)` sets the station,
+  runs `AddStationCommand`, and the command's own `Show()` call receives it — all inside one
+  `DoAsync`, so nothing interleaves. Same bookkeeping as the desktop, zero risk to it.
+- **`PlayerHost` exposes `AppServices`, not just the view model** (`ReadAsync(Func<AppServices,T>)`,
+  `DoAsync(Action<AppServices>)`): Settings needs `SettingsStore` + `ApplySettings()`, and
+  tap-to-play needs `Engine.CurrentStation`.
+- **Change notifications are coalesced** on the player thread: a burst of property changes inside
+  one piece of work (a station switch touches a dozen) raises one `Changed` once that work is done.
+  `PlayerHost.Watch` lists exactly what is observed — the view model, `Stations`, `SearchResults`,
+  `SearchProgress` and its `Stages`, plus the rows inside them. Add to it when a page reads more.
+- **`PlayerView<TSnapshot>`** (`Components/PlayerView.cs`) is the base for every live component:
+  subscribe, snapshot on the player thread, one queued refresh at most per component.
+- **Tap-to-play:** setting `SelectedStation` already switches station when something is on air, so
+  `PlaySelectedStation()` is called only if `Engine.CurrentStation` isn't the tapped station
+  afterwards — otherwise the stream would be opened twice. `Play()` sets `CurrentStation`
+  synchronously, so the check is reliable. (`SelectedSearchResult`'s setter does not auto-play.)
+- `App.razor` sets `@rendermode="InteractiveServer"` on `Routes` and `HeadOutlet`, so every page is
+  interactive. The template's HTTPS redirection and HSTS were removed (LAN appliance, no cert).
+- **Gotcha — a non-published build must run as Development.** `dotnet run --no-launch-profile`
+  without `ASPNETCORE_ENVIRONMENT=Development` comes up as Production, doesn't load the static web
+  assets manifest, and `_framework/blazor.web.js` plus the scoped CSS return **500** — the page
+  renders but nothing is interactive. The launch profile sets Development; a published build copies
+  the assets into `wwwroot/` and works in Production (verified: `dotnet publish -r win-x64`, run in
+  Production, every asset 200).
+- **Verified by hand in a browser:** play/stop/prev/next/volume, a second tab following along,
+  search with progress stages, play and add a result, add a station by URL and remove it, and saving
+  the API key — all working, no warnings in either log. 707 tests pass.
+
 ---
 
 ## Step 6 — Deploy to the Pi

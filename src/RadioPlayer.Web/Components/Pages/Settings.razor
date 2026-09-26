@@ -1,0 +1,72 @@
+@page "/settings"
+@inherits PlayerView<Settings.Snapshot>
+
+<PageTitle>Settings · Crystal Radio</PageTitle>
+
+<section class="card">
+    <h1>Settings</h1>
+
+    <h2>Anthropic API key</h2>
+    <p class="muted">
+        Powers AI station search, track briefings and DJ mode. Stored on this device only, in a
+        settings file only its user can read.
+    </p>
+
+    @if (Snap is { } s)
+    {
+        <p class="key-state">
+            @if (s.HasSavedKey)
+            {
+                <span>A key is saved here.</span>
+            }
+            else if (s.HasEnvironmentKey)
+            {
+                <span>Using the key from the <code>ANTHROPIC_API_KEY</code> environment variable.</span>
+            }
+            else
+            {
+                <span>No key yet — AI features are off.</span>
+            }
+        </p>
+    }
+
+    <form class="add-form" @onsubmit="SaveKey">
+        <input type="password" autocomplete="off" placeholder="sk-ant-…" @bind="_key" aria-label="API key" />
+        <button type="submit" class="primary" disabled="@string.IsNullOrWhiteSpace(_key)">Save key</button>
+        @if (Snap?.HasSavedKey == true)
+        {
+            <button type="button" class="ghost" @onclick="ClearKey">Remove saved key</button>
+        }
+    </form>
+    @if (_message is not null)
+    {
+        <p class="muted">@_message</p>
+    }
+</section>
+
+@code {
+    public sealed record Snapshot(bool HasSavedKey, bool HasEnvironmentKey);
+
+    private string _key = "";
+    private string? _message;
+
+    protected override Snapshot Read(AppServices a) => new(
+        a.Settings.GetApiKey() is not null,
+        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")));
+
+    // SetApiKey persists it; ApplySettings pushes it into the running services (ApiKeySource), so
+    // search works immediately, without a restart — same path as the desktop options dialog.
+    private async Task SaveKey()
+    {
+        var key = _key.Trim();
+        _key = "";
+        await Do(a => { a.Settings.SetApiKey(key); a.ApplySettings(); });
+        _message = "Saved.";
+    }
+
+    private async Task ClearKey()
+    {
+        await Do(a => { a.Settings.SetApiKey(null); a.ApplySettings(); });
+        _message = "Removed.";
+    }
+}

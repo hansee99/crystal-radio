@@ -1,0 +1,232 @@
+@page "/"
+@inherits PlayerView<Home.Snapshot>
+@inject IJSRuntime JS
+
+<PageTitle>Crystal Radio</PageTitle>
+
+@if (Snap is { } s)
+{
+    <section class="card now-playing" aria-live="polite">
+        <div class="np-station">@(string.IsNullOrEmpty(s.Station) ? "Crystal Radio" : s.Station)</div>
+        <h1 class="np-title @(s.IsIdle ? "idle" : "")">@s.Title</h1>
+        @if (!string.IsNullOrEmpty(s.Artist))
+        {
+            <div class="np-artist">@s.Artist</div>
+        }
+        <div class="np-status">
+            @if (s.IsLive) { <span class="live">Live</span> }
+            <span>@(s.IsIdle && !string.IsNullOrEmpty(s.IdleHint) ? s.IdleHint : s.Status)</span>
+        </div>
+
+        <div class="transport">
+            <button class="icon" title="Previous station" disabled="@(!s.CanPrev)" @onclick="@(() => Do(a => a.ViewModel.PrevStationCommand.Execute(null)))">⏮</button>
+            <button class="icon primary" title="@s.PlayPauseLabel" disabled="@(!s.CanPlayPause)" @onclick="@(() => Do(a => a.ViewModel.PlayPauseCommand.Execute(null)))">@(s.IsPlaying ? "⏸" : "▶")</button>
+            <button class="icon" title="Stop" disabled="@(!s.CanStop)" @onclick="@(() => Do(a => a.ViewModel.StopCommand.Execute(null)))">⏹</button>
+            <button class="icon" title="Next station" disabled="@(!s.CanNext)" @onclick="@(() => Do(a => a.ViewModel.NextStationCommand.Execute(null)))">⏭</button>
+        </div>
+
+        <label class="volume">
+            <span>Volume</span>
+            <input type="range" min="0" max="100" value="@s.VolumePercent" @onchange="SetVolume" />
+            <span class="vol-readout">@s.VolumePercent%</span>
+        </label>
+    </section>
+
+    <section class="card">
+        <h2>Find stations</h2>
+        <form class="search-row" @onsubmit="Search">
+            <input type="search" placeholder="e.g. mellow jazz for late-night coding" @bind="_prompt" aria-label="Describe what you want to hear" />
+            <button type="submit" class="primary" disabled="@(s.SearchState == PanelState.Loading || string.IsNullOrWhiteSpace(_prompt))">Search</button>
+        </form>
+        @if (!s.HasApiKey)
+        {
+            <p class="hint">AI search needs an Anthropic API key — add one in <a href="settings">Settings</a>.</p>
+        }
+
+        @switch (s.SearchState)
+        {
+            case PanelState.Loading:
+                <ul class="stages">
+                    @foreach (var stage in s.Stages)
+                    {
+                        <li class="stage @stage.Status.ToString().ToLowerInvariant()">@stage.Label</li>
+                    }
+                </ul>
+                @if (!string.IsNullOrEmpty(s.SearchStatus)) { <p class="muted">@s.SearchStatus</p> }
+                break;
+            case PanelState.Error:
+                <p class="error">@s.SearchError</p>
+                break;
+            case PanelState.Empty:
+                <p class="muted">@s.SearchEmptyMessage</p>
+                break;
+            default:
+                <ul class="list">
+                    @foreach (var r in s.Results)
+                    {
+                        <li class="row @(r.Url == s.CurrentUrl ? "current" : "")">
+                            <button class="row-main" @onclick="@(() => PlayResult(r.Url))">
+                                <span class="row-title">@r.Name</span>
+                                @if (!string.IsNullOrEmpty(r.Detail)) { <span class="row-sub">@r.Detail</span> }
+                            </button>
+                            <button class="icon small" title="@(r.IsAdded ? "In your stations" : "Add to your stations")" disabled="@r.IsAdded" @onclick="@(() => AddResult(r.Url))">@(r.IsAdded ? "✓" : "+")</button>
+                        </li>
+                    }
+                </ul>
+                break;
+        }
+    </section>
+
+    <section class="card">
+        <div class="card-head">
+            <h2>Your stations</h2>
+            <button class="ghost" @onclick="@(() => _adding = !_adding)">@(_adding ? "Cancel" : "Add")</button>
+        </div>
+
+        @if (_adding)
+        {
+            <form class="add-form" @onsubmit="AddStation">
+                <input placeholder="Name" @bind="_newName" aria-label="Station name" />
+                <input placeholder="Stream URL (http://…)" @bind="_newUrl" aria-label="Stream URL" />
+                <select @bind="_newFormat" aria-label="Stream format">
+                    <option value="@StreamFormat.Aac">AAC</option>
+                    <option value="@StreamFormat.Mp3">MP3</option>
+                    <option value="@StreamFormat.Other">Other</option>
+                </select>
+                <button type="submit" class="primary" disabled="@(string.IsNullOrWhiteSpace(_newName) || string.IsNullOrWhiteSpace(_newUrl))">Save</button>
+            </form>
+        }
+
+        @if (s.Stations.Count == 0)
+        {
+            <p class="muted">No stations yet. Search above, or add one by URL.</p>
+        }
+        else
+        {
+            <ul class="list">
+                @foreach (var st in s.Stations)
+                {
+                    <li class="row @(st.Url == s.CurrentUrl ? "current" : "")">
+                        <button class="row-main" @onclick="@(() => PlayStation(st.Url))">
+                            <span class="row-title">@st.Name</span>
+                            @if (!string.IsNullOrEmpty(st.Description)) { <span class="row-sub">@st.Description</span> }
+                        </button>
+                        <button class="icon small danger" title="Remove @st.Name" @onclick="@(() => DeleteStation(st.Url, st.Name))">✕</button>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+}
+else
+{
+    <p class="muted">Connecting to the player…</p>
+}
+
+@code {
+    public sealed record StationRow(string Name, string Url, string? Description);
+    public sealed record ResultRow(string Name, string Url, string? Detail, bool IsAdded);
+    public sealed record StageRow(string Label, StageStatus Status);
+
+    public sealed record Snapshot(
+        string Station, string Title, string Artist, string Status, bool IsIdle, string IdleHint, bool IsLive,
+        bool IsPlaying, string PlayPauseLabel, bool CanPlayPause, bool CanStop, bool CanPrev, bool CanNext,
+        int VolumePercent, string? CurrentUrl,
+        IReadOnlyList<StationRow> Stations,
+        PanelState SearchState, string SearchStatus, string? SearchError, string SearchEmptyMessage,
+        IReadOnlyList<StageRow> Stages, IReadOnlyList<ResultRow> Results, bool HasApiKey);
+
+    private string _prompt = "";
+    private bool _adding;
+    private string _newName = "", _newUrl = "";
+    private StreamFormat _newFormat = StreamFormat.Mp3;
+
+    protected override Snapshot Read(AppServices a)
+    {
+        var vm = a.ViewModel;
+        return new Snapshot(
+            vm.NowPlayingStation, vm.NowPlayingTitle, vm.NowPlayingArtist, vm.StatusText,
+            vm.IsNowPlayingIdle, vm.IdleHint, vm.ShowLiveBadge,
+            vm.IsPlaying, vm.PlayPauseLabel,
+            vm.PlayPauseCommand.CanExecute(null), vm.StopCommand.CanExecute(null),
+            vm.PrevStationCommand.CanExecute(null), vm.NextStationCommand.CanExecute(null),
+            vm.VolumePercent, a.Engine.CurrentStation?.Url,
+            vm.Stations.Select(st => new StationRow(st.Name, st.Url, st.Description)).ToList(),
+            vm.SearchPanelState, vm.SearchStatus, vm.SearchError, vm.SearchEmptyMessage,
+            vm.SearchProgress.Stages.Select(g => new StageRow(g.Label, g.Status)).ToList(),
+            vm.SearchResults.Select(r => new ResultRow(r.DisplayName, r.Station.Url,
+                string.Join(" · ", new[] { r.Reason, r.Country }.Where(x => !string.IsNullOrWhiteSpace(x))),
+                r.IsAdded)).ToList(),
+            a.ApiKeys.IsConfigured);
+    }
+
+    private Task SetVolume(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var pct)) return Task.CompletedTask;
+        return Do(a => a.ViewModel.Volume = Math.Clamp(pct, 0, 100) / 100.0);
+    }
+
+    private Task Search()
+    {
+        var prompt = _prompt.Trim();
+        if (prompt.Length == 0) return Task.CompletedTask;
+        return Do(a =>
+        {
+            a.ViewModel.SearchPrompt = prompt;
+            if (a.ViewModel.SearchCommand.CanExecute(null))
+                a.ViewModel.SearchCommand.Execute(null);
+        });
+    }
+
+    // Selecting a station while on air already switches to it (MainViewModel.SelectedStation);
+    // only when that didn't start it — stopped, or already selected — is an explicit play needed.
+    // Play() sets Engine.CurrentStation synchronously, so the check is reliable.
+    private Task PlayStation(string url) => Do(a =>
+    {
+        var vm = a.ViewModel;
+        var station = vm.Stations.FirstOrDefault(x => x.Url == url);
+        if (station is null) return;
+        vm.SelectedStation = station;
+        if (!ReferenceEquals(a.Engine.CurrentStation, station))
+            vm.PlaySelectedStation();
+    });
+
+    private Task PlayResult(string url) => Do(a =>
+    {
+        var vm = a.ViewModel;
+        var item = vm.SearchResults.FirstOrDefault(r => r.Station.Url == url);
+        if (item is null) return;
+        vm.SelectedSearchResult = item;
+        vm.PlaySelectedSearchResult();
+    });
+
+    private Task AddResult(string url) => Do(a =>
+    {
+        var vm = a.ViewModel;
+        var item = vm.SearchResults.FirstOrDefault(r => r.Station.Url == url);
+        if (item is not null)
+            vm.AddSearchResultCommand.Execute(item);
+    });
+
+    private async Task AddStation()
+    {
+        var station = new Station(_newName.Trim(), _newUrl.Trim(), _newFormat);
+        await Do(a => WebStationDialog.Instance.Supply(station,
+            () => a.ViewModel.AddStationCommand.Execute(null)));
+        _newName = _newUrl = "";
+        _adding = false;
+    }
+
+    private async Task DeleteStation(string url, string name)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Remove {name} from your stations?"))
+            return;
+        await Do(a =>
+        {
+            var vm = a.ViewModel;
+            var station = vm.Stations.FirstOrDefault(x => x.Url == url);
+            if (station is not null)
+                vm.DeleteStationCommand.Execute(station);
+        });
+    }
+}

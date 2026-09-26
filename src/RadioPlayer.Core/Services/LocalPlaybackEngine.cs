@@ -96,7 +96,7 @@ public class LocalPlaybackEngine : IPlaybackEngine, ILocalQueuePlayer
     /// engine is constructed first. Errors.Already is expected and fine.</summary>
     private protected virtual void InitAudio()
     {
-        if (!Bass.Init() && Bass.LastError != Errors.Already)
+        if (!BassDevice.InitDefault() && Bass.LastError != Errors.Already)
             throw new InvalidOperationException($"BASS init failed: {Bass.LastError}");
     }
 

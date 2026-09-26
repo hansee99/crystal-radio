@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The web head: a Blazor Server remote control for the player, built for the Raspberry Pi
+       (doc/PI-PORT-PLAN.md) and runnable on Windows for development. The Pi plays audio out of
+       its own output; browsers never receive audio. Version comes from src/Directory.Build.props. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>RadioPlayer.Web</RootNamespace>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RadioPlayer.Core\RadioPlayer.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Natives per RID (Content does not flow across a ProjectReference). The Windows set lets
+       the web head run on the dev box; the Linux set is what ships to the Pi. -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'linux-arm64'">
+    <Content Include="..\..\native\linux-arm64\libbass.so" Link="libbass.so" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\native\linux-arm64\libbass_aac.so" Link="libbass_aac.so" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' != 'linux-arm64'">
+    <Content Include="..\..\native\x64\bass.dll" Link="bass.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\native\x64\bass_aac.dll" Link="bass_aac.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Embedding model + vocab, same as the WPF head. The .onnx is git-ignored; see MlAssets/README. -->
+  <ItemGroup>
+    <Content Include="..\..\MlAssets\all-MiniLM-L6-v2.onnx" Link="MlAssets\all-MiniLM-L6-v2.onnx" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\MlAssets\vocab.txt" Link="MlAssets\vocab.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
