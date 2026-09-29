@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private readonly AppServices _services;
     private readonly MainViewModel _viewModel;
     private readonly SettingsStore _settingsStore;
+    private readonly InfoDisplayServer _infoDisplay;
     private SmtcController? _smtc;
 
     public MainWindow() : this(null) { }
@@ -46,6 +47,14 @@ public partial class MainWindow : Window
         _viewModel = _services.ViewModel;
         _settingsStore = _services.Settings;
         DataContext = _viewModel;
+
+        // The external info display feed. Built here rather than in AppServices because it is
+        // this head's answer to a problem the web head already solves with Kestrel — the Pi would
+        // otherwise end up running two servers. The reader hops to the UI thread, which owns the
+        // view model, and hands back a plain value; the HTTP side never sees the view model.
+        _infoDisplay = new InfoDisplayServer(
+            () => Dispatcher.InvokeAsync(() => NowPlayingSnapshot.From(_viewModel)).Task);
+        ApplyInfoDisplaySettings();
 
         // Reset the About reading view to the top whenever fresh content loads (a new briefing
         // or a regenerate), so the previous track's scroll offset isn't carried over.
@@ -120,8 +129,19 @@ public partial class MainWindow : Window
         });
     }
 
+    /// <summary>Starts, stops or moves the info display feed to match the saved settings. Safe to
+    /// call when nothing changed — re-applying the same binding leaves the socket alone.</summary>
+    private InfoDisplayState ApplyInfoDisplaySettings()
+    {
+        var settings = _settingsStore.Load();
+        return _infoDisplay.Apply(settings.InfoDisplayEnabled, settings.ResolveInfoDisplayPort());
+    }
+
     protected override void OnClosed(EventArgs e)
     {
+        // Before the services: it answers requests by hopping to this dispatcher, and the window
+        // closing is the end of that thread's usefulness.
+        _infoDisplay.Dispose();
         // SMTC goes where it always went in the teardown: after the DJ harvest, before the engines.
         _services.Shutdown(detachOsIntegration: () => _smtc?.Dispose());
         base.OnClosed(e);
@@ -152,8 +172,21 @@ public partial class MainWindow : Window
 
     private void Options_Click(object sender, RoutedEventArgs e)
     {
-        if (ShowDialogSafely(() => new OptionsDialog(_settingsStore) { Owner = this }) == true)
-            _services.ApplySettings();
+        var dialog = new Func<Window>(() =>
+            new OptionsDialog(_settingsStore, _infoDisplay.State) { Owner = this });
+
+        if (ShowDialogSafely(dialog) != true)
+            return;
+
+        _services.ApplySettings();
+
+        // Said here rather than left in the log: a feed that binds loopback-only, or doesn't bind
+        // at all, answers every request the PC makes and none the display makes. Nothing on screen
+        // would distinguish that from a display that is simply misconfigured.
+        var info = ApplyInfoDisplaySettings();
+        if (_settingsStore.Load().InfoDisplayEnabled && !info.ReachableFromNetwork)
+            MessageBox.Show(this, info.Message, "Crystal Radio — info display",
+                MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     /// <summary>

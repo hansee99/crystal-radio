@@ -28,6 +28,7 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapStatus();
+app.MapNowPlaying();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

@@ -55,13 +55,14 @@
                         <ListBoxItem Content="Saved songs"/>
                         <ListBoxItem Content="DJ mode"/>
                         <ListBoxItem Content="Track edges"/>
+                        <ListBoxItem Content="Info display"/>
                     </ListBox>
                 </Border>
 
-                <!-- One panel per section, all four in the tree with only the selected one visible.
+                <!-- One panel per section, all of them in the tree with only the selected one visible.
                      Deliberately not the ContentControl-over-DataTemplates the mockup suggested: a
                      DataTemplate's contents can't be reached by x:Name, and this dialog's load and
-                     save are named-control code-behind. Four cheap panels keep that intact and look
+                     save are named-control code-behind. Cheap sibling panels keep that intact and look
                      identical on screen. -->
                 <!-- The pane scrolls as a LAST RESORT, and normally shows no scrollbar at all: the
                      sections are laid out to fit the fixed body and pair their fields to keep it
@@ -205,6 +206,40 @@
                                 <TextBox x:Name="OutroGuardBox" Style="{StaticResource DialogTextBox}"/>
                             </StackPanel>
                         </Grid>
+                    </StackPanel>
+
+                    <!-- ===== 5. Info display ===== -->
+                    <StackPanel x:Name="InfoDisplaySection" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource DialogSectionHeader}" Text="Info display"/>
+                        <TextBlock Style="{StaticResource DialogHint}" Margin="0,5,0,14" MaxWidth="380"
+                                   HorizontalAlignment="Left"
+                                   Text="Publishes what's playing — and what the DJ just said — on your home network, so a second screen can show it. Read-only: nothing out there can control the player."/>
+
+                        <CheckBox x:Name="InfoDisplayBox" Style="{StaticResource DialogCheckBox}"
+                                  Content="Publish it on this network" Click="InfoDisplay_Changed"/>
+
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Port" Margin="0,16,0,6"/>
+                        <TextBox x:Name="InfoDisplayPortBox" Style="{StaticResource DialogTextBox}"
+                                 Width="110" HorizontalAlignment="Left"
+                                 TextChanged="InfoDisplay_Changed"/>
+
+                        <!-- The address to type into the display, and — once it has been saved
+                             once — how the last start actually went. A url reservation the app
+                             doesn't have is the difference between "works" and "works only on this
+                             PC", and that is invisible from the outside. -->
+                        <Border Style="{StaticResource DialogNoteBlock}">
+                            <DockPanel>
+                                <Ellipse DockPanel.Dock="Left" Width="5" Height="5"
+                                         Fill="{StaticResource Teal}"
+                                         VerticalAlignment="Top" Margin="0,6,7,0"/>
+                                <TextBlock x:Name="InfoDisplayStatusText"
+                                           Style="{StaticResource DialogNoteText}"
+                                           VerticalAlignment="Top"/>
+                            </DockPanel>
+                        </Border>
+
+                        <TextBlock Style="{StaticResource DialogHint}"
+                                   Text="There is no password on it. Keep it to a network you trust, and don't forward the port to the internet."/>
                     </StackPanel>
                 </Grid>
                 </ScrollViewer>

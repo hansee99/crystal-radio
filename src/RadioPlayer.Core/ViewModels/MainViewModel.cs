@@ -2393,10 +2393,19 @@ public sealed class MainViewModel : ObservableObject
         get => _djIntroLine;
         private set
         {
-            if (SetProperty(ref _djIntroLine, value))
-                OnPropertyChanged(nameof(ShowDjIntro));
+            if (!SetProperty(ref _djIntroLine, value)) return;
+            DjIntroLineChangedAt = value is null ? null : DateTimeOffset.UtcNow;
+            OnPropertyChanged(nameof(ShowDjIntro));
         }
     }
+
+    /// <summary>
+    /// When <see cref="DjIntroLine"/> last became a line, for readers that can't watch
+    /// PropertyChanged — the external info display (<see cref="Services.NowPlayingSnapshot"/>)
+    /// polls, and without this it can only tell a new remark from the old one by comparing the
+    /// text, which makes the DJ repeating a line look like no change at all.
+    /// </summary>
+    public DateTimeOffset? DjIntroLineChangedAt { get; private set; }
 
     public bool ShowDjIntro => IsDjMode && !string.IsNullOrWhiteSpace(DjIntroLine);
 

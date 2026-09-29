@@ -199,6 +199,29 @@ public sealed class AppSettings
     public bool ConfirmModeSwitch { get; set; } = true;
 
     /// <summary>
+    /// Serve <c>GET /api/now</c> on the local network so an external info display can show what is
+    /// playing and what the DJ just said (<see cref="InfoDisplayServer"/>).
+    ///
+    /// <para>Off by default, and that is not timidity: it opens a port on whatever network the
+    /// machine happens to be on, with no authentication, and a laptop that quietly started serving
+    /// its listening habits in a cafe would be a defect. Someone with an info display can turn it
+    /// on in one click; nobody else pays for it.</para>
+    /// </summary>
+    public bool InfoDisplayEnabled { get; set; }
+
+    /// <summary>Port <see cref="InfoDisplayEnabled"/> listens on.</summary>
+    public int InfoDisplayPort { get; set; } = InfoDisplayServer.DefaultPort;
+
+    /// <summary>
+    /// The port actually used, or the default if the stored one is unusable. Falls back rather
+    /// than clamping, unlike the numbers above: clamping 80 to 1024 would answer a request for a
+    /// privileged port with an arbitrary one and look like the setting was ignored. Under 1024
+    /// needs rights a desktop app does not have.
+    /// </summary>
+    public int ResolveInfoDisplayPort() =>
+        InfoDisplayPort is >= 1024 and <= 65535 ? InfoDisplayPort : InfoDisplayServer.DefaultPort;
+
+    /// <summary>
     /// Set once the welcome has been shown (#50). Deliberately not a version number: this is an
     /// introduction for someone who has never seen the app, not release notes, and showing it
     /// again after an upgrade would be showing it to the wrong person.
@@ -260,6 +283,7 @@ public sealed class SettingsStore
                     settings.DjMinSongSeconds = Math.Clamp(settings.DjMinSongSeconds, 0, 600);
                     settings.DjStationIdleMinutes = Math.Clamp(settings.DjStationIdleMinutes, 1, 240);
                     settings.DjMusicFractionFloor = Math.Clamp(settings.DjMusicFractionFloor, 0, 1);
+                    settings.InfoDisplayPort = settings.ResolveInfoDisplayPort();
                     return Migrate(settings);
                 }
             }

@@ -46,6 +46,8 @@ Built with WPF on .NET 10, using the [BASS](https://www.un4seen.com/) audio libr
   harvested tracks — LRCLIB skews mainstream), so "no lyrics found" is a normal answer.
 - **Track notifications** — a Windows notification when the DJ introduces a song, carrying
   the title, artist and what the DJ said about it. On by default; switch it off in Options.
+- **Info display feed** — an optional read-only `GET /api/now` on your home network, so a second
+  screen can show what's playing and what the DJ just said. Off by default; see below.
 - **OS integration** — SMTC (Win11 flyout, lock screen, media keys) and taskbar thumbnail
   buttons.
 - Automatic reconnection on dropped streams; single running instance.
@@ -125,6 +127,42 @@ The first install needs one extra step with the Pi's sudo password; see
 [deploy/pi/README.md](deploy/pi/README.md). To try the web UI on Windows first:
 `dotnet run --project src/RadioPlayer.Web` (plays through this PC; close the desktop app first,
 they share data).
+
+## Info display feed
+
+Turn on **Options → Info display** and the player publishes what it is doing as JSON, for an
+external panel to render:
+
+```sh
+curl http://<your-pc>:8723/api/now
+```
+
+```json
+{
+  "playing": true, "buffering": false, "mode": "dj",
+  "station": "Deep Focus FM", "format": "MP3",
+  "title": "Nightdrive", "artist": "Kavinsky",
+  "djRunning": true, "vibe": "late-night coding",
+  "remark": "Kavinsky again, because the last one left the road open.",
+  "remarkChangedAt": "2026-09-29T21:14:08.4820000+00:00",
+  "upNext": "Rampage — Lifelike",
+  "servedAt": "2026-09-29T21:14:31.9910000+00:00"
+}
+```
+
+Poll it once a second; `remarkChangedAt` is there so a display can animate a new line in without
+diffing strings. `remark` is the DJ talking — a track introduction or the between-track patter,
+whichever is current — and is `null` whenever the player's own panel would show nothing.
+
+Read `playing` before `title`: while the player is stopped, `title` and `artist` carry the selected
+station's name and description (the same preview the app's own panel shows), not a track.
+
+It is **read-only and unauthenticated**, like the Pi web head: meant for a home LAN, not the
+internet. Don't forward the port. The Windows installer reserves port 8723 and opens it for the
+private/domain firewall profiles only; on a different port, or an xcopy build, the app falls back
+to loopback and the Options page prints the `netsh http add urlacl` line that fixes it.
+
+The Pi head serves the same `/api/now` at `http://<pi>:5000/api/now`, with no setting to turn on.
 
 ## Enabling AI search
 

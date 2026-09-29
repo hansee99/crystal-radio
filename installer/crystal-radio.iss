@@ -4,7 +4,7 @@
 ; and passes it in as /DStagingDir. Compiling this file directly will fail on purpose: the payload
 ; has to be a fresh publish, not whatever happens to be lying in bin/.
 ;
-; Three things this does beyond copying files:
+; Four things this does beyond copying files:
 ;
 ;   1. Sets AppUserModelID on the Start Menu shortcut. Toast notifications from an unpackaged app
 ;      are attributed by that ID, and Windows reads it from the shortcut — without it the app can
@@ -17,6 +17,9 @@
 ;      reason, and bundling it would triple the installer.
 ;   3. Ships a pre-built station catalog, which the app copies into the user's profile on first run
 ;      (see CatalogSeed). Per-user, so it cannot be a plain install-time file copy.
+;   4. Reserves the info display port and opens it on the local firewall (see [Run]). The feature
+;      itself stays off until someone turns it on in Options; this only removes the two
+;      admin-only obstacles that would otherwise make it fail with no message at all.
 
 #ifndef StagingDir
   #error Build this with scripts/build-installer.ps1 — it needs /DStagingDir=<published output>
@@ -35,6 +38,10 @@
 #define ModelSha256    "6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452"
 ; Its exact size, so a reinstall can tell "already there" from "half a download" without hashing.
 #define ModelBytes     "90405214"
+; The info display feed: its default port and firewall rule name. The port must
+; match InfoDisplayServer.DefaultPort — a different number here reserves one the app never uses.
+#define InfoPort       "8723"
+#define InfoRule       "Crystal Radio info display"
 
 [Setup]
 ; Never change AppId — it is what makes the next release an upgrade rather than a second copy.
@@ -85,8 +92,45 @@ Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AumI
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "{#AumId}"; Tasks: desktopicon
 
 [Run]
+; --- Info display feed (off by default IN THE APP; these only make it possible to turn on) ---
+;
+; The feed is an HttpListener, so http.sys owns the socket. That has two consequences an
+; ordinary user cannot be expected to diagnose, and neither of them produces an error message:
+;
+;   1. Registering http://+:PORT/ needs a url reservation or elevation. Without one the app
+;      binds loopback only and no other device can ever reach it. Granted here to the Users
+;      group by SID rather than by name, so it also works on a non-English Windows.
+;   2. Windows Firewall attributes an http.sys socket to System, so the familiar "allow this
+;      app to communicate?" prompt never appears — the port is simply silently unreachable.
+;      Hence a PORT rule, added ahead of time, and only for the private and domain profiles:
+;      this is meant for a home LAN, and a public network is exactly where it must not answer.
+;
+; Delete-then-add, so a repair or an upgrade is idempotent; both are removed on uninstall.
+; Nothing listens on the port until the feature is switched on in Options, so the rule on its
+; own opens nothing — it only saves the user from a failure mode with no symptom.
+Filename: "{sys}\netsh.exe"; Parameters: "http delete urlacl url=http://+:{#InfoPort}/"; \
+    Flags: runhidden waituntilterminated; StatusMsg: "Preparing the info display port..."
+Filename: "{sys}\netsh.exe"; \
+    Parameters: "http add urlacl url=http://+:{#InfoPort}/ sddl=D:(A;;GX;;;S-1-5-32-545)"; \
+    Flags: runhidden waituntilterminated; StatusMsg: "Preparing the info display port..."
+Filename: "{sys}\netsh.exe"; \
+    Parameters: "advfirewall firewall delete rule name=""{#InfoRule}"""; \
+    Flags: runhidden waituntilterminated; StatusMsg: "Preparing the info display port..."
+Filename: "{sys}\netsh.exe"; \
+    Parameters: "advfirewall firewall add rule name=""{#InfoRule}"" dir=in action=allow protocol=TCP localport={#InfoPort} profile=private,domain"; \
+    Flags: runhidden waituntilterminated; StatusMsg: "Preparing the info display port..."
+
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; \
     Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; Leave nothing behind: a url reservation and a firewall rule for an app that is gone are
+; exactly the kind of leftover nobody ever finds again.
+Filename: "{sys}\netsh.exe"; Parameters: "http delete urlacl url=http://+:{#InfoPort}/"; \
+    Flags: runhidden waituntilterminated; RunOnceId: "DelInfoUrlAcl"
+Filename: "{sys}\netsh.exe"; \
+    Parameters: "advfirewall firewall delete rule name=""{#InfoRule}"""; \
+    Flags: runhidden waituntilterminated; RunOnceId: "DelInfoFirewall"
 
 [UninstallDelete]
 ; The downloaded model is not tracked by the installer (it is an "external" file), so say so

@@ -608,6 +608,66 @@ popup). Separate from station *search* — it explains what's already playing.
   but the rule is about purpose, and a spoken-style line the listener reads on every track change
   is the most listener-audible prose in the app. One small call per song.)*
 
+## Info display feed — `GET /api/now`
+
+An optional read-only HTTP feed so an **external info display** (a tablet, a kiosk page, a panel on
+the Pi) can show what is playing and, above all, what the DJ just said. Off by default.
+
+- **`NowPlayingSnapshot` (Core)** is the payload and the only shared thing: a plain record built by
+  `From(MainViewModel)` **on the thread that owns the view model**. Both heads serve it at the same
+  path, so one display works against either without knowing which it reached.
+- **`InfoDisplayServer` (Core)** is the WPF head's server: `System.Net.HttpListener`, one endpoint,
+  plus a signpost at `/` so a browser pointed at the port sees something other than a 404. Knows
+  nothing about playback — it is handed a `Func<Task<NowPlayingSnapshot>>` and serves what that
+  returns. `Apply(enabled, port)` is the whole API: start, stop and move-port are all "match this",
+  and re-applying an unchanged binding leaves the socket alone so saving an unrelated option doesn't
+  drop a connected display.
+- **The web head needs none of it** — `NowPlayingEndpoint.MapNowPlaying` is three lines of Kestrel,
+  always on. Hence the server lives with the WPF head's wiring (`MainWindow`), not in `AppServices`:
+  built there, the Pi would run two servers.
+
+**Why HttpListener and not Kestrel.** The WPF head ships framework-dependent against the .NET
+*Desktop* runtime. A `FrameworkReference` to `Microsoft.AspNetCore.App` would add a second runtime
+every user must install, for one JSON endpoint — a bigger change to how the app is delivered than to
+what it does. Revisit only if this head ever needs to serve a real page.
+
+**Two http.sys consequences, both silent** (this is the part that costs a day if it is rediscovered
+rather than read):
+
+1. A non-elevated process may not register `http://+:port/` without a **url reservation**. Without
+   one the app binds loopback and the display never connects. `Start` therefore tries the wide
+   prefix first and *falls back* to `localhost` rather than failing — a degraded success, which is
+   why `InfoDisplayState` carries `ReachableFromNetwork` separately from `Running`. The installer
+   adds the reservation for the default port (Users, by SID, so it works on a non-English Windows).
+2. http.sys owns the socket, so **Windows Firewall attributes it to System** and the usual "allow
+   this app?" prompt never appears. An unopened port is silently unreachable. The installer adds a
+   *port* rule, private/domain profiles only, and removes both on uninstall.
+
+`InfoDisplayState.Port` is the port the outcome is *for*, set even on failure: without it the
+options note cannot tell "tried this port and couldn't" from "you typed a port and haven't saved",
+and those want opposite words (`OptionsDialog.DescribeInfoDisplay`).
+
+**Gotchas**
+
+- **Nulls are written, not skipped.** A display binds `remark` by name from another device; a key
+  that vanishes when the DJ is quiet arrives as `undefined` — the same thing a renamed key does.
+- `remark` follows `MainViewModel.ShowDjIntro`, so a display can never show a line the app itself
+  has stopped showing, and covers both a track intro and the between-track patter — from outside
+  they are the same thing, the DJ talking. `DjIntroLineChangedAt` exists because a poller cannot
+  watch `PropertyChanged`, and comparing text makes the DJ repeating a line look like no change.
+- `title` is **null** when idle, never the `IdleTitle` placeholder: "Nothing playing" is 44px type
+  in this app's own window, and a remote panel rendering it as a song title states a falsehood.
+- **`playing: false` means `title`/`artist` are not a track.** While stopped the view model shows
+  the selected station's name and description (`ApplyStoppedPreview`), and the feed mirrors that
+  rather than inventing a second rule — verified live: a stopped player serves
+  `"title": "Radio Paradise", "artist": "Radio Paradise is a non-commercial…"`. A display decides
+  with `playing`, not by guessing from the strings.
+- **No authentication**, deliberately, exactly like the web head — a LAN appliance, not a service.
+  Read-only: nothing reachable here can change what is playing. Off by default because it opens an
+  unauthenticated port on whatever network the machine is on.
+- The port setting **falls back** rather than clamps (`ResolveInfoDisplayPort`): answering a request
+  for port 80 with 1024 would read as the setting being ignored.
+
 ## Design principle: it's a player, not a stream ripper
 
 **Continuous, uninterrupted playback is the priority. Sacrificing a few seconds of a song to

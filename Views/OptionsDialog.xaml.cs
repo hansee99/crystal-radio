@@ -29,6 +29,7 @@ namespace RadioPlayer;
 public partial class OptionsDialog : AppDialog
 {
     private readonly SettingsStore _store;
+    private readonly InfoDisplayState? _infoDisplay;
 
     /// <summary>
     /// An enum member as a dropdown shows it. The member NAMES are what goes in the settings file;
@@ -52,11 +53,16 @@ public partial class OptionsDialog : AppDialog
         box.SelectedValue = selected;
     }
 
-    public OptionsDialog(SettingsStore store)
+    /// <param name="infoDisplay">How the info display feed's last start went, or null if it has
+    /// never been applied. Read-only here: this dialog saves settings, and the window applies
+    /// them — the state is shown so a binding that quietly fell back to loopback is visible
+    /// somewhere other than the log.</param>
+    public OptionsDialog(SettingsStore store, InfoDisplayState? infoDisplay = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         InitializeComponent();
         _store = store;
+        _infoDisplay = infoDisplay;
 
         var settings = store.Load();
         ApiKeyBox.Text = store.GetApiKey() ?? string.Empty;
@@ -70,6 +76,10 @@ public partial class OptionsDialog : AppDialog
         DiskSpaceBox.Text = settings.DjDiskSpaceMb.ToString(CultureInfo.CurrentCulture);
         IntroSkipBox.Text = settings.IntroSkipSeconds.ToString("0.#", CultureInfo.CurrentCulture);
         OutroGuardBox.Text = settings.OutroGuardSeconds.ToString("0.#", CultureInfo.CurrentCulture);
+
+        InfoDisplayBox.IsChecked = settings.InfoDisplayEnabled;
+        InfoDisplayPortBox.Text = settings.ResolveInfoDisplayPort().ToString(CultureInfo.CurrentCulture);
+        ShowInfoDisplayStatus();
 
         // If no in-app key is stored but the environment provides one, say so — it's the key
         // actually in effect until they save one here.
@@ -123,6 +133,7 @@ public partial class OptionsDialog : AppDialog
         SongsSection.Visibility = Shown(1);
         DjSection.Visibility = Shown(2);
         EdgesSection.Visibility = Shown(3);
+        InfoDisplaySection.Visibility = Shown(4);
 
         Visibility Shown(int index) =>
             Rail.SelectedIndex == index ? Visibility.Visible : Visibility.Collapsed;
@@ -178,12 +189,49 @@ public partial class OptionsDialog : AppDialog
         settings.DjDiskSpaceMb = ParseInt(DiskSpaceBox.Text, settings.DjDiskSpaceMb);
         settings.IntroSkipSeconds = ParseDouble(IntroSkipBox.Text, settings.IntroSkipSeconds);
         settings.OutroGuardSeconds = ParseDouble(OutroGuardBox.Text, settings.OutroGuardSeconds);
+        settings.InfoDisplayEnabled = InfoDisplayBox.IsChecked == true;
+        settings.InfoDisplayPort = ParseInt(InfoDisplayPortBox.Text, settings.ResolveInfoDisplayPort());
 
         // Save() writes what it is given; Load() is what clamps. Clamp here too so the dialog
         // can't persist a value the app would silently override on the next read.
         _store.Save(settings);
 
         DialogResult = true;
+    }
+
+    // --- Info display ------------------------------------------------------------------------
+
+    private void InfoDisplay_Changed(object sender, RoutedEventArgs e) => ShowInfoDisplayStatus();
+
+    private void ShowInfoDisplayStatus()
+    {
+        if (InfoDisplayStatusText is null)
+            return; // fires during InitializeComponent, before the controls exist
+
+        var port = ParseInt(InfoDisplayPortBox.Text, InfoDisplayServer.DefaultPort);
+        InfoDisplayStatusText.Text =
+            DescribeInfoDisplay(InfoDisplayBox.IsChecked == true, port, _infoDisplay);
+    }
+
+    /// <summary>
+    /// What the note under the port box says. Three states, and the distinction that matters is
+    /// between the last two: a feed that started but could only bind loopback looks exactly like a
+    /// working one from in here, and that is the case the user has to be told about — their display
+    /// will simply never connect, with nothing on screen to explain why.
+    /// </summary>
+    /// <param name="live">The outcome of the last start, or null if it has never run.</param>
+    internal static string DescribeInfoDisplay(bool enabled, int port, InfoDisplayState? live)
+    {
+        var address = $"http://{Environment.MachineName.ToLowerInvariant()}:{port}{InfoDisplayServer.NowPath}";
+
+        if (!enabled)
+            return $"Off. Turn it on and save, and your display reads {address}.";
+
+        // Only the outcome for THIS port describes what is running now; anything else is a port
+        // that has been typed but not yet saved.
+        return live is not null && live.Port == port
+            ? live.Message
+            : $"Save to start it — your display then reads {address}.";
     }
 
     /// <summary>Accepts both "1.5" and "1,5" — the box is typed into by a person, and a German
