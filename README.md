@@ -48,8 +48,8 @@ Built with WPF on .NET 10, using the [BASS](https://www.un4seen.com/) audio libr
   the title, artist and what the DJ said about it. On by default; switch it off in Options.
 - **Info display feed** — an optional read-only `GET /api/now` on your home network, so a second
   screen can show what's playing and what the DJ just said. Off by default; see below.
-- **OS integration** — SMTC (Win11 flyout, lock screen, media keys) and taskbar thumbnail
-  buttons.
+- **OS integration** — SMTC (Win11 flyout, lock screen, media keys) with the app icon as cover
+  art, and taskbar thumbnail buttons.
 - Automatic reconnection on dropped streams; single running instance.
 
 ## Quick start

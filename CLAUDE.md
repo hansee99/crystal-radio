@@ -125,6 +125,17 @@ native DLLs are resolved.
    (in `OnSourceInitialized`/`SourceInitialized`). Then set `IsPlayEnabled`/`IsPauseEnabled`,
    subscribe to `ButtonPressed` (fires on a background thread — marshal to the UI thread),
    set `PlaybackStatus`, and push title/artist via `DisplayUpdater` + `DisplayUpdater.Update()`.
+   **Cover art:** internet radio sends none, and an SMTC session without a thumbnail draws a grey
+   music-note placeholder that reads as a broken app. `SmtcController.LoadThumbnail` therefore
+   serves the app icon (`Assetspp-256.png`) as a static `RandomAccessStreamReference`, set once
+   in the constructor and held for the controller's life — the OS re-opens that reference every
+   time it draws. Three things worth not rediscovering: the BCL bridges between `Stream` and
+   `IRandomAccessStream` (`AsStreamForWrite`, `AsBuffer`) are **gone from modern .NET**, so the
+   copy goes through WinRT's own `DataWriter`; the pack URI is assembly-qualified
+   (`/crystal-radio;component/...`) because the short form resolves against the *entry* assembly,
+   which is the test host under `dotnet test`; and assigning `DisplayUpdater.Type` does **not**
+   drop a thumbnail set before it — measured against a real OS session, both orders round-tripped
+   the full 256x256, so there is no need to re-attach per track.
 
 3. **ICY metadata setup.** `Configuration.NetMetadata` does **not** exist in ManagedBass
    4.0.2 — ICY/Shoutcast metadata is requested by default, so no `Bass.Configure` call is
